@@ -1,0 +1,39 @@
+[package]
+name = "{{project-name}}"
+version = "0.1.0"
+edition = "2024"
+description = "A battery pack for ..."
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+
+[package.metadata.battery]
+schema_version = 1
+# Customize how your battery pack exports crates:
+#
+# Export all dependencies (default behavior):
+# (no configuration needed)
+#
+# Export specific crates at root:
+# root = ["tokio", "serde"]
+#
+# Export with selective items:
+# [package.metadata.battery.root]
+# tokio = "*"                        # re-export everything from tokio
+# serde = ["Serialize", "Deserialize"]  # only these items
+#
+# Organize into modules:
+# [package.metadata.battery.modules]
+# async = ["tokio", "futures"]
+# http = ["reqwest", "hyper"]
+#
+# Exclude crates from export:
+# exclude = ["internal-helper"]
+
+[dependencies]
+battery-pack = "0.1"
+# Add your curated dependencies here:
+# tokio = { version = "1", features = ["full"] }
+# serde = { version = "1", features = ["derive"] }
+
+[build-dependencies]
+battery-pack = "0.1"

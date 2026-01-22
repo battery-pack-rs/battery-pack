@@ -1,0 +1,9 @@
+[package]
+name = "{{project-name}}"
+version = "0.1.0"
+edition = "2024"
+description = "A CLI application"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+cli-bp = "0.1"

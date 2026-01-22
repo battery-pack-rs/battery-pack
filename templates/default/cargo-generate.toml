@@ -1,0 +1,8 @@
+[template]
+cargo_generate_version = ">=0.22.0"
+
+[placeholders]
+# No additional placeholders needed - cargo-generate provides:
+# - project-name: The project name (kebab-case)
+# - crate_name: The crate name (snake_case)
+# - authors: From git config
