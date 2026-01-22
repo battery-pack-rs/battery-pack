@@ -1,0 +1,19 @@
+[package]
+name = "error-bp"
+version = "0.1.0"
+edition = "2024"
+description = "Battery pack for error handling in Rust"
+keywords = ["battery-pack", "error", "anyhow", "thiserror"]
+
+[package.metadata.battery]
+schema_version = 1
+
+[lib]
+path = "src/lib.rs"
+
+[build-dependencies]
+battery-pack = { path = "../battery-pack" }
+
+[dependencies]
+anyhow = "1"
+thiserror = "2"

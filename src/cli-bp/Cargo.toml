@@ -1,0 +1,34 @@
+[package]
+name = "cli-bp"
+version = "0.1.0"
+edition = "2024"
+description = "Battery pack for building CLI applications in Rust"
+keywords = ["battery-pack", "cli", "clap", "terminal"]
+
+[package.metadata.battery]
+schema_version = 1
+
+[package.metadata.battery.templates]
+simple = { path = "templates/simple", description = "Minimal CLI with argument parsing" }
+subcmds = { path = "templates/subcmds", description = "CLI with subcommands" }
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "cli-bp"
+path = "src/main.rs"
+
+[build-dependencies]
+battery-pack = { path = "../battery-pack" }
+
+[dependencies]
+# Re-export from other battery packs
+error-bp = { path = "../error-bp" }
+logging-bp = { path = "../logging-bp" }
+
+# CLI-specific crates
+clap = { version = "4", features = ["derive"] }
+console = "0.15"
+indicatif = "0.17"
+dialoguer = "0.11"

@@ -1,0 +1,19 @@
+[package]
+name = "logging-bp"
+version = "0.1.0"
+edition = "2024"
+description = "Battery pack for logging and tracing in Rust"
+keywords = ["battery-pack", "logging", "tracing"]
+
+[package.metadata.battery]
+schema_version = 1
+
+[lib]
+path = "src/lib.rs"
+
+[build-dependencies]
+battery-pack = { path = "../battery-pack" }
+
+[dependencies]
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
