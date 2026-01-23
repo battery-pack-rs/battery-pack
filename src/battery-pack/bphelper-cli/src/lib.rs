@@ -6,8 +6,11 @@ use clap::{Parser, Subcommand};
 use flate2::read::GzDecoder;
 use serde::Deserialize;
 use std::collections::BTreeMap;
+use std::io::IsTerminal;
 use std::path::Path;
 use tar::Archive;
+
+mod tui;
 
 const CRATES_IO_API: &str = "https://crates.io/api/v1/crates";
 const CRATES_IO_CDN: &str = "https://static.crates.io/crates";
@@ -64,12 +67,20 @@ pub enum BpCommands {
     List {
         /// Filter by name (omit to list all battery packs)
         filter: Option<String>,
+
+        /// Disable interactive TUI mode
+        #[arg(long)]
+        non_interactive: bool,
     },
 
     /// Show detailed information about a battery pack
     Show {
         /// Name of the battery pack (e.g., "cli" resolves to "cli-battery-pack")
         battery_pack: String,
+
+        /// Disable interactive TUI mode
+        #[arg(long)]
+        non_interactive: bool,
     },
 }
 
@@ -89,8 +100,26 @@ pub fn main() -> Result<()> {
                 battery_pack,
                 features,
             } => add_battery_pack(&battery_pack, &features),
-            BpCommands::List { filter } => list_battery_packs(filter.as_deref()),
-            BpCommands::Show { battery_pack } => show_battery_pack(&battery_pack),
+            BpCommands::List {
+                filter,
+                non_interactive,
+            } => {
+                if !non_interactive && std::io::stdout().is_terminal() {
+                    tui::run_list(filter)
+                } else {
+                    print_battery_pack_list(filter.as_deref())
+                }
+            }
+            BpCommands::Show {
+                battery_pack,
+                non_interactive,
+            } => {
+                if !non_interactive && std::io::stdout().is_terminal() {
+                    tui::run_show(&battery_pack)
+                } else {
+                    print_battery_pack_detail(&battery_pack)
+                }
+            }
         },
     }
 }
@@ -166,10 +195,58 @@ struct OwnersResponse {
     users: Vec<Owner>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Owner {
     login: String,
     name: Option<String>,
+}
+
+// ============================================================================
+// Shared data types (used by both TUI and text output)
+// ============================================================================
+
+/// Summary info for displaying in a list
+#[derive(Clone)]
+pub struct BatteryPackSummary {
+    pub name: String,
+    pub short_name: String,
+    pub version: String,
+    pub description: String,
+}
+
+/// Detailed battery pack info
+#[derive(Clone)]
+pub struct BatteryPackDetail {
+    pub name: String,
+    pub short_name: String,
+    pub version: String,
+    pub description: String,
+    pub owners: Vec<OwnerInfo>,
+    pub crates: Vec<String>,
+    pub extends: Vec<String>,
+    pub templates: Vec<TemplateInfo>,
+}
+
+#[derive(Clone)]
+pub struct OwnerInfo {
+    pub login: String,
+    pub name: Option<String>,
+}
+
+impl From<Owner> for OwnerInfo {
+    fn from(o: Owner) -> Self {
+        Self {
+            login: o.login,
+            name: o.name,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct TemplateInfo {
+    pub name: String,
+    pub path: String,
+    pub description: Option<String>,
 }
 
 // ============================================================================
@@ -423,9 +500,8 @@ fn resolve_template(
     }
 }
 
-fn list_battery_packs(filter: Option<&str>) -> Result<()> {
-    use console::style;
-
+/// Fetch battery pack list from crates.io
+pub fn fetch_battery_pack_list(filter: Option<&str>) -> Result<Vec<BatteryPackSummary>> {
     let client = reqwest::blocking::Client::builder()
         .user_agent("cargo-bp (https://github.com/battery-pack-rs/battery-pack)")
         .build()?;
@@ -445,17 +521,34 @@ fn list_battery_packs(filter: Option<&str>) -> Result<()> {
         .context("Failed to query crates.io")?;
 
     if !response.status().is_success() {
-        bail!("Failed to list battery packs (status: {})", response.status());
+        bail!(
+            "Failed to list battery packs (status: {})",
+            response.status()
+        );
     }
 
     let parsed: SearchResponse = response.json().context("Failed to parse response")?;
 
     // Filter to only crates whose name ends with "-battery-pack"
-    let battery_packs: Vec<_> = parsed
+    let battery_packs = parsed
         .crates
         .into_iter()
         .filter(|c| c.name.ends_with("-battery-pack"))
+        .map(|c| BatteryPackSummary {
+            short_name: short_name(&c.name).to_string(),
+            name: c.name,
+            version: c.max_version,
+            description: c.description.unwrap_or_default(),
+        })
         .collect();
+
+    Ok(battery_packs)
+}
+
+fn print_battery_pack_list(filter: Option<&str>) -> Result<()> {
+    use console::style;
+
+    let battery_packs = fetch_battery_pack_list(filter)?;
 
     if battery_packs.is_empty() {
         match filter {
@@ -468,30 +561,23 @@ fn list_battery_packs(filter: Option<&str>) -> Result<()> {
     // Find the longest name for alignment
     let max_name_len = battery_packs
         .iter()
-        .map(|c| short_name(&c.name).len())
+        .map(|c| c.short_name.len())
         .max()
         .unwrap_or(0);
 
     let max_version_len = battery_packs
         .iter()
-        .map(|c| c.max_version.len())
+        .map(|c| c.version.len())
         .max()
         .unwrap_or(0);
 
     println!();
-    for krate in &battery_packs {
-        let short = short_name(&krate.name);
-        let desc = krate
-            .description
-            .as_deref()
-            .unwrap_or("")
-            .lines()
-            .next()
-            .unwrap_or("");
+    for bp in &battery_packs {
+        let desc = bp.description.lines().next().unwrap_or("");
 
         // Pad strings manually, then apply colors (ANSI codes break width formatting)
-        let name_padded = format!("{:<width$}", short, width = max_name_len);
-        let ver_padded = format!("{:<width$}", krate.max_version, width = max_version_len);
+        let name_padded = format!("{:<width$}", bp.short_name, width = max_name_len);
+        let ver_padded = format!("{:<width$}", bp.version, width = max_version_len);
 
         println!(
             "  {}  {}  {}",
@@ -526,11 +612,9 @@ fn resolve_crate_name(name: &str) -> String {
     }
 }
 
-fn show_battery_pack(name: &str) -> Result<()> {
-    use console::style;
-
+/// Fetch detailed battery pack info from crates.io
+pub fn fetch_battery_pack_detail(name: &str) -> Result<BatteryPackDetail> {
     let crate_name = resolve_crate_name(name);
-    let short = short_name(&crate_name);
 
     // Look up crate info and download
     let crate_info = lookup_crate(&crate_name)?;
@@ -551,28 +635,68 @@ fn show_battery_pack(name: &str) -> Result<()> {
 
     // Extract info
     let package = manifest.package.unwrap_or_default();
-    let description = package.description.as_deref().unwrap_or("");
+    let description = package.description.unwrap_or_default();
     let battery = package
         .metadata
         .and_then(|m| m.battery)
         .unwrap_or_default();
 
+    // Split dependencies into battery packs and regular crates
+    let mut extends = Vec::new();
+    let mut crates = Vec::new();
+
+    for dep_name in manifest.dependencies.keys() {
+        if dep_name.ends_with("-battery-pack") {
+            extends.push(short_name(dep_name).to_string());
+        } else if dep_name != "battery-pack" {
+            crates.push(dep_name.clone());
+        }
+    }
+
+    // Convert templates
+    let templates = battery
+        .templates
+        .into_iter()
+        .map(|(name, config)| TemplateInfo {
+            name,
+            path: config.path,
+            description: config.description,
+        })
+        .collect();
+
+    Ok(BatteryPackDetail {
+        short_name: short_name(&crate_name).to_string(),
+        name: crate_name,
+        version: crate_info.version,
+        description,
+        owners: owners.into_iter().map(OwnerInfo::from).collect(),
+        crates,
+        extends,
+        templates,
+    })
+}
+
+fn print_battery_pack_detail(name: &str) -> Result<()> {
+    use console::style;
+
+    let detail = fetch_battery_pack_detail(name)?;
+
     // Header
     println!();
     println!(
         "{} {}",
-        style(&crate_name).green().bold(),
-        style(&crate_info.version).dim()
+        style(&detail.name).green().bold(),
+        style(&detail.version).dim()
     );
-    if !description.is_empty() {
-        println!("{}", description);
+    if !detail.description.is_empty() {
+        println!("{}", detail.description);
     }
 
     // Authors
-    if !owners.is_empty() {
+    if !detail.owners.is_empty() {
         println!();
         println!("{}", style("Authors:").bold());
-        for owner in &owners {
+        for owner in &detail.owners {
             if let Some(name) = &owner.name {
                 println!("  {} ({})", name, owner.login);
             } else {
@@ -581,42 +705,37 @@ fn show_battery_pack(name: &str) -> Result<()> {
         }
     }
 
-    // Dependencies (split into battery packs and regular crates)
-    let mut extends: Vec<&str> = Vec::new();
-    let mut crates: Vec<&str> = Vec::new();
-
-    for dep_name in manifest.dependencies.keys() {
-        if dep_name.ends_with("-battery-pack") {
-            extends.push(dep_name);
-        } else if dep_name != "battery-pack" {
-            crates.push(dep_name);
-        }
-    }
-
-    if !crates.is_empty() {
+    // Crates
+    if !detail.crates.is_empty() {
         println!();
         println!("{}", style("Crates:").bold());
-        for dep in &crates {
+        for dep in &detail.crates {
             println!("  {}", dep);
         }
     }
 
-    if !extends.is_empty() {
+    // Extends
+    if !detail.extends.is_empty() {
         println!();
         println!("{}", style("Extends:").bold());
-        for dep in &extends {
-            println!("  {}", short_name(dep));
+        for dep in &detail.extends {
+            println!("  {}", dep);
         }
     }
 
     // Templates
-    if !battery.templates.is_empty() {
+    if !detail.templates.is_empty() {
         println!();
         println!("{}", style("Templates:").bold());
-        let max_name_len = battery.templates.keys().map(|k| k.len()).max().unwrap_or(0);
-        for (name, config) in &battery.templates {
-            let name_padded = format!("{:<width$}", name, width = max_name_len);
-            if let Some(desc) = &config.description {
+        let max_name_len = detail
+            .templates
+            .iter()
+            .map(|t| t.name.len())
+            .max()
+            .unwrap_or(0);
+        for tmpl in &detail.templates {
+            let name_padded = format!("{:<width$}", tmpl.name, width = max_name_len);
+            if let Some(desc) = &tmpl.description {
                 println!("  {}  {}", style(name_padded).cyan(), desc);
             } else {
                 println!("  {}", style(name_padded).cyan());
@@ -627,8 +746,8 @@ fn show_battery_pack(name: &str) -> Result<()> {
     // Install hints
     println!();
     println!("{}", style("Install:").bold());
-    println!("  cargo bp add {}", short);
-    println!("  cargo bp new {}", short);
+    println!("  cargo bp add {}", detail.short_name);
+    println!("  cargo bp new {}", detail.short_name);
     println!();
 
     Ok(())
