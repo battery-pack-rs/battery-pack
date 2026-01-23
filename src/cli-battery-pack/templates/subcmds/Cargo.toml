@@ -6,4 +6,4 @@ description = "A CLI application with subcommands"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-cli-bp = "0.1"
+cli = { package = "cli-battery-pack", version = "0.1" }

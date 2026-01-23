@@ -1,5 +1,5 @@
 [package]
-name = "cli-bp"
+name = "cli-battery-pack"
 version = "0.1.0"
 edition = "2024"
 description = "Battery pack for building CLI applications in Rust"
@@ -16,7 +16,7 @@ subcmds = { path = "templates/subcmds", description = "CLI with subcommands" }
 path = "src/lib.rs"
 
 [[bin]]
-name = "cli-bp"
+name = "cli-battery-pack"
 path = "src/main.rs"
 
 [build-dependencies]
@@ -24,8 +24,8 @@ battery-pack = { path = "../battery-pack" }
 
 [dependencies]
 # Re-export from other battery packs
-error-bp = { path = "../error-bp" }
-logging-bp = { path = "../logging-bp" }
+error-battery-pack = { path = "../error-battery-pack" }
+logging-battery-pack = { path = "../logging-battery-pack" }
 
 # CLI-specific crates
 clap = { version = "4", features = ["derive"] }

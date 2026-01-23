@@ -1,5 +1,5 @@
 [package]
-name = "error-bp"
+name = "error-battery-pack"
 version = "0.1.0"
 edition = "2024"
 description = "Battery pack for error handling in Rust"

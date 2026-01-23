@@ -49,6 +49,16 @@ pub enum BpCommands {
         #[arg(long, hide = true)]
         path: Option<String>,
     },
+
+    /// Add a battery pack as a dependency
+    Add {
+        /// Name of the battery pack (e.g., "cli" resolves to "cli-battery-pack")
+        battery_pack: String,
+
+        /// Features to enable
+        #[arg(long, short = 'F')]
+        features: Vec<String>,
+    },
 }
 
 /// Main entry point for the CLI.
@@ -64,6 +74,10 @@ pub fn main() -> Result<()> {
                 git,
                 path,
             } => new_from_battery_pack(&battery_pack, name, template, git, path),
+            BpCommands::Add {
+                battery_pack,
+                features,
+            } => add_battery_pack(&battery_pack, &features),
         },
     }
 }
@@ -132,7 +146,7 @@ fn new_from_battery_pack(
     } else if let Some(git) = git_override {
         git
     } else {
-        get_repository_url(battery_pack)?
+        resolve_battery_pack(battery_pack)?.repository
     };
 
     // Fetch the Cargo.toml from the repo to get template metadata
@@ -154,6 +168,32 @@ fn new_from_battery_pack(
     };
 
     cargo_generate::generate(args)?;
+
+    Ok(())
+}
+
+fn add_battery_pack(name: &str, features: &[String]) -> Result<()> {
+    let resolved = resolve_battery_pack(name)?;
+
+    // Build cargo add command: cargo add cli-battery-pack --rename cli
+    let mut cmd = std::process::Command::new("cargo");
+    cmd.arg("add").arg(&resolved.crate_name);
+
+    // Rename to the short name (e.g., cli-battery-pack -> cli)
+    if resolved.crate_name != name {
+        cmd.arg("--rename").arg(name);
+    }
+
+    // Add features if specified
+    for feature in features {
+        cmd.arg("--features").arg(feature);
+    }
+
+    let status = cmd.status().context("Failed to run cargo add")?;
+
+    if !status.success() {
+        bail!("cargo add failed");
+    }
 
     Ok(())
 }
@@ -188,24 +228,46 @@ fn generate_from_local(
     Ok(())
 }
 
-fn get_repository_url(crate_name: &str) -> Result<String> {
-    let url = format!("{}/{}", CRATES_IO_API, crate_name);
+/// Resolved battery pack info from crates.io
+struct ResolvedBatteryPack {
+    /// The actual crate name on crates.io (e.g., "cli-battery-pack")
+    crate_name: String,
+    /// The repository URL
+    repository: String,
+}
 
+fn resolve_battery_pack(name: &str) -> Result<ResolvedBatteryPack> {
     let client = reqwest::blocking::Client::builder()
         .user_agent("cargo-bp (https://github.com/battery-pack-rs/battery-pack)")
         .build()?;
 
-    let response: CratesIoResponse = client
-        .get(&url)
-        .send()
-        .with_context(|| format!("Failed to fetch crate info for '{}'", crate_name))?
-        .json()
-        .with_context(|| format!("Failed to parse crate info for '{}'", crate_name))?;
+    // Try the crate name as-is first, then with -battery-pack suffix
+    let candidates = [name.to_string(), format!("{}-battery-pack", name)];
 
-    response
-        .krate
-        .repository
-        .ok_or_else(|| anyhow::anyhow!("Crate '{}' has no repository URL defined", crate_name))
+    for candidate in &candidates {
+        let url = format!("{}/{}", CRATES_IO_API, candidate);
+
+        let response = client.get(&url).send();
+
+        if let Ok(resp) = response {
+            if resp.status().is_success() {
+                if let Ok(parsed) = resp.json::<CratesIoResponse>() {
+                    if let Some(repo) = parsed.krate.repository {
+                        return Ok(ResolvedBatteryPack {
+                            crate_name: candidate.clone(),
+                            repository: repo,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    bail!(
+        "Could not find battery pack '{}' or '{}-battery-pack' on crates.io",
+        name,
+        name
+    )
 }
 
 fn fetch_template_metadata(

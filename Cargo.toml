@@ -4,7 +4,7 @@ members = [
     "src/battery-pack",
     "src/battery-pack-build",
     "src/battery-pack-cli",
-    "src/error-bp",
-    "src/logging-bp",
-    "src/cli-bp",
+    "src/error-battery-pack",
+    "src/logging-battery-pack",
+    "src/cli-battery-pack",
 ]

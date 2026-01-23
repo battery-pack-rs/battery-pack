@@ -1,10 +1,10 @@
-//! cli-bp CLI — initialize projects, view docs, etc.
+//! cli-battery-pack CLI — initialize projects, view docs, etc.
 
-use cli_bp::{anyhow, clap};
+use cli_battery_pack::{anyhow, clap};
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "cli-bp")]
+#[command(name = "cli-battery-pack")]
 #[command(about = "CLI Battery Pack - curated crates for building CLIs")]
 struct Cli {
     #[command(subcommand)]

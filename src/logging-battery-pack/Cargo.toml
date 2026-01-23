@@ -1,5 +1,5 @@
 [package]
-name = "logging-bp"
+name = "logging-battery-pack"
 version = "0.1.0"
 edition = "2024"
 description = "Battery pack for logging and tracing in Rust"

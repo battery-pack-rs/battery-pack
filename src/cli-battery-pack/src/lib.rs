@@ -1,4 +1,4 @@
-//! # cli-bp: CLI Battery Pack
+//! # cli-battery-pack: CLI Battery Pack
 //!
 //! A curated collection of crates for building command-line applications in Rust.
 //!
@@ -14,8 +14,12 @@
 //!
 //! ## Usage
 //!
+//! Add the battery pack: `cargo bp add cli`
+//!
+//! Then use it:
+//!
 //! ```rust,ignore
-//! use cli_bp::{clap::Parser, anyhow::Result};
+//! use cli::{clap::Parser, anyhow::Result};
 //!
 //! #[derive(Parser)]
 //! struct Args {
