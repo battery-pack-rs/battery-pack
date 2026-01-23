@@ -60,10 +60,10 @@ pub enum BpCommands {
         features: Vec<String>,
     },
 
-    /// Search for battery packs on crates.io
-    Search {
-        /// Search query (omit to list all battery packs)
-        query: Option<String>,
+    /// List available battery packs on crates.io
+    List {
+        /// Filter by name (omit to list all battery packs)
+        filter: Option<String>,
     },
 
     /// Show detailed information about a battery pack
@@ -89,7 +89,7 @@ pub fn main() -> Result<()> {
                 battery_pack,
                 features,
             } => add_battery_pack(&battery_pack, &features),
-            BpCommands::Search { query } => search_battery_packs(query.as_deref()),
+            BpCommands::List { filter } => list_battery_packs(filter.as_deref()),
             BpCommands::Show { battery_pack } => show_battery_pack(&battery_pack),
         },
     }
@@ -423,7 +423,7 @@ fn resolve_template(
     }
 }
 
-fn search_battery_packs(query: Option<&str>) -> Result<()> {
+fn list_battery_packs(filter: Option<&str>) -> Result<()> {
     use console::style;
 
     let client = reqwest::blocking::Client::builder()
@@ -431,7 +431,7 @@ fn search_battery_packs(query: Option<&str>) -> Result<()> {
         .build()?;
 
     // Build the search URL with keyword filter
-    let url = match query {
+    let url = match filter {
         Some(q) => format!(
             "{CRATES_IO_API}?q={}&keyword=battery-pack&per_page=50",
             urlencoding::encode(q)
@@ -442,13 +442,13 @@ fn search_battery_packs(query: Option<&str>) -> Result<()> {
     let response = client
         .get(&url)
         .send()
-        .context("Failed to search crates.io")?;
+        .context("Failed to query crates.io")?;
 
     if !response.status().is_success() {
-        bail!("Search failed (status: {})", response.status());
+        bail!("Failed to list battery packs (status: {})", response.status());
     }
 
-    let parsed: SearchResponse = response.json().context("Failed to parse search response")?;
+    let parsed: SearchResponse = response.json().context("Failed to parse response")?;
 
     // Filter to only crates whose name ends with "-battery-pack"
     let battery_packs: Vec<_> = parsed
@@ -458,7 +458,7 @@ fn search_battery_packs(query: Option<&str>) -> Result<()> {
         .collect();
 
     if battery_packs.is_empty() {
-        match query {
+        match filter {
             Some(q) => println!("No battery packs found matching '{}'", q),
             None => println!("No battery packs found"),
         }
