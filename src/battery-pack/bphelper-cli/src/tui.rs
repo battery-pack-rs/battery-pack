@@ -23,8 +23,8 @@ pub fn run_list(filter: Option<String>) -> Result<()> {
 }
 
 /// Run the TUI starting from the detail view
-pub fn run_show(name: &str) -> Result<()> {
-    let app = App::new_show(name);
+pub fn run_show(name: &str, path: Option<&str>) -> Result<()> {
+    let app = App::new_show(name, path);
     app.run()
 }
 
@@ -52,7 +52,7 @@ struct LoadingState {
 
 enum LoadingTarget {
     List { filter: Option<String> },
-    Detail { name: String, came_from_list: bool },
+    Detail { name: String, path: Option<String>, came_from_list: bool },
 }
 
 struct ListScreen {
@@ -77,6 +77,8 @@ enum DetailItem {
     Extends(String),
     /// A template - opens GitHub tree URL (stores just the path)
     Template(String),
+    /// An example - opens GitHub tree URL (stores example name)
+    Example(String),
     /// Open on crates.io action
     ActionOpenCratesIo,
     /// Add to project action
@@ -103,6 +105,11 @@ impl DetailScreen {
         // Templates
         for tmpl in &self.detail.templates {
             items.push(DetailItem::Template(tmpl.path.clone()));
+        }
+
+        // Examples
+        for example in &self.detail.examples {
+            items.push(DetailItem::Example(example.name.clone()));
         }
 
         // Actions (always present)
@@ -178,12 +185,13 @@ impl App {
         }
     }
 
-    fn new_show(name: &str) -> Self {
+    fn new_show(name: &str, path: Option<&str>) -> Self {
         Self {
             screen: Screen::Loading(LoadingState {
                 message: format!("Loading {}...", name),
                 target: LoadingTarget::Detail {
                     name: name.to_string(),
+                    path: path.map(|s| s.to_string()),
                     came_from_list: false,
                 },
             }),
@@ -242,12 +250,13 @@ impl App {
                         filter: filter.clone(),
                     });
                 }
-                LoadingTarget::Detail { name, came_from_list } => {
-                    let detail = fetch_battery_pack_detail(name)?;
-                    // Start selection at first action (after crates/extends/templates)
+                LoadingTarget::Detail { name, path, came_from_list } => {
+                    let detail = fetch_battery_pack_detail(name, path.as_deref())?;
+                    // Start selection at first action (after crates/extends/templates/examples)
                     let initial_index = detail.crates.len()
                         + detail.extends.len()
-                        + detail.templates.len();
+                        + detail.templates.len()
+                        + detail.examples.len();
                     self.screen = Screen::Detail(DetailScreen {
                         detail,
                         selected_index: initial_index,
@@ -321,6 +330,7 @@ impl App {
             DetailPrev,
             OpenCratesIoUrl(String),
             OpenTemplate { repository: Option<String>, path: String },
+            OpenExample { repository: Option<String>, name: String },
             DetailOpenCratesIo(String),
             DetailAdd(String),
             DetailNewProject(BatteryPackDetail, Option<String>, usize, bool),
@@ -374,6 +384,12 @@ impl App {
                                 Action::OpenTemplate {
                                     repository: state.detail.repository.clone(),
                                     path,
+                                }
+                            }
+                            DetailItem::Example(name) => {
+                                Action::OpenExample {
+                                    repository: state.detail.repository.clone(),
+                                    name,
                                 }
                             }
                             DetailItem::ActionOpenCratesIo => {
@@ -478,6 +494,7 @@ impl App {
                             message: format!("Loading {}...", bp.short_name),
                             target: LoadingTarget::Detail {
                                 name: bp.name.clone(),
+                                path: None,
                                 came_from_list: true,
                             },
                         });
@@ -500,6 +517,11 @@ impl App {
                 self.pending_action = Some(PendingAction::OpenUrl { url });
             }
             Action::OpenTemplate { repository, path } => {
+                let url = build_github_url(repository.as_deref(), &path);
+                self.pending_action = Some(PendingAction::OpenUrl { url });
+            }
+            Action::OpenExample { repository, name } => {
+                let path = format!("examples/{}.rs", name);
                 let url = build_github_url(repository.as_deref(), &path);
                 self.pending_action = Some(PendingAction::OpenUrl { url });
             }
@@ -815,6 +837,26 @@ fn render_detail(frame: &mut Frame, state: &DetailScreen) {
                 Style::default().fg(Color::Black).bg(Color::Cyan).bold()
             } else {
                 Style::default().fg(Color::Cyan)
+            };
+            let prefix = if selected { "> " } else { "  " };
+            lines.push(Line::styled(format!("{}{}", prefix, text), style));
+            item_index += 1;
+        }
+        lines.push(Line::from(""));
+    }
+
+    if !detail.examples.is_empty() {
+        lines.push(Line::styled("Examples:", Style::default().bold()));
+        for example in &detail.examples {
+            let selected = state.selected_index == item_index;
+            let text = match &example.description {
+                Some(desc) => format!("{} - {}", example.name, desc),
+                None => example.name.clone(),
+            };
+            let style = if selected {
+                Style::default().fg(Color::Black).bg(Color::Cyan).bold()
+            } else {
+                Style::default().fg(Color::Magenta)
             };
             let prefix = if selected { "> " } else { "  " };
             lines.push(Line::styled(format!("{}{}", prefix, text), style));

@@ -78,6 +78,10 @@ pub enum BpCommands {
         /// Name of the battery pack (e.g., "cli" resolves to "cli-battery-pack")
         battery_pack: String,
 
+        /// Use a local path instead of downloading from crates.io
+        #[arg(long)]
+        path: Option<String>,
+
         /// Disable interactive TUI mode
         #[arg(long)]
         non_interactive: bool,
@@ -112,12 +116,13 @@ pub fn main() -> Result<()> {
             }
             BpCommands::Show {
                 battery_pack,
+                path,
                 non_interactive,
             } => {
                 if !non_interactive && std::io::stdout().is_terminal() {
-                    tui::run_show(&battery_pack)
+                    tui::run_show(&battery_pack, path.as_deref())
                 } else {
-                    print_battery_pack_detail(&battery_pack)
+                    print_battery_pack_detail(&battery_pack, path.as_deref())
                 }
             }
         },
@@ -164,6 +169,8 @@ struct CargoManifest {
 
 #[derive(Deserialize, Default)]
 struct PackageSection {
+    name: Option<String>,
+    version: Option<String>,
     description: Option<String>,
     repository: Option<String>,
     metadata: Option<PackageMetadata>,
@@ -227,6 +234,7 @@ pub struct BatteryPackDetail {
     pub crates: Vec<String>,
     pub extends: Vec<String>,
     pub templates: Vec<TemplateInfo>,
+    pub examples: Vec<ExampleInfo>,
 }
 
 #[derive(Clone)]
@@ -248,6 +256,12 @@ impl From<Owner> for OwnerInfo {
 pub struct TemplateInfo {
     pub name: String,
     pub path: String,
+    pub description: Option<String>,
+}
+
+#[derive(Clone)]
+pub struct ExampleInfo {
+    pub name: String,
     pub description: Option<String>,
 }
 
@@ -644,8 +658,13 @@ fn resolve_crate_name(name: &str) -> String {
     }
 }
 
-/// Fetch detailed battery pack info from crates.io
-pub fn fetch_battery_pack_detail(name: &str) -> Result<BatteryPackDetail> {
+/// Fetch detailed battery pack info from crates.io or a local path
+pub fn fetch_battery_pack_detail(name: &str, path: Option<&str>) -> Result<BatteryPackDetail> {
+    // If path is provided, use local directory
+    if let Some(local_path) = path {
+        return fetch_battery_pack_detail_from_path(local_path);
+    }
+
     let crate_name = resolve_crate_name(name);
 
     // Look up crate info and download
@@ -697,6 +716,9 @@ pub fn fetch_battery_pack_detail(name: &str) -> Result<BatteryPackDetail> {
         })
         .collect();
 
+    // Scan examples directory
+    let examples = scan_examples(&crate_dir);
+
     Ok(BatteryPackDetail {
         short_name: short_name(&crate_name).to_string(),
         name: crate_name,
@@ -707,13 +729,76 @@ pub fn fetch_battery_pack_detail(name: &str) -> Result<BatteryPackDetail> {
         crates,
         extends,
         templates,
+        examples,
     })
 }
 
-fn print_battery_pack_detail(name: &str) -> Result<()> {
+/// Fetch detailed battery pack info from a local path
+fn fetch_battery_pack_detail_from_path(path: &str) -> Result<BatteryPackDetail> {
+    let crate_dir = std::path::Path::new(path);
+
+    // Read and parse Cargo.toml
+    let manifest_path = crate_dir.join("Cargo.toml");
+    let manifest_content = std::fs::read_to_string(&manifest_path)
+        .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
+    let manifest: CargoManifest =
+        toml::from_str(&manifest_content).with_context(|| "Failed to parse Cargo.toml")?;
+
+    // Extract info
+    let package = manifest.package.unwrap_or_default();
+    let crate_name = package.name.clone().unwrap_or_else(|| "unknown".to_string());
+    let version = package.version.clone().unwrap_or_else(|| "0.0.0".to_string());
+    let description = package.description.clone().unwrap_or_default();
+    let repository = package.repository.clone();
+    let battery = package
+        .metadata
+        .and_then(|m| m.battery)
+        .unwrap_or_default();
+
+    // Split dependencies into battery packs and regular crates
+    let mut extends = Vec::new();
+    let mut crates = Vec::new();
+
+    for dep_name in manifest.dependencies.keys() {
+        if dep_name.ends_with("-battery-pack") {
+            extends.push(short_name(dep_name).to_string());
+        } else if dep_name != "battery-pack" {
+            crates.push(dep_name.clone());
+        }
+    }
+
+    // Convert templates
+    let templates = battery
+        .templates
+        .into_iter()
+        .map(|(name, config)| TemplateInfo {
+            name,
+            path: config.path,
+            description: config.description,
+        })
+        .collect();
+
+    // Scan examples directory
+    let examples = scan_examples(crate_dir);
+
+    Ok(BatteryPackDetail {
+        short_name: short_name(&crate_name).to_string(),
+        name: crate_name,
+        version,
+        description,
+        repository,
+        owners: Vec::new(), // No owners for local path
+        crates,
+        extends,
+        templates,
+        examples,
+    })
+}
+
+fn print_battery_pack_detail(name: &str, path: Option<&str>) -> Result<()> {
     use console::style;
 
-    let detail = fetch_battery_pack_detail(name)?;
+    let detail = fetch_battery_pack_detail(name, path)?;
 
     // Header
     println!();
@@ -777,6 +862,26 @@ fn print_battery_pack_detail(name: &str) -> Result<()> {
         }
     }
 
+    // Examples
+    if !detail.examples.is_empty() {
+        println!();
+        println!("{}", style("Examples:").bold());
+        let max_name_len = detail
+            .examples
+            .iter()
+            .map(|e| e.name.len())
+            .max()
+            .unwrap_or(0);
+        for example in &detail.examples {
+            let name_padded = format!("{:<width$}", example.name, width = max_name_len);
+            if let Some(desc) = &example.description {
+                println!("  {}  {}", style(name_padded).magenta(), desc);
+            } else {
+                println!("  {}", style(name_padded).magenta());
+            }
+        }
+    }
+
     // Install hints
     println!();
     println!("{}", style("Install:").bold());
@@ -808,4 +913,53 @@ fn fetch_owners(crate_name: &str) -> Result<Vec<Owner>> {
         .with_context(|| "Failed to parse owners response")?;
 
     Ok(parsed.users)
+}
+
+/// Scan the examples directory and extract example info
+fn scan_examples(crate_dir: &std::path::Path) -> Vec<ExampleInfo> {
+    let examples_dir = crate_dir.join("examples");
+    if !examples_dir.exists() {
+        return Vec::new();
+    }
+
+    let mut examples = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(&examples_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|ext| ext == "rs") {
+                if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
+                    let description = extract_example_description(&path);
+                    examples.push(ExampleInfo {
+                        name: name.to_string(),
+                        description,
+                    });
+                }
+            }
+        }
+    }
+
+    // Sort by name
+    examples.sort_by(|a, b| a.name.cmp(&b.name));
+    examples
+}
+
+/// Extract description from the first doc comment in an example file
+fn extract_example_description(path: &std::path::Path) -> Option<String> {
+    let content = std::fs::read_to_string(path).ok()?;
+
+    // Look for //! doc comments at the start
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("//!") {
+            let desc = trimmed.strip_prefix("//!").unwrap_or("").trim();
+            if !desc.is_empty() {
+                return Some(desc.to_string());
+            }
+        } else if !trimmed.is_empty() && !trimmed.starts_with("//") {
+            // Stop at first non-comment, non-empty line
+            break;
+        }
+    }
+    None
 }
