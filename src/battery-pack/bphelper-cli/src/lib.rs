@@ -45,10 +45,6 @@ pub enum BpCommands {
         #[arg(long, short = 't')]
         template: Option<String>,
 
-        /// Use exact crate name without adding "-battery-pack" suffix
-        #[arg(long)]
-        exact: bool,
-
         /// Use a local path instead of downloading from crates.io
         #[arg(long)]
         path: Option<String>,
@@ -63,6 +59,18 @@ pub enum BpCommands {
         #[arg(long, short = 'F')]
         features: Vec<String>,
     },
+
+    /// Search for battery packs on crates.io
+    Search {
+        /// Search query (omit to list all battery packs)
+        query: Option<String>,
+    },
+
+    /// Show detailed information about a battery pack
+    Show {
+        /// Name of the battery pack (e.g., "cli" resolves to "cli-battery-pack")
+        battery_pack: String,
+    },
 }
 
 /// Main entry point for the CLI.
@@ -75,13 +83,14 @@ pub fn main() -> Result<()> {
                 battery_pack,
                 name,
                 template,
-                exact,
                 path,
-            } => new_from_battery_pack(&battery_pack, name, template, exact, path),
+            } => new_from_battery_pack(&battery_pack, name, template, path),
             BpCommands::Add {
                 battery_pack,
                 features,
             } => add_battery_pack(&battery_pack, &features),
+            BpCommands::Search { query } => search_battery_packs(query.as_deref()),
+            BpCommands::Show { battery_pack } => show_battery_pack(&battery_pack),
         },
     }
 }
@@ -101,17 +110,32 @@ struct VersionInfo {
     yanked: bool,
 }
 
+#[derive(Deserialize)]
+struct SearchResponse {
+    crates: Vec<SearchCrate>,
+}
+
+#[derive(Deserialize)]
+struct SearchCrate {
+    name: String,
+    max_version: String,
+    description: Option<String>,
+}
+
 // ============================================================================
-// Battery pack metadata types
+// Battery pack metadata types (from Cargo.toml)
 // ============================================================================
 
 #[derive(Deserialize, Default)]
 struct CargoManifest {
     package: Option<PackageSection>,
+    #[serde(default)]
+    dependencies: BTreeMap<String, toml::Value>,
 }
 
 #[derive(Deserialize, Default)]
 struct PackageSection {
+    description: Option<String>,
     metadata: Option<PackageMetadata>,
 }
 
@@ -134,6 +158,21 @@ struct TemplateConfig {
 }
 
 // ============================================================================
+// crates.io owner types
+// ============================================================================
+
+#[derive(Deserialize)]
+struct OwnersResponse {
+    users: Vec<Owner>,
+}
+
+#[derive(Deserialize)]
+struct Owner {
+    login: String,
+    name: Option<String>,
+}
+
+// ============================================================================
 // Implementation
 // ============================================================================
 
@@ -141,7 +180,6 @@ fn new_from_battery_pack(
     battery_pack: &str,
     name: Option<String>,
     template: Option<String>,
-    exact: bool,
     path_override: Option<String>,
 ) -> Result<()> {
     // If using local path, generate directly from there
@@ -149,12 +187,8 @@ fn new_from_battery_pack(
         return generate_from_local(&path, name, template);
     }
 
-    // Resolve the crate name (add -battery-pack suffix unless --exact)
-    let crate_name = if exact || battery_pack.ends_with("-battery-pack") {
-        battery_pack.to_string()
-    } else {
-        format!("{}-battery-pack", battery_pack)
-    };
+    // Resolve the crate name (add -battery-pack suffix if needed)
+    let crate_name = resolve_crate_name(battery_pack);
 
     // Look up the crate on crates.io and get the latest version
     let crate_info = lookup_crate(&crate_name)?;
@@ -177,12 +211,8 @@ fn new_from_battery_pack(
 }
 
 fn add_battery_pack(name: &str, features: &[String]) -> Result<()> {
-    // Resolve the crate name (add -battery-pack suffix if needed)
-    let crate_name = if name.ends_with("-battery-pack") {
-        name.to_string()
-    } else {
-        format!("{}-battery-pack", name)
-    };
+    let crate_name = resolve_crate_name(name);
+    let short = short_name(&crate_name);
 
     // Verify the crate exists on crates.io
     lookup_crate(&crate_name)?;
@@ -192,9 +222,7 @@ fn add_battery_pack(name: &str, features: &[String]) -> Result<()> {
     cmd.arg("add").arg(&crate_name);
 
     // Rename to the short name (e.g., cli-battery-pack -> cli)
-    if crate_name != name {
-        cmd.arg("--rename").arg(name);
-    }
+    cmd.arg("--rename").arg(short);
 
     // Add features if specified
     for feature in features {
@@ -393,4 +421,238 @@ fn resolve_template(
             }
         }
     }
+}
+
+fn search_battery_packs(query: Option<&str>) -> Result<()> {
+    use console::style;
+
+    let client = reqwest::blocking::Client::builder()
+        .user_agent("cargo-bp (https://github.com/battery-pack-rs/battery-pack)")
+        .build()?;
+
+    // Build the search URL with keyword filter
+    let url = match query {
+        Some(q) => format!(
+            "{CRATES_IO_API}?q={}&keyword=battery-pack&per_page=50",
+            urlencoding::encode(q)
+        ),
+        None => format!("{CRATES_IO_API}?keyword=battery-pack&per_page=50"),
+    };
+
+    let response = client
+        .get(&url)
+        .send()
+        .context("Failed to search crates.io")?;
+
+    if !response.status().is_success() {
+        bail!("Search failed (status: {})", response.status());
+    }
+
+    let parsed: SearchResponse = response.json().context("Failed to parse search response")?;
+
+    // Filter to only crates whose name ends with "-battery-pack"
+    let battery_packs: Vec<_> = parsed
+        .crates
+        .into_iter()
+        .filter(|c| c.name.ends_with("-battery-pack"))
+        .collect();
+
+    if battery_packs.is_empty() {
+        match query {
+            Some(q) => println!("No battery packs found matching '{}'", q),
+            None => println!("No battery packs found"),
+        }
+        return Ok(());
+    }
+
+    // Find the longest name for alignment
+    let max_name_len = battery_packs
+        .iter()
+        .map(|c| short_name(&c.name).len())
+        .max()
+        .unwrap_or(0);
+
+    let max_version_len = battery_packs
+        .iter()
+        .map(|c| c.max_version.len())
+        .max()
+        .unwrap_or(0);
+
+    println!();
+    for krate in &battery_packs {
+        let short = short_name(&krate.name);
+        let desc = krate
+            .description
+            .as_deref()
+            .unwrap_or("")
+            .lines()
+            .next()
+            .unwrap_or("");
+
+        // Pad strings manually, then apply colors (ANSI codes break width formatting)
+        let name_padded = format!("{:<width$}", short, width = max_name_len);
+        let ver_padded = format!("{:<width$}", krate.max_version, width = max_version_len);
+
+        println!(
+            "  {}  {}  {}",
+            style(name_padded).green().bold(),
+            style(ver_padded).dim(),
+            desc,
+        );
+    }
+    println!();
+
+    println!(
+        "{}",
+        style(format!("Found {} battery pack(s)", battery_packs.len())).dim()
+    );
+
+    Ok(())
+}
+
+/// Convert "cli-battery-pack" to "cli" for display
+fn short_name(crate_name: &str) -> &str {
+    crate_name
+        .strip_suffix("-battery-pack")
+        .unwrap_or(crate_name)
+}
+
+/// Convert "cli" to "cli-battery-pack" (adds suffix if not already present)
+fn resolve_crate_name(name: &str) -> String {
+    if name.ends_with("-battery-pack") {
+        name.to_string()
+    } else {
+        format!("{}-battery-pack", name)
+    }
+}
+
+fn show_battery_pack(name: &str) -> Result<()> {
+    use console::style;
+
+    let crate_name = resolve_crate_name(name);
+    let short = short_name(&crate_name);
+
+    // Look up crate info and download
+    let crate_info = lookup_crate(&crate_name)?;
+    let temp_dir = download_and_extract_crate(&crate_name, &crate_info.version)?;
+    let crate_dir = temp_dir
+        .path()
+        .join(format!("{}-{}", crate_name, crate_info.version));
+
+    // Read and parse Cargo.toml
+    let manifest_path = crate_dir.join("Cargo.toml");
+    let manifest_content = std::fs::read_to_string(&manifest_path)
+        .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
+    let manifest: CargoManifest =
+        toml::from_str(&manifest_content).with_context(|| "Failed to parse Cargo.toml")?;
+
+    // Fetch owners from crates.io
+    let owners = fetch_owners(&crate_name)?;
+
+    // Extract info
+    let package = manifest.package.unwrap_or_default();
+    let description = package.description.as_deref().unwrap_or("");
+    let battery = package
+        .metadata
+        .and_then(|m| m.battery)
+        .unwrap_or_default();
+
+    // Header
+    println!();
+    println!(
+        "{} {}",
+        style(&crate_name).green().bold(),
+        style(&crate_info.version).dim()
+    );
+    if !description.is_empty() {
+        println!("{}", description);
+    }
+
+    // Authors
+    if !owners.is_empty() {
+        println!();
+        println!("{}", style("Authors:").bold());
+        for owner in &owners {
+            if let Some(name) = &owner.name {
+                println!("  {} ({})", name, owner.login);
+            } else {
+                println!("  {}", owner.login);
+            }
+        }
+    }
+
+    // Dependencies (split into battery packs and regular crates)
+    let mut extends: Vec<&str> = Vec::new();
+    let mut crates: Vec<&str> = Vec::new();
+
+    for dep_name in manifest.dependencies.keys() {
+        if dep_name.ends_with("-battery-pack") {
+            extends.push(dep_name);
+        } else if dep_name != "battery-pack" {
+            crates.push(dep_name);
+        }
+    }
+
+    if !crates.is_empty() {
+        println!();
+        println!("{}", style("Crates:").bold());
+        for dep in &crates {
+            println!("  {}", dep);
+        }
+    }
+
+    if !extends.is_empty() {
+        println!();
+        println!("{}", style("Extends:").bold());
+        for dep in &extends {
+            println!("  {}", short_name(dep));
+        }
+    }
+
+    // Templates
+    if !battery.templates.is_empty() {
+        println!();
+        println!("{}", style("Templates:").bold());
+        let max_name_len = battery.templates.keys().map(|k| k.len()).max().unwrap_or(0);
+        for (name, config) in &battery.templates {
+            let name_padded = format!("{:<width$}", name, width = max_name_len);
+            if let Some(desc) = &config.description {
+                println!("  {}  {}", style(name_padded).cyan(), desc);
+            } else {
+                println!("  {}", style(name_padded).cyan());
+            }
+        }
+    }
+
+    // Install hints
+    println!();
+    println!("{}", style("Install:").bold());
+    println!("  cargo bp add {}", short);
+    println!("  cargo bp new {}", short);
+    println!();
+
+    Ok(())
+}
+
+fn fetch_owners(crate_name: &str) -> Result<Vec<Owner>> {
+    let client = reqwest::blocking::Client::builder()
+        .user_agent("cargo-bp (https://github.com/battery-pack-rs/battery-pack)")
+        .build()?;
+
+    let url = format!("{}/{}/owners", CRATES_IO_API, crate_name);
+    let response = client
+        .get(&url)
+        .send()
+        .with_context(|| format!("Failed to fetch owners for '{}'", crate_name))?;
+
+    if !response.status().is_success() {
+        // Not fatal - just return empty
+        return Ok(Vec::new());
+    }
+
+    let parsed: OwnersResponse = response
+        .json()
+        .with_context(|| "Failed to parse owners response")?;
+
+    Ok(parsed.users)
 }

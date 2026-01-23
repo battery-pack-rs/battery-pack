@@ -17,3 +17,5 @@ toml.workspace = true
 flate2 = "1"
 tar = "0.4"
 tempfile = "3"
+console = "0.15"
+urlencoding = "2"
