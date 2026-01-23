@@ -843,7 +843,7 @@ fn is_rust_keyword(s: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use expect_test::{expect, Expect};
+    use expect_test::{Expect, expect};
 
     fn check(manifest_toml: &str, resolver: InMemoryResolver, expect: Expect) {
         check_with_descriptions(manifest_toml, resolver, &BTreeMap::new(), expect);

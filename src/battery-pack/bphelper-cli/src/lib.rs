@@ -1,6 +1,6 @@
 //! CLI for battery-pack: create and manage battery packs.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use cargo_generate::{GenerateArgs, TemplatePath, Vcs};
 use clap::{Parser, Subcommand};
 use flate2::read::GzDecoder;
@@ -288,7 +288,9 @@ fn new_from_battery_pack(
 
     // Download and extract the crate to a temp directory
     let temp_dir = download_and_extract_crate(&crate_name, &crate_info.version)?;
-    let crate_dir = temp_dir.path().join(format!("{}-{}", crate_name, crate_info.version));
+    let crate_dir = temp_dir
+        .path()
+        .join(format!("{}-{}", crate_name, crate_info.version));
 
     // Read template metadata from the extracted Cargo.toml
     let manifest_path = crate_dir.join("Cargo.toml");
@@ -411,16 +413,16 @@ fn lookup_crate(crate_name: &str) -> Result<CrateMetadata> {
 }
 
 /// Download a crate tarball and extract it to a temp directory
-fn download_and_extract_crate(
-    crate_name: &str,
-    version: &str,
-) -> Result<tempfile::TempDir> {
+fn download_and_extract_crate(crate_name: &str, version: &str) -> Result<tempfile::TempDir> {
     let client = reqwest::blocking::Client::builder()
         .user_agent("cargo-bp (https://github.com/battery-pack-rs/battery-pack)")
         .build()?;
 
     // Download from CDN: https://static.crates.io/crates/{name}/{name}-{version}.crate
-    let url = format!("{}/{}/{}-{}.crate", CRATES_IO_CDN, crate_name, crate_name, version);
+    let url = format!(
+        "{}/{}/{}-{}.crate",
+        CRATES_IO_CDN, crate_name, crate_name, version
+    );
 
     let response = client
         .get(&url)
@@ -509,7 +511,7 @@ fn resolve_template(
 }
 
 fn prompt_for_template(templates: &BTreeMap<String, TemplateConfig>) -> Result<String> {
-    use dialoguer::{theme::ColorfulTheme, Select};
+    use dialoguer::{Select, theme::ColorfulTheme};
 
     // Build display items with descriptions
     let items: Vec<String> = templates
@@ -688,10 +690,7 @@ pub fn fetch_battery_pack_detail(name: &str, path: Option<&str>) -> Result<Batte
     let package = manifest.package.unwrap_or_default();
     let description = package.description.clone().unwrap_or_default();
     let repository = package.repository.clone();
-    let battery = package
-        .metadata
-        .and_then(|m| m.battery)
-        .unwrap_or_default();
+    let battery = package.metadata.and_then(|m| m.battery).unwrap_or_default();
 
     // Split dependencies into battery packs and regular crates
     let mut extends = Vec::new();
@@ -746,14 +745,17 @@ fn fetch_battery_pack_detail_from_path(path: &str) -> Result<BatteryPackDetail> 
 
     // Extract info
     let package = manifest.package.unwrap_or_default();
-    let crate_name = package.name.clone().unwrap_or_else(|| "unknown".to_string());
-    let version = package.version.clone().unwrap_or_else(|| "0.0.0".to_string());
+    let crate_name = package
+        .name
+        .clone()
+        .unwrap_or_else(|| "unknown".to_string());
+    let version = package
+        .version
+        .clone()
+        .unwrap_or_else(|| "0.0.0".to_string());
     let description = package.description.clone().unwrap_or_default();
     let repository = package.repository.clone();
-    let battery = package
-        .metadata
-        .and_then(|m| m.battery)
-        .unwrap_or_default();
+    let battery = package.metadata.and_then(|m| m.battery).unwrap_or_default();
 
     // Split dependencies into battery packs and regular crates
     let mut extends = Vec::new();

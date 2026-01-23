@@ -2,9 +2,9 @@
 //!
 //! Run with: `cargo run --example mini-grep -- <pattern> [path]`
 
+use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use std::fs::File;
 
 use cli_battery_pack::anyhow::{Context, Result};
 use cli_battery_pack::clap::Parser;
@@ -41,8 +41,7 @@ fn main() -> Result<()> {
     } else {
         args.pattern.clone()
     };
-    let regex = Regex::new(&pattern)
-        .with_context(|| format!("Invalid regex: {}", args.pattern))?;
+    let regex = Regex::new(&pattern).with_context(|| format!("Invalid regex: {}", args.pattern))?;
 
     // Walk directory, respecting .gitignore
     for entry in WalkBuilder::new(&args.path).build() {

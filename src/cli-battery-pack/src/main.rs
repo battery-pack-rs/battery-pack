@@ -1,7 +1,7 @@
 //! cli-battery-pack CLI — initialize projects, view docs, etc.
 
-use cli_battery_pack::{anyhow, clap};
 use clap::{Parser, Subcommand};
+use cli_battery_pack::{anyhow, clap};
 
 #[derive(Parser)]
 #[command(name = "cli-battery-pack")]
@@ -37,7 +37,10 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::Init { name, template } => {
-            println!("TODO: Initialize project '{}' with template '{}'", name, template);
+            println!(
+                "TODO: Initialize project '{}' with template '{}'",
+                name, template
+            );
             // Will use cargo-generate here
         }
         Commands::Templates => {

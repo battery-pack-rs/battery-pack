@@ -1,14 +1,16 @@
 //! Interactive TUI for battery-pack CLI.
 
-use crate::{fetch_battery_pack_detail, fetch_battery_pack_list, BatteryPackDetail, BatteryPackSummary};
+use crate::{
+    BatteryPackDetail, BatteryPackSummary, fetch_battery_pack_detail, fetch_battery_pack_list,
+};
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use ratatui::{
+    Frame,
     layout::{Constraint, Flex, Layout, Position, Rect},
     style::{Color, Modifier, Style, Stylize},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
-    Frame,
 };
 use std::time::Duration;
 
@@ -51,8 +53,14 @@ struct LoadingState {
 }
 
 enum LoadingTarget {
-    List { filter: Option<String> },
-    Detail { name: String, path: Option<String>, came_from_list: bool },
+    List {
+        filter: Option<String>,
+    },
+    Detail {
+        name: String,
+        path: Option<String>,
+        came_from_list: bool,
+    },
 }
 
 struct ListScreen {
@@ -162,11 +170,22 @@ enum FormField {
 
 enum PendingAction {
     /// Open a URL in the browser (generic)
-    OpenUrl { url: String },
+    OpenUrl {
+        url: String,
+    },
     /// Open crates.io for the battery pack
-    OpenCratesIo { crate_name: String },
-    AddToProject { battery_pack: String },
-    NewProject { battery_pack: String, template: Option<String>, directory: String, name: String },
+    OpenCratesIo {
+        crate_name: String,
+    },
+    AddToProject {
+        battery_pack: String,
+    },
+    NewProject {
+        battery_pack: String,
+        template: Option<String>,
+        directory: String,
+        name: String,
+    },
 }
 
 // ============================================================================
@@ -250,7 +269,11 @@ impl App {
                         filter: filter.clone(),
                     });
                 }
-                LoadingTarget::Detail { name, path, came_from_list } => {
+                LoadingTarget::Detail {
+                    name,
+                    path,
+                    came_from_list,
+                } => {
                     let detail = fetch_battery_pack_detail(name, path.as_deref())?;
                     // Start selection at first action (after crates/extends/templates/examples)
                     let initial_index = detail.crates.len()
@@ -300,7 +323,12 @@ impl App {
                 println!("\nPress Enter to return to TUI...");
                 let _ = std::io::stdin().read_line(&mut String::new());
             }
-            PendingAction::NewProject { battery_pack, template, directory, name } => {
+            PendingAction::NewProject {
+                battery_pack,
+                template,
+                directory,
+                name,
+            } => {
                 let mut cmd = std::process::Command::new("cargo");
                 cmd.args(["bp", "new", battery_pack, "-n", name]);
                 if let Some(tmpl) = template {
@@ -329,14 +357,28 @@ impl App {
             DetailNext,
             DetailPrev,
             OpenCratesIoUrl(String),
-            OpenTemplate { repository: Option<String>, path: String },
-            OpenExample { repository: Option<String>, name: String },
+            OpenTemplate {
+                repository: Option<String>,
+                path: String,
+            },
+            OpenExample {
+                repository: Option<String>,
+                name: String,
+            },
             DetailOpenCratesIo(String),
             DetailAdd(String),
             DetailNewProject(BatteryPackDetail, Option<String>, usize, bool),
             DetailBack(bool),
             FormToggleField,
-            FormSubmit(String, Option<String>, String, String, BatteryPackDetail, usize, bool),
+            FormSubmit(
+                String,
+                Option<String>,
+                String,
+                String,
+                BatteryPackDetail,
+                usize,
+                bool,
+            ),
             FormCancel(BatteryPackDetail, usize, bool),
             FormChar(char),
             FormBackspace,
@@ -368,9 +410,7 @@ impl App {
                 KeyCode::Enter => {
                     if let Some(item) = state.selected_item() {
                         match item {
-                            DetailItem::Crate(crate_name) => {
-                                Action::OpenCratesIoUrl(crate_name)
-                            }
+                            DetailItem::Crate(crate_name) => Action::OpenCratesIoUrl(crate_name),
                             DetailItem::Extends(bp_name) => {
                                 // Extends are battery packs, resolve to full name
                                 let full_name = if bp_name.ends_with("-battery-pack") {
@@ -380,18 +420,14 @@ impl App {
                                 };
                                 Action::OpenCratesIoUrl(full_name)
                             }
-                            DetailItem::Template(path) => {
-                                Action::OpenTemplate {
-                                    repository: state.detail.repository.clone(),
-                                    path,
-                                }
-                            }
-                            DetailItem::Example(name) => {
-                                Action::OpenExample {
-                                    repository: state.detail.repository.clone(),
-                                    name,
-                                }
-                            }
+                            DetailItem::Template(path) => Action::OpenTemplate {
+                                repository: state.detail.repository.clone(),
+                                path,
+                            },
+                            DetailItem::Example(name) => Action::OpenExample {
+                                repository: state.detail.repository.clone(),
+                                name,
+                            },
                             DetailItem::ActionOpenCratesIo => {
                                 Action::DetailOpenCratesIo(state.detail.name.clone())
                             }
@@ -415,7 +451,10 @@ impl App {
                     // 'n' creates new project with currently selected template (if a template is selected)
                     if let Some(DetailItem::Template(path)) = state.selected_item() {
                         // Find the template name from the path
-                        let template_name = state.detail.templates.iter()
+                        let template_name = state
+                            .detail
+                            .templates
+                            .iter()
                             .find(|t| t.path == path)
                             .map(|t| t.name.clone());
                         Action::DetailNewProject(
@@ -570,7 +609,15 @@ impl App {
                     };
                 }
             }
-            Action::FormSubmit(battery_pack, template, directory, name, detail, selected_index, came_from_list) => {
+            Action::FormSubmit(
+                battery_pack,
+                template,
+                directory,
+                name,
+                detail,
+                selected_index,
+                came_from_list,
+            ) => {
                 self.pending_action = Some(PendingAction::NewProject {
                     battery_pack,
                     template,
@@ -906,7 +953,10 @@ fn render_detail(frame: &mut Frame, state: &DetailScreen) {
     };
     let template_selected = matches!(state.selected_item(), Some(DetailItem::Template(_)));
     let footer_text = if template_selected {
-        format!("↑↓/jk Navigate | Enter Open | n New project | {}", back_hint)
+        format!(
+            "↑↓/jk Navigate | Enter Open | n New project | {}",
+            back_hint
+        )
     } else {
         format!("↑↓/jk Navigate | Enter Open/Select | {}", back_hint)
     };
@@ -964,8 +1014,11 @@ fn render_form(frame: &mut Frame, state: &FormScreen) {
         Style::default().fg(Color::DarkGray)
     };
     frame.render_widget(
-        Paragraph::new(state.directory.as_str())
-            .block(Block::default().borders(Borders::ALL).border_style(dir_style)),
+        Paragraph::new(state.directory.as_str()).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(dir_style),
+        ),
         dir_input,
     );
 
@@ -981,8 +1034,11 @@ fn render_form(frame: &mut Frame, state: &FormScreen) {
         Style::default().fg(Color::DarkGray)
     };
     frame.render_widget(
-        Paragraph::new(state.project_name.as_str())
-            .block(Block::default().borders(Borders::ALL).border_style(name_style)),
+        Paragraph::new(state.project_name.as_str()).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(name_style),
+        ),
         name_input,
     );
 
@@ -997,7 +1053,10 @@ fn render_form(frame: &mut Frame, state: &FormScreen) {
     // Show cursor in active field
     let (cursor_area, cursor_x) = match state.focused_field {
         FormField::Directory => (dir_input, state.cursor_position.min(state.directory.len())),
-        FormField::ProjectName => (name_input, state.cursor_position.min(state.project_name.len())),
+        FormField::ProjectName => (
+            name_input,
+            state.cursor_position.min(state.project_name.len()),
+        ),
     };
     // +1 for border
     frame.set_cursor_position(Position::new(

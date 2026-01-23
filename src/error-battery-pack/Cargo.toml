@@ -1,6 +1,6 @@
 [package]
 name = "error-battery-pack"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Battery pack for error handling in Rust"
 license = "MIT OR Apache-2.0"
@@ -14,7 +14,7 @@ schema_version = 1
 path = "src/lib.rs"
 
 [build-dependencies]
-battery-pack = { path = "../battery-pack", version = "0.1.0" }
+battery-pack = { path = "../battery-pack", version = "0.2.0" }
 
 [dependencies]
 anyhow = "1"
