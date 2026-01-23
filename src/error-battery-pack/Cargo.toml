@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Battery pack for error handling in Rust"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/nikomatsakis/battery-pack"
+repository = "https://github.com/battery-pack-rs/battery-pack"
 keywords = ["battery-pack", "error", "anyhow", "thiserror"]
 
 [package.metadata.battery]

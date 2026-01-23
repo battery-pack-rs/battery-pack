@@ -4,7 +4,7 @@ version = "0.1.1"
 edition = "2024"
 description = "Build-time facade generation for battery packs"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/nikomatsakis/battery-pack"
+repository = "https://github.com/battery-pack-rs/battery-pack"
 keywords = ["battery-pack", "build", "codegen"]
 
 [dependencies]
