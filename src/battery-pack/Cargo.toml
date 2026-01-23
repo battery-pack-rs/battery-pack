@@ -2,6 +2,10 @@
 name = "battery-pack"
 version = "0.1.0"
 edition = "2024"
+description = "Curated crate bundles with docs, templates, and agentic skills"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/nikomatsakis/battery-pack"
+keywords = ["battery-pack", "curation", "templates", "cargo"]
 
 [[bin]]
 name = "cargo-bp"
