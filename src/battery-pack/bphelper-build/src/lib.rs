@@ -10,6 +10,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 use std::env;
+use std::fmt::Write;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -307,9 +308,9 @@ fn generate_examples_section(manifest_dir: &Path) -> Option<String> {
 
     for (name, desc) in &examples {
         if desc.is_empty() {
-            md.push_str(&format!("- **{}**\n", name));
+            writeln!(&mut md, "- **{}**", name).unwrap();
         } else {
-            md.push_str(&format!("- **{}** — {}\n", name, desc));
+            writeln!(&mut md, "- **{}** — {}", name, desc).unwrap();
         }
     }
 
@@ -361,10 +362,12 @@ fn generate_templates_section(
 
     for name in template_names {
         let template = &templates[name];
-        md.push_str(&format!(
-            "- `cargo bp new {} --template {}` — {}\n",
+        writeln!(
+            &mut md,
+            "- `cargo bp new {} --template {}` — {}",
             short_name, name, template.description
-        ));
+        )
+        .unwrap();
     }
 
     Some(md)
@@ -629,7 +632,7 @@ impl<'a, R: BatteryPackResolver> FacadeGenerator<'a, R> {
                 None => String::new(),
             };
 
-            md.push_str(&format!("- [`{}`] — {}{}\n", ident, desc, attribution));
+            writeln!(&mut md, "- [`{}`] — {}{}", ident, desc, attribution).unwrap();
         }
 
         md
