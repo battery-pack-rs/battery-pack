@@ -1,0 +1,88 @@
+name: Build Binaries
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g., battery-pack-v0.2.0)'
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'battery-pack-v') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            archive: tar.gz
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            archive: zip
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }} -p battery-pack
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Extract version from input tag (battery-pack-v0.2.0 -> v0.2.0)
+            VERSION=$(echo "${{ inputs.tag }}" | sed 's/battery-pack-//')
+          else
+            # Extract version from release tag
+            VERSION=$(echo "${{ github.event.release.tag_name }}" | sed 's/battery-pack-//')
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Package binary (Unix)
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar -czvf ../../../cargo-bp-${{ matrix.target }}-${{ steps.version.outputs.version }}.tar.gz cargo-bp
+
+      - name: Package binary (Windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          cd target/${{ matrix.target }}/release
+          Compress-Archive -Path cargo-bp.exe -DestinationPath ../../../cargo-bp-${{ matrix.target }}-${{ steps.version.outputs.version }}.zip
+
+      - name: Upload release asset
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: cargo-bp-${{ matrix.target }}-${{ steps.version.outputs.version }}.${{ matrix.archive }}
+
+      - name: Upload artifact (for workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-bp-${{ matrix.target }}
+          path: cargo-bp-${{ matrix.target }}-${{ steps.version.outputs.version }}.${{ matrix.archive }}

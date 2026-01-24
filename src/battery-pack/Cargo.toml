@@ -7,6 +7,16 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/battery-pack-rs/battery-pack"
 keywords = ["battery-pack", "curation", "templates", "cargo"]
 
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/{ name }-v{ version }/cargo-bp-{ target }-v{ version }{ archive-suffix }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
+
+[package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
+pkg-fmt = "zip"
+
 [[bin]]
 name = "cargo-bp"
 path = "src/main.rs"
