@@ -96,9 +96,19 @@ enum DetailItem {
 }
 
 impl DetailScreen {
+    /// Get the total count of selectable items without building the full vector.
+    /// This is more efficient for navigation operations that only need the count.
+    fn item_count(&self) -> usize {
+        self.detail.crates.len()
+            + self.detail.extends.len()
+            + self.detail.templates.len()
+            + self.detail.examples.len()
+            + 3 // actions: OpenCratesIo, AddToProject, NewProject
+    }
+
     /// Build a list of all selectable items in order
     fn selectable_items(&self) -> Vec<DetailItem> {
-        let mut items = Vec::new();
+        let mut items = Vec::with_capacity(self.item_count());
 
         // Crates
         for crate_name in &self.detail.crates {
@@ -139,14 +149,14 @@ impl DetailScreen {
     }
 
     fn select_next(&mut self) {
-        let count = self.selectable_items().len();
+        let count = self.item_count();
         if count > 0 {
             self.selected_index = (self.selected_index + 1) % count;
         }
     }
 
     fn select_prev(&mut self) {
-        let count = self.selectable_items().len();
+        let count = self.item_count();
         if count > 0 {
             self.selected_index = (self.selected_index + count - 1) % count;
         }
