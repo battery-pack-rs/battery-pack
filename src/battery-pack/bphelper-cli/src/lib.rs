@@ -699,83 +699,28 @@ pub fn fetch_battery_pack_detail(name: &str, path: Option<&str>) -> Result<Batte
         .path()
         .join(format!("{}-{}", crate_name, crate_info.version));
 
-    // Read and parse Cargo.toml
-    let manifest_path = crate_dir.join("Cargo.toml");
-    let manifest_content = std::fs::read_to_string(&manifest_path)
-        .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
-    let manifest: CargoManifest =
-        toml::from_str(&manifest_content).with_context(|| "Failed to parse Cargo.toml")?;
-
     // Fetch owners from crates.io
     let owners = fetch_owners(&crate_name)?;
 
-    // Extract info
-    let package = manifest.package.unwrap_or_default();
-    let description = package.description.clone().unwrap_or_default();
-    let repository = package.repository.clone();
-    let battery = package.metadata.and_then(|m| m.battery).unwrap_or_default();
-
-    // Split dependencies into battery packs and regular crates
-    let mut extends = Vec::new();
-    let mut crates = Vec::new();
-
-    for dep_name in manifest.dependencies.keys() {
-        if dep_name.ends_with("-battery-pack") {
-            extends.push(short_name(dep_name).to_string());
-        } else if dep_name != "battery-pack" {
-            crates.push(dep_name.clone());
-        }
-    }
-
-    // Fetch the GitHub repository tree to resolve paths
-    let repo_tree = repository.as_ref().and_then(|r| fetch_github_tree(r));
-
-    // Convert templates with resolved repo paths
-    let templates = battery
-        .templates
-        .into_iter()
-        .map(|(name, config)| {
-            let repo_path = repo_tree
-                .as_ref()
-                .and_then(|tree| find_template_path(tree, &config.path));
-            TemplateInfo {
-                name,
-                path: config.path,
-                description: config.description,
-                repo_path,
-            }
-        })
-        .collect();
-
-    // Scan examples directory
-    let examples = scan_examples(&crate_dir, repo_tree.as_deref());
-
-    Ok(BatteryPackDetail {
-        short_name: short_name(&crate_name).to_string(),
-        name: crate_name,
-        version: crate_info.version,
-        description,
-        repository,
-        owners: owners.into_iter().map(OwnerInfo::from).collect(),
-        crates,
-        extends,
-        templates,
-        examples,
-    })
+    build_battery_pack_detail(
+        &crate_dir,
+        crate_name,
+        crate_info.version,
+        owners,
+    )
 }
 
 /// Fetch detailed battery pack info from a local path
 fn fetch_battery_pack_detail_from_path(path: &str) -> Result<BatteryPackDetail> {
     let crate_dir = std::path::Path::new(path);
 
-    // Read and parse Cargo.toml
+    // Read Cargo.toml to extract name and version
     let manifest_path = crate_dir.join("Cargo.toml");
     let manifest_content = std::fs::read_to_string(&manifest_path)
         .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
     let manifest: CargoManifest =
         toml::from_str(&manifest_content).with_context(|| "Failed to parse Cargo.toml")?;
 
-    // Extract info
     let package = manifest.package.unwrap_or_default();
     let crate_name = package
         .name
@@ -785,6 +730,32 @@ fn fetch_battery_pack_detail_from_path(path: &str) -> Result<BatteryPackDetail> 
         .version
         .clone()
         .unwrap_or_else(|| "0.0.0".to_string());
+
+    build_battery_pack_detail(
+        crate_dir,
+        crate_name,
+        version,
+        Vec::new(), // No owners for local path
+    )
+}
+
+/// Helper function to build BatteryPackDetail from already-resolved parameters.
+/// Contains shared logic for both crates.io and local path sources.
+fn build_battery_pack_detail(
+    crate_dir: &Path,
+    crate_name: String,
+    version: String,
+    owners: Vec<Owner>,
+) -> Result<BatteryPackDetail> {
+    // Read and parse Cargo.toml
+    let manifest_path = crate_dir.join("Cargo.toml");
+    let manifest_content = std::fs::read_to_string(&manifest_path)
+        .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
+    let manifest: CargoManifest =
+        toml::from_str(&manifest_content).with_context(|| "Failed to parse Cargo.toml")?;
+
+    // Extract info
+    let package = manifest.package.unwrap_or_default();
     let description = package.description.clone().unwrap_or_default();
     let repository = package.repository.clone();
     let battery = package.metadata.and_then(|m| m.battery).unwrap_or_default();
@@ -830,7 +801,7 @@ fn fetch_battery_pack_detail_from_path(path: &str) -> Result<BatteryPackDetail> 
         version,
         description,
         repository,
-        owners: Vec::new(), // No owners for local path
+        owners: owners.into_iter().map(OwnerInfo::from).collect(),
         crates,
         extends,
         templates,
