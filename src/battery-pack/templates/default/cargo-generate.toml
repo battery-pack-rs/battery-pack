@@ -5,5 +5,7 @@ ignore = ["hooks"]
 [hooks]
 pre = ["hooks/pre-script.rhai"]
 
-[placeholders]
-# No additional placeholders - cargo-generate provides project-name, crate_name, authors
+[placeholders.description]
+type = "string"
+prompt = "What does this battery pack provide?"
+default = "A battery pack for ..."

@@ -379,6 +379,13 @@ fn generate_from_local(
 }
 
 fn generate_from_path(crate_path: &Path, template_path: &str, name: Option<String>) -> Result<()> {
+    // In non-interactive mode, provide defaults for placeholders
+    let define = if !std::io::stdout().is_terminal() {
+        vec!["description=A battery pack for ...".to_string()]
+    } else {
+        vec![]
+    };
+
     let args = GenerateArgs {
         template_path: TemplatePath {
             path: Some(crate_path.to_string_lossy().into_owned()),
@@ -387,6 +394,7 @@ fn generate_from_path(crate_path: &Path, template_path: &str, name: Option<Strin
         },
         name,
         vcs: Some(Vcs::Git),
+        define,
         ..Default::default()
     };
 
