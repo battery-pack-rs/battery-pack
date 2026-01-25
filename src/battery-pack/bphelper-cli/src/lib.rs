@@ -678,8 +678,9 @@ fn short_name(crate_name: &str) -> &str {
 }
 
 /// Convert "cli" to "cli-battery-pack" (adds suffix if not already present)
+/// Special case: "battery-pack" stays as "battery-pack" (not "battery-pack-battery-pack")
 fn resolve_crate_name(name: &str) -> String {
-    if name.ends_with("-battery-pack") {
+    if name == "battery-pack" || name.ends_with("-battery-pack") {
         name.to_string()
     } else {
         format!("{}-battery-pack", name)
