@@ -6,6 +6,7 @@ description = "Curated crate bundles with docs, templates, and agentic skills"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/battery-pack-rs/battery-pack"
 keywords = ["battery-pack", "curation", "templates", "cargo"]
+readme = "README.md"
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/{ name }-v{ version }/cargo-bp-{ target }-v{ version }{ archive-suffix }"
