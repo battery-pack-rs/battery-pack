@@ -1,6 +1,6 @@
 [package]
 name = "battery-pack"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 description = "Curated crate bundles with docs, templates, and agentic skills"
 license = "MIT OR Apache-2.0"
@@ -22,8 +22,8 @@ name = "cargo-bp"
 path = "src/main.rs"
 
 [dependencies]
-bphelper-build = { path = "bphelper-build", version = "0.2.0" }
-bphelper-cli = { path = "bphelper-cli", version = "0.2.0" }
+bphelper-build = { path = "bphelper-build", version = "0.3.0" }
+bphelper-cli = { path = "bphelper-cli", version = "0.3.0" }
 anyhow.workspace = true
 
 [dev-dependencies]

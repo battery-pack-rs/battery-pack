@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0](https://github.com/battery-pack-rs/battery-pack/releases/tag/bphelper-cli-v0.2.0) - 2026-01-23
+## [0.3.0](https://github.com/battery-pack-rs/battery-pack/releases/tag/bphelper-cli-v0.3.0) - 2026-01-23
 
 ### Added
 
