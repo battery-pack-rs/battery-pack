@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.3.0...battery-pack-v0.3.1) - 2026-01-28
+
+### Added
+
+- add description placeholder to battery-pack template
+- validate battery pack names must end with -battery-pack
+- add default template for authoring battery packs
+
+### Fixed
+
+- update default template to use battery-pack correctly
+- use generated docs
+- special-case "battery-pack" in crate name resolution
+
+### Other
+
+- add README.md for battery-pack crate
+
 ## [0.3.0](https://github.com/battery-pack-rs/battery-pack/releases/tag/battery-pack-v0.3.0) - 2026-01-23
 
 ### Added

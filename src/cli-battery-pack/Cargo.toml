@@ -1,6 +1,6 @@
 [package]
 name = "cli-battery-pack"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 description = "Battery pack for building CLI applications in Rust"
 license = "MIT OR Apache-2.0"
@@ -22,12 +22,12 @@ name = "cli-battery-pack"
 path = "src/main.rs"
 
 [build-dependencies]
-battery-pack = { path = "../battery-pack", version = "0.3.0" }
+battery-pack = { path = "../battery-pack", version = "0.3.1" }
 
 [dependencies]
 # Re-export from other battery packs
-error-battery-pack = { path = "../error-battery-pack", version = "0.3.0" }
-logging-battery-pack = { path = "../logging-battery-pack", version = "0.3.0" }
+error-battery-pack = { path = "../error-battery-pack", version = "0.3.1" }
+logging-battery-pack = { path = "../logging-battery-pack", version = "0.3.1" }
 
 # CLI-specific crates
 clap = { version = "4", features = ["derive"] }
