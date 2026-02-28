@@ -137,6 +137,7 @@ pub enum BpCommands {
     },
 
     /// List available battery packs on crates.io
+    #[command(visible_alias = "ls")]
     List {
         /// Filter by name (omit to list all battery packs)
         filter: Option<String>,
@@ -147,6 +148,7 @@ pub enum BpCommands {
     },
 
     /// Show detailed information about a battery pack
+    #[command(visible_alias = "info")]
     Show {
         /// Name of the battery pack (e.g., "cli" resolves to "cli-battery-pack")
         battery_pack: String,
@@ -161,6 +163,7 @@ pub enum BpCommands {
     },
 
     /// Show status of installed battery packs and version warnings
+    #[command(visible_alias = "stat")]
     Status {
         // [impl cli.path.subcommands]
         /// Use a local path instead of downloading from crates.io
