@@ -1,0 +1,24 @@
+[package]
+name = "cli-battery-pack"
+version = "0.4.0"
+edition = "2024"
+description = "Battery pack for building CLI applications in Rust"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/battery-pack-rs/battery-pack"
+keywords = ["battery-pack", "cli", "clap", "terminal"]
+
+[package.metadata.battery.templates]
+simple = { path = "templates/simple", description = "Minimal CLI with argument parsing" }
+subcmds = { path = "templates/subcmds", description = "CLI with subcommands" }
+
+[dependencies]
+battery-pack.workspace = true
+
+[dev-dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+console = "0.15"
+indicatif = "0.17"
+dialoguer = "0.11"
+regex = "1"
+ignore = "0.4"

@@ -1,0 +1,16 @@
+[package]
+name = "error-battery-pack"
+version = "0.4.0"
+edition = "2024"
+description = "Error handling done well — anyhow for apps, thiserror for libraries"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/battery-pack-rs/battery-pack"
+readme = "README.md"
+keywords = ["battery-pack", "error-handling", "anyhow", "thiserror"]
+
+[dependencies]
+battery-pack.workspace = true
+
+[dev-dependencies]
+anyhow = "1"
+thiserror = "2"
