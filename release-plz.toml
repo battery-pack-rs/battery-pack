@@ -1,0 +1,18 @@
+# All crates get published to crates.io when their version changes,
+# but only `battery-pack` gets a GitHub release (tag + release notes).
+[workspace]
+git_release_enable = false
+
+[[package]]
+name = "battery-pack"
+git_release_enable = true
+# Roll commits from these crates into the battery-pack changelog,
+# so the GitHub release notes cover the whole workspace.
+changelog_include = [
+    "bphelper-build",
+    "bphelper-cli",
+    "bphelper-manifest",
+    "cli-battery-pack",
+    "error-battery-pack",
+    "logging-battery-pack",
+]
