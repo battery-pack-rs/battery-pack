@@ -1,6 +1,6 @@
 # {{project-name}}
 
-A curated battery pack for ...
+{{description}}
 
 ## What's Included
 
@@ -8,17 +8,8 @@ A curated battery pack for ...
 
 ## Usage
 
-Add to your `Cargo.toml`:
-
-```toml
-[dependencies]
-{{project-name}} = "0.1"
-```
-
-Then use the re-exported crates:
-
-```rust
-use {{crate_name}}::*;
+```sh
+cargo bp add {{project-name}}
 ```
 
 ## License
