@@ -12,7 +12,17 @@ changelog_include = [
     "bphelper-build",
     "bphelper-cli",
     "bphelper-manifest",
-    "cli-battery-pack",
-    "error-battery-pack",
-    "logging-battery-pack",
 ]
+
+# TODO: re-enable once trusted publishing is set up
+[[package]]
+name = "cli-battery-pack"
+release = false
+
+[[package]]
+name = "error-battery-pack"
+release = false
+
+[[package]]
+name = "logging-battery-pack"
+release = false
