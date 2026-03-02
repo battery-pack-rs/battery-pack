@@ -2283,17 +2283,18 @@ fn build_battery_pack_detail(
     spec: &bphelper_manifest::BatteryPackSpec,
     owners: Vec<Owner>,
 ) -> Result<BatteryPackDetail> {
-    // Split crate keys into battery packs (extends) and regular crates
+    // Split visible (non-hidden) crate keys into battery packs (extends) and regular crates
+    // [impl format.hidden.effect]
     let (extends_raw, crates_raw): (Vec<_>, Vec<_>) = spec
-        .crates
-        .keys()
+        .visible_crates()
+        .into_keys()
         .partition(|d| d.ends_with("-battery-pack"));
 
     let extends: Vec<String> = extends_raw
         .into_iter()
         .map(|d| short_name(d).to_string())
         .collect();
-    let crates: Vec<String> = crates_raw.into_iter().cloned().collect();
+    let crates: Vec<String> = crates_raw.into_iter().map(|s| s.to_string()).collect();
 
     // Fetch the GitHub repository tree to resolve paths
     let repo_tree = spec.repository.as_ref().and_then(|r| fetch_github_tree(r));

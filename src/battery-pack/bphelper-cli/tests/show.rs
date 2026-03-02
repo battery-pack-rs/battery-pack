@@ -22,15 +22,13 @@ fn show_detail_excludes_hidden_crates() {
         bphelper_cli::fetch_battery_pack_detail("fancy", Some(fancy_path.to_str().unwrap()))
             .unwrap();
 
-    // BUG: hidden = ["serde*", "cc"] in the fancy fixture, but show
-    // currently includes them. These assertions are inverted to document
-    // the broken behaviour; the fix commit will flip them.
+    // hidden = ["serde*", "cc"] in the fancy fixture
     assert!(
-        detail.crates.iter().any(|c| c == "serde"),
-        "hidden crate 'serde' unexpectedly filtered (bug not present?)"
+        !detail.crates.iter().any(|c| c == "serde"),
+        "hidden crate 'serde' should not appear in detail"
     );
     assert!(
-        detail.crates.iter().any(|c| c == "serde_json"),
-        "hidden crate 'serde_json' unexpectedly filtered (bug not present?)"
+        !detail.crates.iter().any(|c| c == "serde_json"),
+        "hidden crate 'serde_json' should not appear in detail"
     );
 }
