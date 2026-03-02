@@ -9,8 +9,11 @@ readme = "README.md"
 keywords = ["battery-pack", "error-handling", "anyhow", "thiserror"]
 
 [dependencies]
+anyhow = { version = "1", optional = true }
+thiserror = { version = "2", optional = true }
+
+[build-dependencies]
 battery-pack.workspace = true
 
-[dev-dependencies]
-anyhow = "1"
-thiserror = "2"
+[features]
+default = ["anyhow", "thiserror"]
