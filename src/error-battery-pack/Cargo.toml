@@ -9,6 +9,7 @@ readme = "README.md"
 keywords = ["battery-pack", "error-handling", "anyhow", "thiserror"]
 
 [dependencies]
+battery-pack = { workspace = true }
 anyhow = { version = "1", optional = true }
 thiserror = { version = "2", optional = true }
 
@@ -17,3 +18,6 @@ battery-pack.workspace = true
 
 [features]
 default = ["anyhow", "thiserror"]
+
+[package.metadata.battery-pack]
+hidden = ["battery-pack"]

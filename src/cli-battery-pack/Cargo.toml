@@ -11,7 +11,11 @@ keywords = ["battery-pack", "cli", "clap", "terminal"]
 simple = { path = "templates/simple", description = "Minimal CLI with argument parsing" }
 subcmds = { path = "templates/subcmds", description = "CLI with subcommands" }
 
+[package.metadata.battery-pack]
+hidden = ["battery-pack"]
+
 [dependencies]
+battery-pack = { workspace = true }
 anyhow = { version = "1", optional = true }
 clap = { version = "4", features = ["derive"], optional = true }
 console = { version = "0.15", optional = true }

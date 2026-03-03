@@ -8,6 +8,7 @@ repository = "https://github.com/battery-pack-rs/battery-pack"
 keywords = ["battery-pack", "logging", "tracing"]
 
 [dependencies]
+battery-pack = { workspace = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 
@@ -16,3 +17,6 @@ battery-pack.workspace = true
 
 [features]
 default = ["tracing", "tracing-subscriber"]
+
+[package.metadata.battery-pack]
+hidden = ["battery-pack"]
