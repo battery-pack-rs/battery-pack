@@ -33,8 +33,9 @@ jobs:
 
   release-plz-pr:
     name: Release-plz PR
+    needs: release-plz-release
     runs-on: ubuntu-latest
-    if: ${{ github.repository_owner == 'battery-pack-rs' }}
+    if: ${{ !failure() && github.repository_owner == 'battery-pack-rs' }}
     permissions:
       pull-requests: write
       contents: write
