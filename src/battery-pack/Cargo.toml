@@ -1,6 +1,6 @@
 [package]
 name = "battery-pack"
-version = "0.4.3"
+version = "0.4.4"
 edition = "2024"
 description = "Curated crate bundles with docs, templates, and agentic skills"
 license = "MIT OR Apache-2.0"
