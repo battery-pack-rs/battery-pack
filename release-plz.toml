@@ -14,15 +14,3 @@ changelog_include = [
     "bphelper-manifest",
 ]
 
-# TODO: re-enable once trusted publishing is set up
-[[package]]
-name = "cli-battery-pack"
-release = false
-
-[[package]]
-name = "error-battery-pack"
-release = false
-
-[[package]]
-name = "logging-battery-pack"
-release = false
