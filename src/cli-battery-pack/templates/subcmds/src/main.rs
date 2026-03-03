@@ -1,5 +1,5 @@
-use cli::clap::{Parser, Subcommand};
-use cli::tracing::info;
+use clap::{Parser, Subcommand};
+use tracing::info;
 
 /// {{project-name}}: A CLI application with subcommands
 #[derive(Parser)]
@@ -29,12 +29,11 @@ enum Commands {
     },
 }
 
-fn main() -> cli::anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    // Initialize tracing if verbose
     if cli.verbose {
-        cli::tracing_subscriber::fmt::init();
+        tracing_subscriber::fmt::init();
     }
 
     info!("Starting {{project-name}}");

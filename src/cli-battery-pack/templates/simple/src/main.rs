@@ -1,5 +1,5 @@
-use cli::clap::Parser;
-use cli::tracing::info;
+use clap::Parser;
+use tracing::info;
 
 /// {{project-name}}: A CLI application
 #[derive(Parser)]
@@ -14,16 +14,14 @@ struct Cli {
     verbose: bool,
 }
 
-fn main() -> cli::anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    // Initialize tracing if verbose
     if cli.verbose {
-        cli::tracing_subscriber::fmt::init();
+        tracing_subscriber::fmt::init();
     }
 
     info!("Starting {{project-name}}");
     println!("Hello, {}!", cli.name);
-
     Ok(())
 }

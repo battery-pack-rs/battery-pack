@@ -6,4 +6,18 @@ description = "A CLI application"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-cli = { package = "cli-battery-pack", version = "0.1" }
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+dialoguer = "0.11"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[build-dependencies]
+cli-battery-pack = "0.4"
+logging-battery-pack = "0.4"
+
+[package.metadata.battery-pack.cli-battery-pack]
+features = ["default"]
+
+[package.metadata.battery-pack.logging-battery-pack]
+features = ["default"]
