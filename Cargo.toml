@@ -27,7 +27,7 @@ version = "4"
 features = ["derive"]
 
 [workspace.dependencies.reqwest]
-version = "0.12"
+version = "0.13"
 features = [
     "blocking",
     "json",
