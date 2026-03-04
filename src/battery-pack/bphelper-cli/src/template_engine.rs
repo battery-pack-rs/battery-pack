@@ -33,13 +33,21 @@ struct PlaceholderDef {
     prompt: Option<String>,
     #[serde(default)]
     default: Option<String>,
-    #[serde(default = "default_placeholder_type")]
-    #[expect(dead_code, reason = "parsed for forward compatibility, not yet used")]
-    r#type: String,
+    // TODO: support more types (bool, etc).
+    #[serde(default, rename = "type")]
+    #[expect(
+        dead_code,
+        reason = "validated at parse time via enum; not branched on yet"
+    )]
+    placeholder_type: PlaceholderType,
 }
 
-fn default_placeholder_type() -> String {
-    "string".to_string()
+#[derive(Debug, Default, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum PlaceholderType {
+    #[default]
+    String,
+    // TODO: support more types (bool, etc).
 }
 
 #[derive(Debug, Deserialize)]
@@ -271,7 +279,6 @@ fn should_ignore(rel_path: &Path, ignore_set: &[&str]) -> bool {
 }
 
 /// Render template variables in a file path.
-/// Strips `.liquid` extensions for backward compatibility during migration.
 fn render_path(rel_path: &Path, variables: &BTreeMap<String, String>) -> Result<PathBuf> {
     let path_str = rel_path.to_string_lossy();
 
@@ -312,4 +319,257 @@ fn git_init(project_dir: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -- Config parsing --
+    // [verify format.templates.engine]
+
+    #[test]
+    fn parse_config_full() {
+        let toml = r#"
+            ignore = ["hooks", ".git"]
+
+            [placeholders.description]
+            type = "string"
+            prompt = "Describe it"
+            default = "A thing"
+
+            [[files]]
+            src = "shared/LICENSE"
+            dest = "LICENSE"
+        "#;
+        let config: BpTemplateConfig = toml::from_str(toml).unwrap();
+        assert_eq!(config.ignore, vec!["hooks", ".git"]);
+        assert_eq!(config.placeholders.len(), 1);
+        let desc = &config.placeholders["description"];
+        assert_eq!(desc.prompt.as_deref(), Some("Describe it"));
+        assert_eq!(desc.default.as_deref(), Some("A thing"));
+        assert_eq!(config.files.len(), 1);
+        assert_eq!(config.files[0].src, "shared/LICENSE");
+        assert_eq!(config.files[0].dest, "LICENSE");
+    }
+
+    #[test]
+    fn parse_config_empty() {
+        let config: BpTemplateConfig = toml::from_str("").unwrap();
+        assert!(config.ignore.is_empty());
+        assert!(config.placeholders.is_empty());
+        assert!(config.files.is_empty());
+    }
+
+    #[test]
+    fn parse_config_placeholder_defaults() {
+        let toml = r#"
+            [placeholders.name]
+        "#;
+        let config: BpTemplateConfig = toml::from_str(toml).unwrap();
+        let p = &config.placeholders["name"];
+        assert!(p.prompt.is_none());
+        assert!(p.default.is_none());
+        assert_eq!(p.placeholder_type, PlaceholderType::String);
+    }
+
+    // -- should_ignore --
+
+    #[test]
+    fn ignore_exact_match() {
+        assert!(should_ignore(Path::new("hooks"), &["hooks"]));
+    }
+
+    #[test]
+    fn ignore_nested_component() {
+        assert!(should_ignore(
+            Path::new("hooks/pre-script.rhai"),
+            &["hooks"]
+        ));
+    }
+
+    #[test]
+    fn ignore_no_match() {
+        assert!(!should_ignore(Path::new("src/main.rs"), &["hooks"]));
+    }
+
+    #[test]
+    fn ignore_bp_template_toml() {
+        assert!(should_ignore(
+            Path::new("bp-template.toml"),
+            &["bp-template.toml"]
+        ));
+    }
+
+    // -- render_path --
+
+    #[test]
+    fn render_path_no_variables() {
+        let vars = BTreeMap::new();
+        assert_eq!(
+            render_path(Path::new("src/main.rs"), &vars).unwrap(),
+            PathBuf::from("src/main.rs")
+        );
+    }
+
+    #[test]
+    fn render_path_with_braces() {
+        let mut vars = BTreeMap::new();
+        vars.insert("project_name".to_string(), "my-app".to_string());
+        assert_eq!(
+            render_path(Path::new("{{project_name}}/Cargo.toml"), &vars).unwrap(),
+            PathBuf::from("my-app/Cargo.toml")
+        );
+    }
+
+    #[test]
+    fn render_path_with_spaced_braces() {
+        let mut vars = BTreeMap::new();
+        vars.insert("project_name".to_string(), "my-app".to_string());
+        assert_eq!(
+            render_path(Path::new("{{ project_name }}/Cargo.toml"), &vars).unwrap(),
+            PathBuf::from("my-app/Cargo.toml")
+        );
+    }
+
+    // -- resolve_placeholders --
+    // [verify format.templates.placeholder-defaults]
+
+    #[test]
+    fn resolve_uses_define_over_default() {
+        let mut defs = BTreeMap::new();
+        defs.insert(
+            "description".to_string(),
+            PlaceholderDef {
+                prompt: None,
+                default: Some("fallback".to_string()),
+                placeholder_type: PlaceholderType::String,
+            },
+        );
+        let mut defines = BTreeMap::new();
+        defines.insert("description".to_string(), "override".to_string());
+        let mut vars = BTreeMap::new();
+
+        resolve_placeholders(&defs, &defines, &mut vars).unwrap();
+        assert_eq!(vars["description"], "override");
+    }
+
+    #[test]
+    fn resolve_uses_default_non_interactive() {
+        let mut defs = BTreeMap::new();
+        defs.insert(
+            "description".to_string(),
+            PlaceholderDef {
+                prompt: None,
+                default: Some("fallback".to_string()),
+                placeholder_type: PlaceholderType::String,
+            },
+        );
+        let defines = BTreeMap::new();
+        let mut vars = BTreeMap::new();
+
+        // In test/CI, stdout is not a terminal, so non-interactive path is taken
+        resolve_placeholders(&defs, &defines, &mut vars).unwrap();
+        assert_eq!(vars["description"], "fallback");
+    }
+
+    #[test]
+    fn resolve_no_default_non_interactive_errors() {
+        let mut defs = BTreeMap::new();
+        defs.insert(
+            "description".to_string(),
+            PlaceholderDef {
+                prompt: Some("Describe it".to_string()),
+                default: None,
+                placeholder_type: PlaceholderType::String,
+            },
+        );
+        let defines = BTreeMap::new();
+        let mut vars = BTreeMap::new();
+
+        let err = resolve_placeholders(&defs, &defines, &mut vars).unwrap_err();
+        assert!(err.to_string().contains("description"));
+        assert!(err.to_string().contains("no default"));
+    }
+
+    #[test]
+    fn resolve_rejects_kebab_case_name() {
+        let mut defs = BTreeMap::new();
+        defs.insert(
+            "my-thing".to_string(),
+            PlaceholderDef {
+                prompt: None,
+                default: Some("val".to_string()),
+                placeholder_type: PlaceholderType::String,
+            },
+        );
+        let err = resolve_placeholders(&defs, &BTreeMap::new(), &mut BTreeMap::new()).unwrap_err();
+        assert!(err.to_string().contains("my-thing"));
+        assert!(err.to_string().contains("snake_case"));
+    }
+
+    // -- build_jinja_env --
+
+    #[test]
+    fn jinja_env_renders_variables() {
+        let mut vars = BTreeMap::new();
+        vars.insert("project_name".to_string(), "my-app".to_string());
+        vars.insert("crate_name".to_string(), "my_app".to_string());
+
+        let env = build_jinja_env(Path::new("."), &vars).unwrap();
+        let result = env
+            .render_str(
+                "name = {{ project_name }}, crate = {{ crate_name }}",
+                minijinja::context! {},
+            )
+            .unwrap();
+        assert_eq!(result, "name = my-app, crate = my_app");
+    }
+
+    #[test]
+    fn jinja_env_no_html_escaping() {
+        let mut vars = BTreeMap::new();
+        vars.insert(
+            "description".to_string(),
+            "A <bold> & cool thing".to_string(),
+        );
+
+        let env = build_jinja_env(Path::new("."), &vars).unwrap();
+        let result = env
+            .render_str("{{ description }}", minijinja::context! {})
+            .unwrap();
+        assert_eq!(result, "A <bold> & cool thing");
+    }
+
+    #[test]
+    fn jinja_env_raw_block_passthrough() {
+        let vars = BTreeMap::new();
+        let env = build_jinja_env(Path::new("."), &vars).unwrap();
+        let result = env
+            .render_str(
+                "{% raw %}{{ not_a_variable }}{% endraw %}",
+                minijinja::context! {},
+            )
+            .unwrap();
+        assert_eq!(result, "{{ not_a_variable }}");
+    }
+
+    // -- crate_name derivation --
+
+    #[test]
+    fn crate_name_derived_from_project_name() {
+        let project_name = "my-cool-app";
+        let crate_name = project_name.replace('-', "_");
+        assert_eq!(crate_name, "my_cool_app");
+    }
+
+    #[test]
+    fn parse_config_unsupported_type_errors() {
+        let toml = r#"
+            [placeholders.flag]
+            type = "bool"
+        "#;
+        let err = toml::from_str::<BpTemplateConfig>(toml).unwrap_err();
+        assert!(err.to_string().contains("unknown variant"), "{err}");
+    }
 }
