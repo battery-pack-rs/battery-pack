@@ -1,0 +1,15 @@
+{% raw %}[package]
+name = "{{ project_name }}"
+version = "0.1.0"
+edition = "2024"
+description = "{{ project_description }}"
+{% endraw %}license = "MIT OR Apache-2.0"
+
+[dependencies]
+# Add the curated dependencies your battery pack provides
+
+[build-dependencies]
+{{ project_name }} = "0.1"
+
+[package.metadata.battery-pack.{{ project_name }}]
+features = ["default"]

@@ -1,0 +1,19 @@
+# Files and directories to exclude from generated output.
+# Matched by exact name against any path component.
+# ignore = ["hooks", "scripts"]
+
+[placeholders.project_description]
+type = "string"
+prompt = "Describe your project"
+default = "A new project"
+
+# Additional placeholders:
+# [placeholders.license]
+# type = "string"
+# prompt = "License?"
+# default = "MIT OR Apache-2.0"
+
+# Include files from outside the template directory:
+# [[files]]
+# src = "LICENSE-MIT"       # relative to crate root
+# dest = "LICENSE-MIT"      # relative to generated project
