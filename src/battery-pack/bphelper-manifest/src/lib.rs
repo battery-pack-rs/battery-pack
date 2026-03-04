@@ -210,7 +210,7 @@ impl BatteryPackSpec {
         let mut report = ValidationReport::default();
 
         // [impl format.crate.name]
-        if !self.name.ends_with("-battery-pack") {
+        if self.name != "battery-pack" && !self.name.ends_with("-battery-pack") {
             report.error(
                 "format.crate.name",
                 format!("name '{}' must end in '-battery-pack'", self.name),
@@ -1687,6 +1687,18 @@ mod tests {
         )
         .unwrap();
         assert!(good.validate_spec().is_clean());
+
+        let exact = parse_battery_pack(
+            r#"
+            [package]
+            name = "battery-pack"
+            version = "0.1.0"
+            repository = "https://github.com/example/test"
+            keywords = ["battery-pack"]
+        "#,
+        )
+        .unwrap();
+        assert!(exact.validate_spec().is_clean());
 
         let bad = parse_battery_pack(
             r#"
