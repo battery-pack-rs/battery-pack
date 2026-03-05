@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-cli-v0.4.1...bphelper-cli-v0.5.0) - 2026-03-05
+
+### Added
+
+- add --define flag to cargo bp new for setting placeholder values
+- replace cargo-generate with MiniJinja template engine
+- validate templates in cargo bp validate
+
+### Other
+
+- tighten template engine visibility and improve bp-template.toml handling
+- add unit tests for template engine core logic
+
 ## [0.4.1](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-cli-v0.4.0...bphelper-cli-v0.4.1) - 2026-03-02
 
 ### Added

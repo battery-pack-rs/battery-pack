@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-manifest-v0.5.0...bphelper-manifest-v0.5.1) - 2026-03-05
+
+### Added
+
+- replace cargo-generate with MiniJinja template engine
+
+### Fixed
+
+- accept exact name "battery-pack" in validate_spec ([#40](https://github.com/battery-pack-rs/battery-pack/pull/40))
+
 ## [0.5.0](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-manifest-v0.4.1...bphelper-manifest-v0.5.0) - 2026-03-02
 
 ### Added

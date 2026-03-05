@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.5](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.4.4...battery-pack-v0.4.5) - 2026-03-05
+
+### Added
+
+- add with_template authoring template
+- add --define flag to cargo bp new for setting placeholder values
+- replace cargo-generate with MiniJinja template engine
+- validate templates in cargo bp validate
+
+### Fixed
+
+- accept exact name "battery-pack" in validate_spec ([#40](https://github.com/battery-pack-rs/battery-pack/pull/40))
+
+### Other
+
+- remove stale hooks ignore from default template config
+- tighten template engine visibility and improve bp-template.toml handling
+- add unit tests for template engine core logic
+
 ## [0.4.4](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.4.3...battery-pack-v0.4.4) - 2026-03-03
 
 ### Added
