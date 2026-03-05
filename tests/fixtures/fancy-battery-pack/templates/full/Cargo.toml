@@ -1,8 +1,10 @@
 [package]
-name = "{{project-name}}"
+name = "{{ project_name }}"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 dialoguer = "0.11"
+indicatif = "0.17"
+console = "0.15"

@@ -3,7 +3,7 @@
 //!
 //! Covers:
 //!   - cli.new.name-flag      — --name flag is accepted and parsed
-//!   - cli.new.name-prompt    — omitting --name still parses (cargo-generate prompts)
+//!   - cli.new.name-prompt    — omitting --name still parses (template engine prompts)
 //!   - cli.new.template-select — multiple templates with no default triggers prompt path
 //!   - cli.bare.tui           — bare `cargo bp` produces command: None
 //!   - cli.add.idempotent     — re-adding same dep doesn't create duplicates
@@ -74,14 +74,14 @@ fn new_name_short_flag_is_parsed() {
 }
 
 // ============================================================================
-// cli.new.name-prompt — omitting --name is valid (cargo-generate will prompt)
+// cli.new.name-prompt — omitting --name is valid (the template engine will prompt)
 // ============================================================================
 
 // [verify cli.new.name-prompt]
 #[test]
 fn new_without_name_parses_as_none() {
     // `cargo bp new cli` without --name should parse successfully with name = None.
-    // The actual prompting is handled by cargo-generate at runtime.
+    // The actual prompting is handled by the template engine at runtime.
     let cli = bphelper_cli::Cli::try_parse_from(["cargo", "bp", "new", "cli"])
         .expect("new without --name should parse");
 

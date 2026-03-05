@@ -921,10 +921,8 @@ fn validate_no_extra_code(crate_root: &Path, report: &mut ValidationReport) {
     }
 }
 
-/// Check that each template declared in metadata exists on disk with
-/// a `cargo-generate.toml`.
+/// Check that each template declared in metadata exists on disk.
 // [impl format.templates.directory]
-// [impl format.templates.cargo-generate]
 fn validate_templates_on_disk(
     spec: &BatteryPackSpec,
     crate_root: &Path,
@@ -937,18 +935,6 @@ fn validate_templates_on_disk(
                 "format.templates.directory",
                 format!(
                     "template '{}' path '{}' does not exist",
-                    name, template.path
-                ),
-            );
-            continue;
-        }
-
-        let cargo_generate = template_dir.join("cargo-generate.toml");
-        if !cargo_generate.exists() {
-            report.error(
-                "format.templates.cargo-generate",
-                format!(
-                    "template '{}' is missing cargo-generate.toml in '{}'",
                     name, template.path
                 ),
             );
@@ -1938,64 +1924,16 @@ mod tests {
                 .any(|d| d.rule == "format.templates.directory")
         );
 
-        // Create the directory but without cargo-generate.toml
+        // Create the directory — should now be clean
         let tmpl = dir.path().join("templates/default");
         std::fs::create_dir_all(&tmpl).unwrap();
         let report = validate_on_disk(&spec, dir.path());
-        assert!(report.has_errors());
-        assert!(
-            report
-                .diagnostics
-                .iter()
-                .any(|d| d.rule == "format.templates.cargo-generate")
-        );
-
-        // Add cargo-generate.toml
-        std::fs::write(tmpl.join("cargo-generate.toml"), "[template]\n").unwrap();
-        let report = validate_on_disk(&spec, dir.path());
-        // Only the template-related checks — should now be clean
         let template_errors: Vec<_> = report
             .diagnostics
             .iter()
             .filter(|d| d.rule.starts_with("format.templates."))
             .collect();
         assert!(template_errors.is_empty());
-    }
-
-    #[test]
-    // [verify format.templates.cargo-generate]
-    fn validate_templates_missing_cargo_generate() {
-        let dir = tempfile::tempdir().unwrap();
-        let src = dir.path().join("src");
-        std::fs::create_dir(&src).unwrap();
-        std::fs::write(src.join("lib.rs"), "//! Doc\n").unwrap();
-
-        // Template dir exists but no cargo-generate.toml
-        let tmpl = dir.path().join("templates/starter");
-        std::fs::create_dir_all(&tmpl).unwrap();
-
-        let spec = parse_battery_pack(
-            r#"
-            [package]
-            name = "test-battery-pack"
-            version = "0.1.0"
-            keywords = ["battery-pack"]
-
-            [package.metadata.battery.templates]
-            starter = { path = "templates/starter", description = "Starter" }
-        "#,
-        )
-        .unwrap();
-
-        let report = validate_on_disk(&spec, dir.path());
-        assert!(report.has_errors());
-        assert!(
-            report
-                .diagnostics
-                .iter()
-                .any(|d| d.rule == "format.templates.cargo-generate"
-                    && d.message.contains("starter"))
-        );
     }
 
     // -- Repository warning tests --

@@ -1,7 +1,6 @@
 //! CLI for battery-pack: create and manage battery packs.
 
 use anyhow::{Context, Result, bail};
-use cargo_generate::{GenerateArgs, TemplatePath, Vcs};
 use clap::{Parser, Subcommand};
 use flate2::read::GzDecoder;
 use serde::Deserialize;
@@ -10,6 +9,7 @@ use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use tar::Archive;
 
+pub(crate) mod template_engine;
 mod tui;
 
 const CRATES_IO_API: &str = "https://crates.io/api/v1/crates";
@@ -76,6 +76,10 @@ pub enum BpCommands {
         /// Use a local path instead of downloading from crates.io
         #[arg(long)]
         path: Option<String>,
+
+        /// Set a template placeholder value (e.g., -d description="My project")
+        #[arg(long = "define", short = 'd', value_parser = parse_define)]
+        define: Vec<(String, String)>,
     },
 
     /// Add a battery pack and sync its dependencies.
@@ -221,7 +225,8 @@ pub fn main() -> Result<()> {
                     name,
                     template,
                     path,
-                } => new_from_battery_pack(&battery_pack, name, template, path, &source),
+                    define,
+                } => new_from_battery_pack(&battery_pack, name, template, path, &source, &define),
                 BpCommands::Add {
                     battery_pack,
                     crates,
@@ -431,10 +436,13 @@ fn new_from_battery_pack(
     template: Option<String>,
     path_override: Option<String>,
     source: &CrateSource,
+    define: &[(String, String)],
 ) -> Result<()> {
+    let defines: std::collections::BTreeMap<String, String> = define.iter().cloned().collect();
+
     // --path takes precedence over --crate-source
     if let Some(path) = path_override {
-        return generate_from_local(&path, name, template);
+        return generate_from_local(&path, name, template, defines);
     }
 
     let crate_name = resolve_crate_name(battery_pack);
@@ -467,7 +475,7 @@ fn new_from_battery_pack(
     let template_path = resolve_template(&templates, template.as_deref())?;
 
     // Generate the project from the crate directory
-    generate_from_path(&crate_dir, &template_path, name)
+    generate_from_path(&crate_dir, &template_path, name, defines)
 }
 
 /// Result of resolving which crates to add from a battery pack.
@@ -1738,6 +1746,7 @@ fn generate_from_local(
     local_path: &str,
     name: Option<String>,
     template: Option<String>,
+    defines: std::collections::BTreeMap<String, String>,
 ) -> Result<()> {
     let local_path = Path::new(local_path);
 
@@ -1753,7 +1762,7 @@ fn generate_from_local(
     let templates = parse_template_metadata(&manifest_content, crate_name)?;
     let template_path = resolve_template(&templates, template.as_deref())?;
 
-    generate_from_path(local_path, &template_path, name)
+    generate_from_path(local_path, &template_path, name, defines)
 }
 
 /// Resolve the project name, prompting interactively if not provided, and
@@ -1775,34 +1784,37 @@ fn ensure_battery_pack_suffix(name: Option<String>) -> Result<String> {
     }
 }
 
-fn generate_from_path(crate_path: &Path, template_path: &str, name: Option<String>) -> Result<()> {
+fn generate_from_path(
+    crate_path: &Path,
+    template_path: &str,
+    name: Option<String>,
+    defines: std::collections::BTreeMap<String, String>,
+) -> Result<()> {
     // Ensure the project name ends with -battery-pack.
-    // We always resolve the name before calling cargo-generate so the suffix
+    // We always resolve the name before calling the template engine so the suffix
     // applies to both the directory name and the project-name variable.
-    let name = Some(ensure_battery_pack_suffix(name)?);
+    let project_name = ensure_battery_pack_suffix(name)?;
 
-    // In non-interactive mode, provide defaults for placeholders
-    let define = if !std::io::stdout().is_terminal() {
-        vec!["description=A battery pack for ...".to_string()]
-    } else {
-        vec![]
+    let opts = template_engine::GenerateOpts {
+        crate_root: crate_path.to_path_buf(),
+        template_path: template_path.to_string(),
+        project_name,
+        destination: None,
+        defines,
+        git_init: true,
     };
 
-    let args = GenerateArgs {
-        template_path: TemplatePath {
-            path: Some(crate_path.to_string_lossy().into_owned()),
-            auto_path: Some(template_path.to_string()),
-            ..Default::default()
-        },
-        name,
-        vcs: Some(Vcs::Git),
-        define,
-        ..Default::default()
-    };
-
-    cargo_generate::generate(args)?;
+    template_engine::generate(opts)?;
 
     Ok(())
+}
+
+/// Parse a `key=value` string for clap's `value_parser`.
+fn parse_define(s: &str) -> Result<(String, String), String> {
+    let (key, value) = s
+        .split_once('=')
+        .ok_or_else(|| format!("invalid define '{s}': expected key=value"))?;
+    Ok((key.to_string(), value.to_string()))
 }
 
 /// Info about a crate from crates.io
@@ -2892,20 +2904,16 @@ pub fn validate_templates(manifest_dir: &str) -> Result<()> {
 
         let project_name = format!("bp-validate-{name}");
 
-        let args = GenerateArgs {
-            template_path: TemplatePath {
-                path: Some(manifest_dir.to_string_lossy().into_owned()),
-                auto_path: Some(template.path.clone()),
-                ..Default::default()
-            },
-            name: Some(project_name),
+        let opts = template_engine::GenerateOpts {
+            crate_root: manifest_dir.to_path_buf(),
+            template_path: template.path.clone(),
+            project_name,
             destination: Some(tmp.path().to_path_buf()),
-            vcs: Some(Vcs::None),
-            silent: true,
-            ..Default::default()
+            defines: std::collections::BTreeMap::new(),
+            git_init: false,
         };
 
-        let project_dir = cargo_generate::generate(args)
+        let project_dir = template_engine::generate(opts)
             .with_context(|| format!("failed to generate template '{name}'"))?;
 
         // Patch crates-io deps to use local workspace packages so we validate

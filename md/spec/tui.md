@@ -92,7 +92,7 @@ battery packs on crates.io.
 
 r[tui.new.create]
 Selecting a template MUST prompt for a project name and directory,
-then create the project using cargo-generate.
+then create the project using the built-in template engine.
 
 ## Network operations
 

@@ -31,8 +31,8 @@ my-battery-pack/
 │   └── advanced.rs
 └── templates/
     └── default/
-        ├── cargo-generate.toml
-        ├── Cargo.toml.liquid
+        ├── bp-template.toml
+        ├── Cargo.toml
         └── src/
             └── main.rs
 ```
@@ -163,25 +163,24 @@ on how the doc generation works.
 ## Templates
 
 Templates let users bootstrap new projects with `cargo bp new`.
-They use [cargo-generate](https://github.com/cargo-generate/cargo-generate)
-under the hood.
+They use [MiniJinja](https://github.com/mitsuhiko/minijinja) templates
+with a `bp-template.toml` configuration file.
 
 A template lives in a subdirectory under `templates/`:
 
 ```
 templates/
 └── default/
-    ├── cargo-generate.toml
-    ├── Cargo.toml.liquid
+    ├── bp-template.toml
+    ├── Cargo.toml
     └── src/
         └── main.rs
 ```
 
-The `cargo-generate.toml` configures template variables:
+The `bp-template.toml` configures template variables:
 
 ```toml
-[template]
-cargo_generate_version = ">=0.22.0"
+ignore = ["hooks"]
 
 [placeholders.description]
 type = "string"
@@ -190,7 +189,23 @@ default = "A new project"
 ```
 
 Placeholders should have `default` values so that `cargo bp validate`
-can generate and check templates non-interactively.
+can generate and check templates non-interactively. Placeholder names
+must use snake_case (`description`, not `my-description`) because
+MiniJinja treats `-` as the minus operator.
+
+The template engine also provides built-in variables (no declaration needed):
+
+- `{{ project_name }}` — the project name passed via `--name`
+- `{{ crate_name }}` — derived from `project_name` with `-` replaced by `_`
+
+To include files from outside the template directory (e.g. shared
+license files), use `[[files]]`:
+
+```toml
+[[files]]
+src = "LICENSE-MIT"       # relative to crate root
+dest = "LICENSE-MIT"      # relative to generated project
+```
 
 Register templates in your Cargo.toml metadata:
 

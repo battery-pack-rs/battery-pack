@@ -1,0 +1,30 @@
+ignore = ["hooks"]
+
+[placeholders.description]
+type = "string"
+prompt = "What does this battery pack provide?"
+default = "A battery pack for ..."
+
+[[files]]
+src = "templates/default/build.rs"
+dest = "build.rs"
+
+[[files]]
+src = "templates/default/src/lib.rs"
+dest = "src/lib.rs"
+
+[[files]]
+src = "templates/default/README.md"
+dest = "README.md"
+
+[[files]]
+src = "templates/default/docs.handlebars.md"
+dest = "docs.handlebars.md"
+
+[[files]]
+src = "templates/default/LICENSE-APACHE"
+dest = "LICENSE-APACHE"
+
+[[files]]
+src = "templates/default/LICENSE-MIT"
+dest = "LICENSE-MIT"

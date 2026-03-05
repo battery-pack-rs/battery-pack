@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use tracing::info;
 
-/// {{project-name}}: A CLI application with subcommands
+/// {{ project_name }}: A CLI application with subcommands
 #[derive(Parser)]
 #[command(version, about)]
 struct Cli {
@@ -36,7 +36,7 @@ fn main() -> anyhow::Result<()> {
         tracing_subscriber::fmt::init();
     }
 
-    info!("Starting {{project-name}}");
+    info!("Starting {{ project_name }}");
 
     match cli.command {
         Commands::Hello { name } => {

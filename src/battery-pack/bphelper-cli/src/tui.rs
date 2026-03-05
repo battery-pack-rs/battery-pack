@@ -3783,7 +3783,7 @@ mod tests {
     /// [verify tui.new.create]
     /// Project creation shells out to `cargo bp new` via
     /// PendingAction::NewProject in execute_action(). This spawns an
-    /// external process (cargo-generate), which is not unit-testable.
+    /// external process (`cargo bp new`), which is not unit-testable.
     #[test]
     fn new_project_creates_via_external_process() {
         // Intentionally empty — see doc comment.

@@ -1,4 +1,0 @@
-[template]
-cargo_generate_version = ">=0.22.0"
-
-[placeholders]

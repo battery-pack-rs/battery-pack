@@ -1,8 +1,8 @@
 [package]
-name = "{{project-name}}"
+name = "{{ project_name }}"
 version = "0.1.0"
 edition = "2024"
-description = "A CLI application with subcommands"
+description = "A CLI application"
 license = "MIT OR Apache-2.0"
 
 [dependencies]

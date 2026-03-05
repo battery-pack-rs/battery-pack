@@ -13,7 +13,7 @@ resolver = "2"
 [workspace.dependencies]
 battery-pack = { path = "src/battery-pack", version = "0.4" }
 anyhow = "1"
-cargo-generate = "0.22"
+minijinja = { version = "2", features = ["loader"] }
 cargo_metadata = "0.23"
 handlebars = "6"
 expect-test = "1"
@@ -27,7 +27,7 @@ version = "4"
 features = ["derive"]
 
 [workspace.dependencies.reqwest]
-version = "0.12"
+version = "0.13"
 features = [
     "blocking",
     "json",

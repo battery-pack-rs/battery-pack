@@ -23,6 +23,7 @@ schema_version = 1
 
 [package.metadata.battery.templates]
 default = { path = "templates/default", description = "Starter template for authoring a battery pack" }
+with_template = { path = "templates/with_template", description = "Starter template with an example project template" }
 
 [[bin]]
 name = "cargo-bp"

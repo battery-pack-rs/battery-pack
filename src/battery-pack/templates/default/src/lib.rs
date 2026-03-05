@@ -5,7 +5,7 @@
 /// Call from the consumer's `build.rs`:
 /// ```rust,ignore
 /// fn main() {
-///     {{crate_name}}::validate();
+///     {{ crate_name }}::validate();
 /// }
 /// ```
 pub fn validate() {

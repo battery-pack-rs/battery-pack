@@ -1,6 +1,6 @@
-# {{project-name}}
+# {{ project_name }}
 
-{{description}}
+{{ description }}
 
 ## What's Included
 
@@ -9,7 +9,7 @@
 ## Usage
 
 ```sh
-cargo bp add {{project-name}}
+cargo bp add {{ project_name }}
 ```
 
 ## License
