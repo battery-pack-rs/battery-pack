@@ -1,12 +1,15 @@
 [workspace]
 members = [
+	# --- main facade
     "src/battery-pack",
+	# --- helper crates
     "src/battery-pack/bphelper-build",
     "src/battery-pack/bphelper-cli",
     "src/battery-pack/bphelper-manifest",
-    "src/cli-battery-pack",
-    "src/error-battery-pack",
-    "src/logging-battery-pack",
+	# --- battery packs
+    "battery-packs/cli-battery-pack",
+    "battery-packs/error-battery-pack",
+    "battery-packs/logging-battery-pack",
 ]
 resolver = "2"
 
