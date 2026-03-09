@@ -119,6 +119,13 @@ Templates use [MiniJinja](https://github.com/mitsuhiko/minijinja)
 for rendering. Each template directory MAY contain a `bp-template.toml`
 to configure placeholders and ignored paths.
 
+r[format.templates.managed-deps]
+Template Cargo.toml files SHOULD use `bp-managed = true` on dependencies
+instead of hardcoding versions. This ensures generated projects always
+get the versions from the battery pack's current spec. See
+[Managed dependencies in templates](./manifest.md#managed-dependencies-in-templates)
+for details.
+
 r[format.templates.config-excluded]
 The root `bp-template.toml` is the engine's configuration file and
 MUST NOT be included in generated output. A `bp-template.toml` nested

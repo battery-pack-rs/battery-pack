@@ -188,6 +188,30 @@ prompt = "What does this project do?"
 default = "A new project"
 ```
 
+### Managed dependencies
+
+Use `bp-managed = true` on dependencies in your template's Cargo.toml
+instead of hardcoding versions. When someone generates a project from
+your template, `cargo bp` resolves the actual versions from your
+battery pack's spec:
+
+```toml
+[dependencies]
+clap = { bp-managed = true }
+
+[build-dependencies]
+cli-battery-pack = { bp-managed = true }
+
+[package.metadata.battery-pack]
+cli-battery-pack = { features = ["default"] }
+```
+
+This way you don't need to update template files when you bump
+dependency versions — the template always picks up the current spec.
+
+If you need to pin a specific version for a dependency, use an explicit
+version instead of `bp-managed = true`. Explicit versions are left as-is.
+
 Placeholders should have `default` values so that `cargo bp validate`
 can generate and check templates non-interactively. Placeholder names
 must use snake_case (`description`, not `my-description`) because
