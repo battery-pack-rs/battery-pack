@@ -104,7 +104,7 @@ pub(crate) fn generate(opts: GenerateOpts) -> Result<PathBuf> {
     let ignore_set: Vec<&str> = config.ignore.iter().map(|s| s.as_str()).collect();
 
     // Walk template directory and render files
-    render_template_dir(&env, &template_dir, &project_dir, &ignore_set, &variables)?;
+    render_template_dir(&env, &template_dir, &project_dir, &ignore_set)?;
 
     // Process [[files]] includes
     for file_include in &config.files {
@@ -233,7 +233,6 @@ fn render_template_dir(
     template_dir: &Path,
     output_dir: &Path,
     ignore_set: &[&str],
-    variables: &BTreeMap<String, String>,
 ) -> Result<()> {
     for entry in walkdir::WalkDir::new(template_dir) {
         let entry = entry?;
