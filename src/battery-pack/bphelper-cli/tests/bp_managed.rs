@@ -1,0 +1,152 @@
+//! Tests for bp-managed dependency resolution.
+
+use std::path::Path;
+
+fn fixtures_dir() -> std::path::PathBuf {
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    manifest_dir
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("tests/fixtures")
+}
+
+/// Create a temp project with the given Cargo.toml content and run resolve_bp_managed.
+fn resolve_with_fixture(cargo_toml: &str, bp_crate_root: &Path) -> anyhow::Result<String> {
+    let tmp = tempfile::tempdir().unwrap();
+    let project_dir = tmp.path().join("test-project");
+    std::fs::create_dir_all(&project_dir).unwrap();
+    std::fs::write(project_dir.join("Cargo.toml"), cargo_toml).unwrap();
+
+    bphelper_cli::resolve_bp_managed(&project_dir, bp_crate_root)?;
+
+    Ok(std::fs::read_to_string(project_dir.join("Cargo.toml")).unwrap())
+}
+
+#[test]
+fn resolve_bp_managed_resolves_versions() {
+    let bp_root = fixtures_dir().join("managed-battery-pack");
+    let cargo_toml = r#"[package]
+name = "my-app"
+version = "0.1.0"
+
+[dependencies]
+anyhow = { bp-managed = true }
+clap = { bp-managed = true }
+
+[build-dependencies]
+managed-battery-pack = { bp-managed = true }
+
+[package.metadata.battery-pack]
+managed-battery-pack = { features = ["default"] }
+"#;
+
+    let result = resolve_with_fixture(cargo_toml, &bp_root).unwrap();
+
+    // anyhow should be resolved to "1" (simple string, no features)
+    assert!(
+        result.contains(r#"anyhow = "1""#),
+        "anyhow should be resolved: {result}"
+    );
+    // clap should have version and features
+    assert!(
+        result.contains("version") && result.contains("derive"),
+        "clap should have version and features: {result}"
+    );
+    // managed-battery-pack should get the bp's own version
+    assert!(
+        result.contains(r#"managed-battery-pack = "0.2.0""#),
+        "managed-battery-pack should get bp version: {result}"
+    );
+    // No bp-managed should remain
+    assert!(
+        !result.contains("bp-managed"),
+        "bp-managed should be removed: {result}"
+    );
+}
+
+#[test]
+fn resolve_bp_managed_errors_on_version_and_bp_managed() {
+    let bp_root = fixtures_dir().join("managed-battery-pack");
+    let cargo_toml = r#"[package]
+name = "my-app"
+version = "0.1.0"
+
+[dependencies]
+anyhow = { version = "1", bp-managed = true }
+
+[package.metadata.battery-pack]
+managed-battery-pack = { features = ["default"] }
+"#;
+
+    let err = resolve_with_fixture(cargo_toml, &bp_root).unwrap_err();
+    assert!(
+        err.to_string().contains("bp-managed")
+            && err.to_string().contains("version"),
+        "should error on both bp-managed and version: {err}"
+    );
+}
+
+#[test]
+fn resolve_bp_managed_leaves_explicit_versions_untouched() {
+    let bp_root = fixtures_dir().join("managed-battery-pack");
+    let cargo_toml = r#"[package]
+name = "my-app"
+version = "0.1.0"
+
+[dependencies]
+serde = "1.0.200"
+
+[package.metadata.battery-pack]
+managed-battery-pack = { features = ["default"] }
+"#;
+
+    let result = resolve_with_fixture(cargo_toml, &bp_root).unwrap();
+    assert!(
+        result.contains(r#"serde = "1.0.200""#),
+        "explicit version should be untouched: {result}"
+    );
+}
+
+#[test]
+fn resolve_bp_managed_errors_on_unresolvable_dep() {
+    let bp_root = fixtures_dir().join("managed-battery-pack");
+    let cargo_toml = r#"[package]
+name = "my-app"
+version = "0.1.0"
+
+[dependencies]
+nonexistent = { bp-managed = true }
+
+[package.metadata.battery-pack]
+managed-battery-pack = { features = ["default"] }
+"#;
+
+    let err = resolve_with_fixture(cargo_toml, &bp_root).unwrap_err();
+    assert!(
+        err.to_string().contains("nonexistent")
+            && err.to_string().contains("no battery pack provides it"),
+        "should error on unresolvable dep: {err}"
+    );
+}
+
+#[test]
+fn resolve_bp_managed_noop_without_managed_deps() {
+    let bp_root = fixtures_dir().join("managed-battery-pack");
+    let cargo_toml = r#"[package]
+name = "my-app"
+version = "0.1.0"
+
+[dependencies]
+serde = "1"
+"#;
+
+    let result = resolve_with_fixture(cargo_toml, &bp_root).unwrap();
+    assert!(
+        result.contains(r#"serde = "1""#),
+        "should be unchanged: {result}"
+    );
+}
