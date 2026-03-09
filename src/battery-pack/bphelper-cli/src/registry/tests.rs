@@ -1,8 +1,26 @@
-//! Tests for bp-managed dependency resolution.
+//! Tests for registry module — list, show, local discovery.
+//!
+//! Combined from: list.rs, show.rs.
 
-use std::path::Path;
+// --- from list.rs ---
 
-fn fixtures_dir() -> std::path::PathBuf {
+// Integration tests for `cargo bp list` with `--crate-source`.
+//
+// These tests use `CrateSource::Local` pointing at the test fixtures
+// workspace to verify discovery and filtering without network access.
+//
+// Covers:
+//   - cli.source.flag          — --crate-source accepts a workspace path
+//   - cli.source.discover      — discovers crates ending in -battery-pack
+//   - cli.source.replace       — no crates.io calls when source is local
+//   - cli.list.query           — lists available battery packs
+//   - cli.list.filter          — filters results by name pattern
+
+use super::CrateSource;
+use expect_test::expect;
+use std::path::PathBuf;
+
+fn fixtures_dir() -> PathBuf {
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     manifest_dir
         .parent()
@@ -14,9 +32,122 @@ fn fixtures_dir() -> std::path::PathBuf {
         .join("tests/fixtures")
 }
 
+fn format_summaries(packs: &[super::BatteryPackSummary]) -> String {
+    packs
+        .iter()
+        .map(|bp| format!("{} {} -- {}", bp.name, bp.version, bp.description))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+// [verify cli.source.discover]
+// [verify cli.list.query]
+#[test]
+fn list_discovers_local_battery_packs() {
+    let source = CrateSource::Local(fixtures_dir());
+    let packs = super::fetch_battery_pack_list(&source, None).unwrap();
+    let formatted = format_summaries(&packs);
+    expect![[r#"
+        basic-battery-pack 0.1.0 -- A simple test battery pack
+        broken-battery-pack 0.1.0 -- A deliberately broken battery pack for testing validation
+        fancy-battery-pack 0.2.0 -- A feature-rich test battery pack
+        managed-battery-pack 0.2.0 -- A test battery pack for bp-managed resolution"#]]
+    .assert_eq(&formatted);
+}
+
+// [verify cli.list.filter]
+#[test]
+fn list_filter_narrows_results() {
+    let source = CrateSource::Local(fixtures_dir());
+    let packs = super::fetch_battery_pack_list(&source, Some("basic")).unwrap();
+    let formatted = format_summaries(&packs);
+    expect![[r#"
+        basic-battery-pack 0.1.0 -- A simple test battery pack"#]]
+    .assert_eq(&formatted);
+}
+
+// [verify cli.list.filter]
+#[test]
+fn list_filter_no_match_returns_empty() {
+    let source = CrateSource::Local(fixtures_dir());
+    let packs = super::fetch_battery_pack_list(&source, Some("nonexistent")).unwrap();
+    assert!(packs.is_empty());
+}
+
+// [verify cli.source.flag]
+#[test]
+fn list_invalid_workspace_path_errors() {
+    let source = CrateSource::Local(PathBuf::from("/nonexistent/path"));
+    let result = super::fetch_battery_pack_list(&source, None);
+    assert!(result.is_err());
+}
+
+// [verify cli.source.discover]
+#[test]
+fn list_short_names_are_correct() {
+    let source = CrateSource::Local(fixtures_dir());
+    let packs = super::fetch_battery_pack_list(&source, None).unwrap();
+    let short_names: Vec<&str> = packs.iter().map(|bp| bp.short_name.as_str()).collect();
+    expect![[r#"
+        [
+            "basic",
+            "broken",
+            "fancy",
+            "managed",
+        ]"#]]
+    .assert_eq(&format!("{:#?}", short_names));
+}
+
+// --- from show.rs ---
+
+// Integration tests for `cargo bp show`.
+
+// [verify cli.show.hidden]
+#[test]
+fn show_detail_excludes_hidden_crates() {
+    let fancy_path = fixtures_dir().join("fancy-battery-pack");
+    let detail =
+        super::fetch_battery_pack_detail("fancy", Some(fancy_path.to_str().unwrap())).unwrap();
+
+    // hidden = ["serde*", "cc"] in the fancy fixture
+    // Glob-matched deps excluded
+    assert!(!detail.crates.contains(&"serde".to_string()));
+    assert!(!detail.crates.contains(&"serde_json".to_string()));
+    // Exact-matched build-dep excluded
+    assert!(!detail.crates.contains(&"cc".to_string()));
+
+    // Visible crates still present
+    assert!(detail.crates.contains(&"clap".to_string()));
+    assert!(detail.crates.contains(&"dialoguer".to_string()));
+    assert!(detail.crates.contains(&"indicatif".to_string()));
+    assert!(detail.crates.contains(&"console".to_string()));
+    assert!(detail.crates.contains(&"assert_cmd".to_string()));
+    assert!(detail.crates.contains(&"predicates".to_string()));
+}
+
+// [verify cli.show.hidden]
+#[test]
+fn show_detail_no_hidden_returns_all_crates() {
+    let basic_path = fixtures_dir().join("basic-battery-pack");
+    let detail =
+        super::fetch_battery_pack_detail("basic", Some(basic_path.to_str().unwrap())).unwrap();
+
+    // basic fixture has no hidden config — all crates should appear
+    assert!(detail.crates.contains(&"anyhow".to_string()));
+    assert!(detail.crates.contains(&"thiserror".to_string()));
+    assert!(detail.crates.contains(&"eyre".to_string()));
+    assert_eq!(detail.crates.len(), 3);
+}
+
+// --- from bp_managed.rs ---
+
+// Tests for bp-managed dependency resolution.
+
+use std::path::Path;
+
 /// Resolve bp-managed deps in a Cargo.toml string using the given fixture as the bp crate root.
 fn resolve_with_fixture(cargo_toml: &str, bp_crate_root: &Path) -> anyhow::Result<String> {
-    bphelper_cli::resolve_bp_managed_content(cargo_toml, bp_crate_root)
+    super::resolve_bp_managed_content(cargo_toml, bp_crate_root)
 }
 
 #[test]
