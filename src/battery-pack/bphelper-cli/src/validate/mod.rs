@@ -195,6 +195,28 @@ fn write_crates_io_patches(project_dir: &Path, metadata: &cargo_metadata::Metada
         patches.push_str(&format!("{} = {{ path = \"{}\" }}\n", pkg.name, path));
     }
 
+    // Forward any existing patches from the battery pack's .cargo/config.toml
+    // so transitive dependencies (e.g. battery-pack with feature flags) resolve
+    // against local source when running in a patched development environment.
+    let parent_config = metadata.workspace_root.join(".cargo/config.toml");
+    if let Ok(content) = std::fs::read_to_string(&parent_config)
+        && let Ok(parsed) = content.parse::<toml::Table>()
+        && let Some(toml::Value::Table(patch_section)) = parsed.get("patch")
+        && let Some(toml::Value::Table(crates_io)) = patch_section.get("crates-io")
+    {
+        for (name, value) in crates_io {
+            // Skip packages already covered by workspace members
+            if metadata
+                .workspace_packages()
+                .iter()
+                .any(|p| p.name == *name)
+            {
+                continue;
+            }
+            patches.push_str(&format!("{name} = {value}\n"));
+        }
+    }
+
     let cargo_dir = project_dir.join(".cargo");
     std::fs::create_dir_all(&cargo_dir)
         .with_context(|| format!("failed to create {}", cargo_dir.display()))?;

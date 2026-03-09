@@ -48,7 +48,7 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }} -p battery-pack
+        run: cargo build --release --target ${{ matrix.target }} -p battery-pack --features cli
 
       - name: Determine version
         id: version
