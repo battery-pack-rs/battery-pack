@@ -57,34 +57,37 @@ pub enum Commands {
     },
 }
 
+#[derive(Debug, clap::Args)]
+pub struct NewArgs {
+    /// Name of the battery pack (e.g., "cli" resolves to "cli-battery-pack")
+    pub battery_pack: String,
+
+    /// Name for the new project (prompted interactively if not provided)
+    #[arg(long, short = 'n')]
+    pub name: Option<String>,
+
+    /// Which template to use (defaults to first available, or prompts if multiple)
+    // [impl cli.new.template-flag]
+    #[arg(long, short = 't')]
+    pub template: Option<String>,
+
+    /// Use a local path instead of downloading from crates.io
+    #[arg(long)]
+    pub path: Option<String>,
+
+    /// Set a template placeholder value (e.g., -d description="My project")
+    #[arg(long = "define", short = 'd', value_parser = parse_define)]
+    pub define: Vec<(String, String)>,
+
+    /// Render the template and print to stdout without generating a project
+    #[arg(long)]
+    pub preview: bool,
+}
+
 #[derive(Subcommand)]
 pub enum BpCommands {
     /// Create a new project from a battery pack template
-    New {
-        /// Name of the battery pack (e.g., "cli" resolves to "cli-battery-pack")
-        battery_pack: String,
-
-        /// Name for the new project (prompted interactively if not provided)
-        #[arg(long, short = 'n')]
-        name: Option<String>,
-
-        /// Which template to use (defaults to first available, or prompts if multiple)
-        // [impl cli.new.template-flag]
-        #[arg(long, short = 't')]
-        template: Option<String>,
-
-        /// Use a local path instead of downloading from crates.io
-        #[arg(long)]
-        path: Option<String>,
-
-        /// Set a template placeholder value (e.g., -d description="My project")
-        #[arg(long = "define", short = 'd', value_parser = parse_define)]
-        define: Vec<(String, String)>,
-
-        /// Render the template and print to stdout without generating a project
-        #[arg(long)]
-        preview: bool,
-    },
+    New(NewArgs),
 
     /// Add a battery pack and sync its dependencies.
     ///
@@ -224,22 +227,7 @@ pub fn main() -> Result<()> {
                 }
             };
             match command {
-                BpCommands::New {
-                    battery_pack,
-                    name,
-                    template,
-                    path,
-                    define,
-                    preview,
-                } => new_from_battery_pack(
-                    &battery_pack,
-                    name,
-                    template,
-                    path,
-                    &source,
-                    &define,
-                    preview,
-                ),
+                BpCommands::New(args) => new_from_battery_pack(args, &source),
                 BpCommands::Add {
                     battery_pack,
                     crates,
@@ -443,30 +431,35 @@ pub struct ExampleInfo {
 // [impl cli.new.name-prompt]
 // [impl cli.path.flag]
 // [impl cli.source.replace]
-fn new_from_battery_pack(
-    battery_pack: &str,
-    name: Option<String>,
-    template: Option<String>,
-    path_override: Option<String>,
-    source: &CrateSource,
-    define: &[(String, String)],
-    preview: bool,
-) -> Result<()> {
-    let defines: std::collections::BTreeMap<String, String> = define.iter().cloned().collect();
+fn new_from_battery_pack(args: NewArgs, source: &CrateSource) -> Result<()> {
+    let defines: std::collections::BTreeMap<String, String> = args.define.into_iter().collect();
 
-    // --path takes precedence over --crate-source
-    if let Some(path) = path_override {
-        if preview {
-            return preview_from_local(&path, name, template, defines);
-        }
-        return generate_from_local(&path, name, template, defines);
+    let _temp_dir: Option<tempfile::TempDir>;
+    let (crate_dir, template_path) = if let Some(path) = args.path {
+        _temp_dir = None;
+        resolve_local_template(&path, args.template.as_deref())?
+    } else {
+        let (dir, tp, temp) =
+            resolve_remote_template(&args.battery_pack, args.template.as_deref(), source)?;
+        _temp_dir = temp;
+        (dir, tp)
+    };
+
+    if args.preview {
+        return preview_from_path(&crate_dir, &template_path, args.name, defines);
     }
+    generate_from_path(&crate_dir, &template_path, args.name, defines)
+}
 
+/// Resolve crate directory and template path from a registry or local workspace source.
+fn resolve_remote_template(
+    battery_pack: &str,
+    template: Option<&str>,
+    source: &CrateSource,
+) -> Result<(PathBuf, String, Option<tempfile::TempDir>)> {
     let crate_name = resolve_crate_name(battery_pack);
-
-    // Locate the crate directory based on source
     let crate_dir: PathBuf;
-    let _temp_dir: Option<tempfile::TempDir>; // keep alive for Registry
+    let temp_dir: Option<tempfile::TempDir>;
     match source {
         CrateSource::Registry => {
             let crate_info = lookup_crate(&crate_name)?;
@@ -474,29 +467,19 @@ fn new_from_battery_pack(
             crate_dir = temp
                 .path()
                 .join(format!("{}-{}", crate_name, crate_info.version));
-            _temp_dir = Some(temp);
+            temp_dir = Some(temp);
         }
         CrateSource::Local(workspace_dir) => {
             crate_dir = find_local_battery_pack_dir(workspace_dir, &crate_name)?;
-            _temp_dir = None;
+            temp_dir = None;
         }
     }
-
-    // Read template metadata from the Cargo.toml
     let manifest_path = crate_dir.join("Cargo.toml");
     let manifest_content = std::fs::read_to_string(&manifest_path)
         .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
     let templates = parse_template_metadata(&manifest_content, &crate_name)?;
-
-    // Resolve which template to use
-    let template_path = resolve_template(&templates, template.as_deref())?;
-
-    if preview {
-        return preview_from_path(&crate_dir, &template_path, name, defines);
-    }
-
-    // Generate the project from the crate directory
-    generate_from_path(&crate_dir, &template_path, name, defines)
+    let template_path = resolve_template(&templates, template)?;
+    Ok((crate_dir, template_path, temp_dir))
 }
 
 /// Result of resolving which crates to add from a battery pack.
@@ -1763,15 +1746,11 @@ fn update_build_rs(build_rs_path: &Path, crate_name: &str) -> Result<()> {
     Ok(())
 }
 
-fn generate_from_local(
+fn resolve_local_template(
     local_path: &str,
-    name: Option<String>,
-    template: Option<String>,
-    defines: std::collections::BTreeMap<String, String>,
-) -> Result<()> {
+    template: Option<&str>,
+) -> Result<(PathBuf, String)> {
     let local_path = Path::new(local_path);
-
-    // Read local Cargo.toml
     let manifest_path = local_path.join("Cargo.toml");
     let manifest_content = std::fs::read_to_string(&manifest_path)
         .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
@@ -1781,9 +1760,9 @@ fn generate_from_local(
         .and_then(|s| s.to_str())
         .unwrap_or("unknown");
     let templates = parse_template_metadata(&manifest_content, crate_name)?;
-    let template_path = resolve_template(&templates, template.as_deref())?;
+    let template_path = resolve_template(&templates, template)?;
 
-    generate_from_path(local_path, &template_path, name, defines)
+    Ok((local_path.to_path_buf(), template_path))
 }
 
 /// Resolve the project name, prompting interactively if not provided, and
@@ -1817,38 +1796,19 @@ fn generate_from_path(
     let project_name = ensure_battery_pack_suffix(name)?;
 
     let opts = template_engine::GenerateOpts {
-        crate_root: crate_path.to_path_buf(),
-        template_path: template_path.to_string(),
-        project_name,
+        render: template_engine::RenderOpts {
+            crate_root: crate_path.to_path_buf(),
+            template_path: template_path.to_string(),
+            project_name,
+            defines,
+        },
         destination: None,
-        defines,
         git_init: true,
     };
 
     template_engine::generate(opts)?;
 
     Ok(())
-}
-
-fn preview_from_local(
-    local_path: &str,
-    name: Option<String>,
-    template: Option<String>,
-    defines: std::collections::BTreeMap<String, String>,
-) -> Result<()> {
-    let local_path = Path::new(local_path);
-    let manifest_path = local_path.join("Cargo.toml");
-    let manifest_content = std::fs::read_to_string(&manifest_path)
-        .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
-
-    let crate_name = local_path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown");
-    let templates = parse_template_metadata(&manifest_content, crate_name)?;
-    let template_path = resolve_template(&templates, template.as_deref())?;
-
-    preview_from_path(local_path, &template_path, name, defines)
 }
 
 fn preview_from_path(
@@ -1859,7 +1819,7 @@ fn preview_from_path(
 ) -> Result<()> {
     let project_name = name.unwrap_or_else(|| "my-project".to_string());
 
-    let opts = template_engine::PreviewOpts {
+    let opts = template_engine::RenderOpts {
         crate_root: crate_path.to_path_buf(),
         template_path: template_path.to_string(),
         project_name,
@@ -2973,11 +2933,13 @@ pub fn validate_templates(manifest_dir: &str) -> Result<()> {
         let project_name = format!("bp-validate-{name}");
 
         let opts = template_engine::GenerateOpts {
-            crate_root: manifest_dir.to_path_buf(),
-            template_path: template.path.clone(),
-            project_name,
+            render: template_engine::RenderOpts {
+                crate_root: manifest_dir.to_path_buf(),
+                template_path: template.path.clone(),
+                project_name,
+                defines: std::collections::BTreeMap::new(),
+            },
             destination: Some(tmp.path().to_path_buf()),
-            defines: std::collections::BTreeMap::new(),
             git_init: false,
         };
 

@@ -53,23 +53,17 @@ struct FileInclude {
 
 /// Options for template generation.
 pub(crate) struct GenerateOpts {
-    /// The battery pack crate root (contains `templates/` dir).
-    pub(crate) crate_root: PathBuf,
-    /// Relative path to the template dir within the crate (e.g. `templates/default`).
-    pub(crate) template_path: String,
-    /// Project name (kebab-case).
-    pub(crate) project_name: String,
+    /// Shared rendering options.
+    pub(crate) render: RenderOpts,
     /// Output directory. The project will be created as a subdirectory named `project_name`.
     /// If `None`, uses the current directory.
     pub(crate) destination: Option<PathBuf>,
-    /// Pre-set placeholder values (skip prompting for these).
-    pub(crate) defines: BTreeMap<String, String>,
     /// Whether to run `git init` on the generated project.
     pub(crate) git_init: bool,
 }
 
-/// Options for template preview (render without writing to disk).
-pub(crate) struct PreviewOpts {
+/// Shared options for rendering a template (used by both preview and generate).
+pub(crate) struct RenderOpts {
     /// The battery pack crate root (contains `templates/` dir).
     pub(crate) crate_root: PathBuf,
     /// Relative path to the template dir within the crate (e.g. `templates/default`).
@@ -89,39 +83,67 @@ pub(crate) struct RenderedFile {
 }
 
 /// Render a template and return the files in memory without writing to disk.
-pub(crate) fn preview(opts: PreviewOpts) -> Result<Vec<RenderedFile>> {
-    let template_dir = opts.crate_root.join(&opts.template_path);
-    if !template_dir.is_dir() {
-        bail!("template directory not found: {}", template_dir.display());
-    }
-
-    let config = load_config(&template_dir)?;
-
-    let mut variables = BTreeMap::new();
-    variables.insert("project_name".to_string(), opts.project_name.clone());
-    variables.insert(
-        "crate_name".to_string(),
-        opts.project_name.replace('-', "_"),
-    );
+pub(crate) fn preview(mut opts: RenderOpts) -> Result<Vec<RenderedFile>> {
+    let (template_dir, config) = load_config(&opts)?;
     // For preview, fall back to "<name>" for placeholders without a default
     // so the preview always renders.
-    let mut defines = opts.defines;
     for (name, def) in &config.placeholders {
-        defines
+        opts.defines
             .entry(name.clone())
             .or_insert_with(|| def.default.clone().unwrap_or_else(|| format!("<{name}>")));
     }
-    resolve_placeholders(&config.placeholders, &defines, &mut variables)?;
 
-    let env = build_jinja_env(&opts.crate_root, &variables)?;
+    let variables = prepare_render(&opts, &config)?;
+    render(&opts.crate_root, &template_dir, &config, &variables)
+}
+
+/// Generate a project from a battery pack template.
+///
+/// Returns the path to the generated project directory.
+pub(crate) fn generate(opts: GenerateOpts) -> Result<PathBuf> {
+    let (template_dir, config) = load_config(&opts.render)?;
+    let variables = prepare_render(&opts.render, &config)?;
+
+    let files = render(&opts.render.crate_root, &template_dir, &config, &variables)?;
+
+    // Write rendered files to disk
+    let dest_base = opts.destination.unwrap_or_else(|| PathBuf::from("."));
+    let project_dir = dest_base.join(&opts.render.project_name);
+    if project_dir.exists() {
+        bail!("destination already exists: {}", project_dir.display());
+    }
+
+    for file in &files {
+        let dest = project_dir.join(&file.path);
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&dest, &file.content)
+            .with_context(|| format!("failed to write {}", dest.display()))?;
+    }
+
+    if opts.git_init {
+        git_init(&project_dir)?;
+    }
+
+    Ok(project_dir)
+}
+
+/// Shared rendering pipeline: resolves templates and file includes into memory.
+fn render(
+    crate_root: &Path,
+    template_dir: &Path,
+    config: &BpTemplateConfig,
+    variables: &BTreeMap<String, String>,
+) -> Result<Vec<RenderedFile>> {
+    let env = build_jinja_env(crate_root, variables)?;
     let ignore_set: Vec<&str> = config.ignore.iter().map(|s| s.as_str()).collect();
 
     let mut files = Vec::new();
 
-    // Walk template directory and render files in memory
-    for entry in walkdir::WalkDir::new(&template_dir) {
+    for entry in walkdir::WalkDir::new(template_dir) {
         let entry = entry?;
-        let rel_path = entry.path().strip_prefix(&template_dir)?;
+        let rel_path = entry.path().strip_prefix(template_dir)?;
 
         if should_ignore(rel_path, &ignore_set) {
             continue;
@@ -148,11 +170,10 @@ pub(crate) fn preview(opts: PreviewOpts) -> Result<Vec<RenderedFile>> {
 
     // Process [[files]] includes
     for file_include in &config.files {
-        let src_path = opts.crate_root.join(&file_include.src);
+        let src_path = crate_root.join(&file_include.src);
         if !src_path.exists() {
             bail!("file include source not found: {}", src_path.display());
         }
-        // Skip if a template file already produced this path
         if files.iter().any(|f| f.path == file_include.dest) {
             continue;
         }
@@ -171,87 +192,32 @@ pub(crate) fn preview(opts: PreviewOpts) -> Result<Vec<RenderedFile>> {
     Ok(files)
 }
 
-/// Generate a project from a battery pack template.
-///
-/// Returns the path to the generated project directory.
-pub(crate) fn generate(opts: GenerateOpts) -> Result<PathBuf> {
+/// Resolve template variables from render options and config.
+fn prepare_render(
+    opts: &RenderOpts,
+    config: &BpTemplateConfig,
+) -> Result<BTreeMap<String, String>> {
+    let mut variables = BTreeMap::new();
+    variables.insert("project_name".to_string(), opts.project_name.clone());
+    variables.insert("crate_name".to_string(), opts.project_name.replace('-', "_"));
+    resolve_placeholders(&config.placeholders, &opts.defines, &mut variables)?;
+    Ok(variables)
+}
+
+fn load_config(opts: &RenderOpts) -> Result<(PathBuf, BpTemplateConfig)> {
     let template_dir = opts.crate_root.join(&opts.template_path);
     if !template_dir.is_dir() {
         bail!("template directory not found: {}", template_dir.display());
     }
-
-    // Parse bp-template.toml (optional — templates without config still work)
-    let config = load_config(&template_dir)?;
-
-    // Resolve placeholder values
-    let mut variables = BTreeMap::new();
-    variables.insert("project_name".to_string(), opts.project_name.clone());
-    variables.insert(
-        "crate_name".to_string(),
-        opts.project_name.replace('-', "_"),
-    );
-    resolve_placeholders(&config.placeholders, &opts.defines, &mut variables)?;
-
-    // Set up MiniJinja environment with include support
-    let env = build_jinja_env(&opts.crate_root, &variables)?;
-
-    // Determine output directory
-    let dest_base = opts.destination.unwrap_or_else(|| PathBuf::from("."));
-    let project_dir = dest_base.join(&opts.project_name);
-    if project_dir.exists() {
-        bail!("destination already exists: {}", project_dir.display());
-    }
-    std::fs::create_dir_all(&project_dir)
-        .with_context(|| format!("failed to create {}", project_dir.display()))?;
-
-    let ignore_set: Vec<&str> = config.ignore.iter().map(|s| s.as_str()).collect();
-
-    // Walk template directory and render files
-    render_template_dir(&env, &template_dir, &project_dir, &ignore_set)?;
-
-    // Process [[files]] includes
-    for file_include in &config.files {
-        let src_path = opts.crate_root.join(&file_include.src);
-        let dest_path = project_dir.join(&file_include.dest);
-
-        if !src_path.exists() {
-            bail!("file include source not found: {}", src_path.display());
-        }
-
-        // Don't overwrite files from the template directory
-        if dest_path.exists() {
-            continue;
-        }
-
-        if let Some(parent) = dest_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        let content = std::fs::read_to_string(&src_path)
-            .with_context(|| format!("failed to read {}", src_path.display()))?;
-        let rendered = env
-            .render_str(&content, minijinja::context! {})
-            .with_context(|| format!("failed to render {}", src_path.display()))?;
-        std::fs::write(&dest_path, rendered)
-            .with_context(|| format!("failed to write {}", dest_path.display()))?;
-    }
-
-    // git init
-    if opts.git_init {
-        git_init(&project_dir)?;
-    }
-
-    Ok(project_dir)
-}
-
-fn load_config(template_dir: &Path) -> Result<BpTemplateConfig> {
     let config_path = template_dir.join("bp-template.toml");
     if !config_path.exists() {
-        return Ok(BpTemplateConfig::default());
+        return Ok((template_dir, BpTemplateConfig::default()));
     }
     let content = std::fs::read_to_string(&config_path)
         .with_context(|| format!("failed to read {}", config_path.display()))?;
-    toml::from_str(&content).with_context(|| format!("failed to parse {}", config_path.display()))
+    let config = toml::from_str(&content)
+        .with_context(|| format!("failed to parse {}", config_path.display()))?;
+    Ok((template_dir, config))
 }
 
 fn resolve_placeholders(
@@ -329,55 +295,6 @@ fn build_jinja_env(
     }
 
     Ok(env)
-}
-
-fn render_template_dir(
-    env: &minijinja::Environment<'_>,
-    template_dir: &Path,
-    output_dir: &Path,
-    ignore_set: &[&str],
-) -> Result<()> {
-    for entry in walkdir::WalkDir::new(template_dir) {
-        let entry = entry?;
-        let rel_path = entry.path().strip_prefix(template_dir)?;
-
-        // Skip ignored files/folders
-        if should_ignore(rel_path, ignore_set) {
-            continue;
-        }
-
-        // The root bp-template.toml is the engine's own config and is never
-        // included in output. Nested bp-template.toml files (e.g. inside a
-        // scaffolded template directory) pass through normally.
-        if rel_path == Path::new("bp-template.toml") {
-            continue;
-        }
-
-        // Render template variables in the path (e.g. {{crate_name}}/mod.rs)
-        let rendered_path = env.render_str(&rel_path.to_string_lossy(), minijinja::context! {})?;
-
-        if entry.file_type().is_dir() {
-            let dest = output_dir.join(&rendered_path);
-            std::fs::create_dir_all(&dest)?;
-            continue;
-        }
-
-        let dest = output_dir.join(&rendered_path);
-
-        if let Some(parent) = dest.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        // Read and render file content
-        let content = std::fs::read_to_string(entry.path())
-            .with_context(|| format!("failed to read {}", entry.path().display()))?;
-        let rendered = env
-            .render_str(&content, minijinja::context! {})
-            .with_context(|| format!("failed to render template {}", rel_path.display()))?;
-        std::fs::write(&dest, rendered)
-            .with_context(|| format!("failed to write {}", dest.display()))?;
-    }
-    Ok(())
 }
 
 /// Check if a relative path should be ignored.
@@ -494,7 +411,7 @@ mod tests {
 
     #[test]
     fn ignore_bp_template_toml() {
-        // bp-template.toml is excluded by a root-only check in render_template_dir,
+        // bp-template.toml is excluded by a root-only check in the render pipeline,
         // NOT via should_ignore. Nested bp-template.toml files pass through.
         assert!(!should_ignore(Path::new("bp-template.toml"), &["hooks"]));
         assert!(!should_ignore(
@@ -657,7 +574,7 @@ mod tests {
             .unwrap()
             .join("tests/fixtures/fancy-battery-pack");
 
-        let opts = super::PreviewOpts {
+        let opts = super::RenderOpts {
             crate_root: fixtures,
             template_path: "templates/default".to_string(),
             project_name: "my-project".to_string(),

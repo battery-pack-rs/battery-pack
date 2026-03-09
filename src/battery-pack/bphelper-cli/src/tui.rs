@@ -1375,7 +1375,7 @@ impl App {
 
                 let content = match crate_root {
                     Some(root) => {
-                        let opts = crate::template_engine::PreviewOpts {
+                        let opts = crate::template_engine::RenderOpts {
                             crate_root: root,
                             template_path,
                             project_name: "my-project".to_string(),
