@@ -28,6 +28,8 @@ fn resolve_with_fixture(cargo_toml: &str, bp_crate_root: &Path) -> anyhow::Resul
 
 #[test]
 fn resolve_bp_managed_resolves_versions() {
+    use expect_test::expect;
+
     let bp_root = fixtures_dir().join("managed-battery-pack");
     let cargo_toml = r#"[package]
 name = "my-app"
@@ -46,26 +48,22 @@ managed-battery-pack = { features = ["default"] }
 
     let result = resolve_with_fixture(cargo_toml, &bp_root).unwrap();
 
-    // anyhow should be resolved to "1" (simple string, no features)
-    assert!(
-        result.contains(r#"anyhow = "1""#),
-        "anyhow should be resolved: {result}"
-    );
-    // clap should have version and features
-    assert!(
-        result.contains("version") && result.contains("derive"),
-        "clap should have version and features: {result}"
-    );
-    // managed-battery-pack should get the bp's own version
-    assert!(
-        result.contains(r#"managed-battery-pack = "0.2.0""#),
-        "managed-battery-pack should get bp version: {result}"
-    );
-    // No bp-managed should remain
-    assert!(
-        !result.contains("bp-managed"),
-        "bp-managed should be removed: {result}"
-    );
+    expect![[r#"
+        [package]
+        name = "my-app"
+        version = "0.1.0"
+
+        [dependencies]
+        anyhow = "1"
+        clap = { version = "4", features = ["derive"] }
+
+        [build-dependencies]
+        managed-battery-pack = "0.2.0"
+
+        [package.metadata.battery-pack]
+        managed-battery-pack = { features = ["default"] }
+    "#]]
+    .assert_eq(&result);
 }
 
 #[test]

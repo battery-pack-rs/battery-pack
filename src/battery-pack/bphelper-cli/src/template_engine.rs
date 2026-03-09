@@ -612,6 +612,8 @@ mod tests {
 
     #[test]
     fn preview_resolves_bp_managed_deps() {
+        use expect_test::expect;
+
         let fixtures = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
             .unwrap()
@@ -631,21 +633,22 @@ mod tests {
         let files = super::preview(opts).unwrap();
         let cargo = files.iter().find(|f| f.path == "Cargo.toml").unwrap();
 
-        // bp-managed markers should be resolved to concrete versions.
-        assert!(
-            !cargo.content.contains("bp-managed"),
-            "bp-managed should be resolved:\n{}",
-            cargo.content
-        );
-        assert!(
-            cargo.content.contains("anyhow"),
-            "should contain anyhow dep"
-        );
-        assert!(cargo.content.contains("clap"), "should contain clap dep");
-        // Battery pack itself should get its version.
-        assert!(
-            cargo.content.contains("managed-battery-pack"),
-            "should contain battery pack build-dep"
-        );
+        expect![[r#"
+            [package]
+            name = "my-project"
+            version = "0.1.0"
+            edition = "2021"
+
+            [dependencies]
+            anyhow = "1"
+            clap = { version = "4", features = ["derive"] }
+
+            [build-dependencies]
+            managed-battery-pack = "0.2.0"
+
+            [package.metadata.battery-pack]
+            managed-battery-pack = { features = ["default"] }
+        "#]]
+        .assert_eq(&cargo.content);
     }
 }
