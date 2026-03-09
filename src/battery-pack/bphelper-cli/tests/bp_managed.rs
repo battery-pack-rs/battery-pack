@@ -84,8 +84,7 @@ managed-battery-pack = { features = ["default"] }
 
     let err = resolve_with_fixture(cargo_toml, &bp_root).unwrap_err();
     assert!(
-        err.to_string().contains("bp-managed")
-            && err.to_string().contains("version"),
+        err.to_string().contains("bp-managed") && err.to_string().contains("version"),
         "should error on both bp-managed and version: {err}"
     );
 }

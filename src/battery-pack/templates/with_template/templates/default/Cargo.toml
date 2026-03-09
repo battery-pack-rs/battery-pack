@@ -9,7 +9,7 @@ description = "{{ project_description }}"
 # Add the curated dependencies your battery pack provides
 
 [build-dependencies]
-{{ project_name }} = "0.1"
+{{ project_name }} = { bp-managed = true }
 
-[package.metadata.battery-pack.{{ project_name }}]
-features = ["default"]
+[package.metadata.battery-pack]
+{{ project_name }} = { features = ["default"] }

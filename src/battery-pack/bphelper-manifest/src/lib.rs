@@ -834,6 +834,37 @@ pub fn discover_battery_packs(workspace_path: &Path) -> Result<Vec<BatteryPackSp
     Ok(packs)
 }
 
+/// Discover battery packs reachable from a crate root.
+///
+/// Walks up from `crate_root` looking for a workspace, then discovers
+/// battery packs within it. Falls back to parsing `crate_root` itself
+/// as a standalone battery pack if no workspace is found.
+// TODO: Replace with `cargo_metadata` when available (#13).
+// [impl cli.source.discover]
+pub fn discover_from_crate_root(crate_root: &Path) -> Result<Vec<BatteryPackSpec>, Error> {
+    // Try the crate root itself (it may be a workspace root).
+    if let Ok(specs) = discover_battery_packs(crate_root) {
+        return Ok(specs);
+    }
+
+    // Walk up looking for a workspace.
+    let mut dir = crate_root.to_path_buf();
+    while dir.pop() {
+        if let Ok(specs) = discover_battery_packs(&dir) {
+            return Ok(specs);
+        }
+    }
+
+    // Standalone battery pack — parse it directly.
+    let cargo_toml = crate_root.join("Cargo.toml");
+    let content = std::fs::read_to_string(&cargo_toml).map_err(|e| Error::Io {
+        path: cargo_toml.display().to_string(),
+        source: e,
+    })?;
+    let spec = parse_battery_pack(&content)?;
+    Ok(vec![spec])
+}
+
 /// Minimal workspace-level deserialization for member discovery.
 #[derive(Deserialize)]
 struct RawWorkspace {
@@ -1671,6 +1702,52 @@ mod tests {
         assert_eq!(default.len(), 2);
         assert!(default.contains_key("anyhow"));
         assert!(default.contains_key("clap"));
+    }
+
+    #[test]
+    // [verify cli.source.discover] workspace case — member crate discovers siblings
+    fn discover_from_crate_root_finds_workspace() {
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let workspace_root = manifest_dir
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap();
+        let member = workspace_root.join("tests/fixtures/basic-battery-pack");
+
+        let packs = discover_from_crate_root(&member).unwrap();
+        assert_eq!(packs.len(), 4);
+        let names: Vec<&str> = packs.iter().map(|p| p.name.as_str()).collect();
+        assert!(names.contains(&"basic-battery-pack"));
+        assert!(names.contains(&"fancy-battery-pack"));
+    }
+
+    #[test]
+    // [verify cli.source.discover] standalone case — no workspace, parses crate directly
+    fn discover_from_crate_root_standalone() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("Cargo.toml"),
+            r#"
+[package]
+name = "solo-battery-pack"
+version = "1.0.0"
+
+[features]
+default = ["dep:tokio"]
+
+[dependencies]
+tokio = { version = "1", optional = true }
+"#,
+        )
+        .unwrap();
+
+        let packs = discover_from_crate_root(tmp.path()).unwrap();
+        assert_eq!(packs.len(), 1);
+        assert_eq!(packs[0].name, "solo-battery-pack");
+        assert_eq!(packs[0].version, "1.0.0");
     }
 
     // -- validate_spec tests --
