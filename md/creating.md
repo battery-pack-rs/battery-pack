@@ -209,8 +209,18 @@ cli-battery-pack = { features = ["default"] }
 This way you don't need to update template files when you bump
 dependency versions — the template always picks up the current spec.
 
-If you need to pin a specific version for a dependency, use an explicit
-version instead of `bp-managed = true`. Explicit versions are left as-is.
+`bp-managed = true` replaces the entire dependency entry with the
+version and features from the spec. If you need to pin a specific
+version or customize features for a dependency, use an explicit
+entry instead:
+
+```toml
+# Managed — version and features come from the spec:
+anyhow = { bp-managed = true }
+
+# Explicit — left as-is during resolution:
+clap = { version = "4", features = ["derive", "color"] }
+```
 
 Placeholders should have `default` values so that `cargo bp validate`
 can generate and check templates non-interactively. Placeholder names
