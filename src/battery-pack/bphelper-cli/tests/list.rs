@@ -44,7 +44,8 @@ fn list_discovers_local_battery_packs() {
     expect![[r#"
         basic-battery-pack 0.1.0 -- A simple test battery pack
         broken-battery-pack 0.1.0 -- A deliberately broken battery pack for testing validation
-        fancy-battery-pack 0.2.0 -- A feature-rich test battery pack"#]]
+        fancy-battery-pack 0.2.0 -- A feature-rich test battery pack
+        managed-battery-pack 0.2.0 -- A test battery pack for bp-managed resolution"#]]
     .assert_eq(&formatted);
 }
 
@@ -86,6 +87,7 @@ fn list_short_names_are_correct() {
             "basic",
             "broken",
             "fancy",
+            "managed",
         ]"#]]
     .assert_eq(&format!("{:#?}", short_names));
 }

@@ -2904,6 +2904,10 @@ pub fn validate_templates(manifest_dir: &str) -> Result<()> {
         let project_dir = template_engine::generate(opts)
             .with_context(|| format!("failed to generate template '{name}'"))?;
 
+        // Resolve bp-managed dependencies from battery pack specs.
+        resolve_bp_managed(&project_dir, manifest_dir)
+            .with_context(|| format!("failed to resolve bp-managed deps for template '{name}'"))?;
+
         // Patch crates-io deps to use local workspace packages so we validate
         // against the current source, not the published versions.
         // This is mostly relevant for in-tree development, but harmless
