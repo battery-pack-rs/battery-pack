@@ -99,14 +99,15 @@ error if `bp-managed` is combined with other dependency keys.
 r[manifest.managed.resolution]
 When generating a project from a template, `cargo bp` MUST resolve
 each `bp-managed` dependency by replacing the entire entry with the
-version and Cargo features from the battery pack's spec. Any other
-keys on the `bp-managed` entry (besides `bp-managed` itself) are
-discarded. Battery pack crates in `[build-dependencies]` get the
-battery pack's own version.
+version and Cargo features from the battery pack's spec. The spec
+is always the same crate that contains the template. When downloaded
+from crates.io, this is the latest published version. When using a
+local path, it is the local source tree. Battery pack crates in
+`[build-dependencies]` get the battery pack's own version.
 
 r[manifest.managed.no-partial]
 Partial overrides are not supported. A `bp-managed` dependency cannot
-selectively manage only the version or only the features — the spec
+selectively manage only the version or only the features. The spec
 controls both. To customize features or pin a specific version, use
 an explicit dependency entry instead of `bp-managed = true`. If you
 have a use case for partial overrides, please [open an issue](https://github.com/battery-pack-rs/battery-pack/issues).

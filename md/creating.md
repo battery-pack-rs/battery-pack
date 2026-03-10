@@ -240,7 +240,7 @@ cli-battery-pack = { features = ["default"] }
 ```
 
 This way you don't need to update template files when you bump
-dependency versions — the template always picks up the current spec.
+dependency versions. The template always picks up the current spec.
 
 `bp-managed = true` replaces the entire dependency entry with the
 version and features from the spec. If you need to pin a specific
@@ -248,10 +248,10 @@ version or customize features for a dependency, use an explicit
 entry instead:
 
 ```toml
-# Managed — version and features come from the spec:
+# Managed: version and features come from the spec:
 anyhow = { bp-managed = true }
 
-# Explicit — left as-is during resolution:
+# Explicit: left as-is during resolution:
 clap = { version = "4", features = ["derive", "color"] }
 ```
 
