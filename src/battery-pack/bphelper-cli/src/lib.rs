@@ -436,7 +436,14 @@ fn new_from_battery_pack(args: NewArgs, source: &CrateSource) -> Result<()> {
         project_name: if args.preview {
             args.name.unwrap_or_else(|| "my-project".to_string())
         } else {
-            ensure_battery_pack_suffix(args.name)?
+            let raw = prompt_project_name(args.name)?;
+            // for the battery-pack crate, we special cased it to force
+            // the project name to be `-battery-pack`, and append it if not.
+            if args.battery_pack == "battery-pack" {
+                ensure_battery_pack_suffix(raw)
+            } else {
+                raw
+            }
         },
         defines,
     };
@@ -591,12 +598,11 @@ pub fn resolve_add_crates(
 // [impl manifest.features.storage]
 // [impl manifest.deps.add]
 // [impl manifest.deps.version-features]
-pub fn add_battery_pack(
-    args: AddArgs,
-    source: &CrateSource,
-    project_dir: &Path,
-) -> Result<()> {
-    let name = args.battery_pack.as_deref().context("battery pack name required")?;
+pub fn add_battery_pack(args: AddArgs, source: &CrateSource, project_dir: &Path) -> Result<()> {
+    let name = args
+        .battery_pack
+        .as_deref()
+        .context("battery pack name required")?;
     let crate_name = resolve_crate_name(name);
 
     // Step 1: Read the battery pack spec WITHOUT modifying any manifests.
@@ -1748,10 +1754,7 @@ fn update_build_rs(build_rs_path: &Path, crate_name: &str) -> Result<()> {
     Ok(())
 }
 
-fn resolve_local_template(
-    local_path: &str,
-    template: Option<&str>,
-) -> Result<(PathBuf, String)> {
+fn resolve_local_template(local_path: &str, template: Option<&str>) -> Result<(PathBuf, String)> {
     let local_path = Path::new(local_path);
     let manifest_path = local_path.join("Cargo.toml");
     let manifest_content = std::fs::read_to_string(&manifest_path)
@@ -1767,22 +1770,25 @@ fn resolve_local_template(
     Ok((local_path.to_path_buf(), template_path))
 }
 
-/// Resolve the project name, prompting interactively if not provided, and
-/// ensure it ends with `-battery-pack`.
-fn ensure_battery_pack_suffix(name: Option<String>) -> Result<String> {
-    let raw = match name {
-        Some(n) => n,
+/// Prompt for a project name if not provided.
+fn prompt_project_name(name: Option<String>) -> Result<String> {
+    match name {
+        Some(n) => Ok(n),
         None => dialoguer::Input::<String>::new()
             .with_prompt("Project name")
             .interact_text()
-            .context("Failed to read project name")?,
-    };
-    if raw.ends_with("-battery-pack") {
-        Ok(raw)
+            .context("Failed to read project name"),
+    }
+}
+
+/// Ensure a project name ends with `-battery-pack`.
+fn ensure_battery_pack_suffix(name: String) -> String {
+    if name.ends_with("-battery-pack") {
+        name
     } else {
-        let fixed = format!("{}-battery-pack", raw);
+        let fixed = format!("{}-battery-pack", name);
         println!("Renaming project to: {}", fixed);
-        Ok(fixed)
+        fixed
     }
 }
 
