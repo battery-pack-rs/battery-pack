@@ -92,8 +92,9 @@ cli-battery-pack = { bp-managed = true }
 ```
 
 r[manifest.managed.conflict]
-A dependency MUST NOT have both `bp-managed = true` and a `version` key.
-`cargo bp` MUST error if both are present.
+A dependency MUST NOT have both `bp-managed = true` and any other keys
+(`version`, `features`, `default-features`, etc.). `cargo bp` MUST
+error if `bp-managed` is combined with other dependency keys.
 
 r[manifest.managed.resolution]
 When generating a project from a template, `cargo bp` MUST resolve

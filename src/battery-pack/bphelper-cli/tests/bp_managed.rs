@@ -82,7 +82,7 @@ managed-battery-pack = { features = ["default"] }
 
     let err = resolve_with_fixture(cargo_toml, &bp_root).unwrap_err();
     assert!(
-        err.to_string().contains("bp-managed") && err.to_string().contains("version"),
+        err.to_string().contains("bp-managed") && err.to_string().contains("conflicting keys"),
         "should error on both bp-managed and version: {err}"
     );
 }
@@ -145,5 +145,48 @@ serde = "1"
     assert!(
         result.contains(r#"serde = "1""#),
         "should be unchanged: {result}"
+    );
+}
+
+#[test]
+fn resolve_bp_managed_errors_on_features_and_bp_managed() {
+    let bp_root = fixtures_dir().join("managed-battery-pack");
+    let cargo_toml = r#"[package]
+name = "my-app"
+version = "0.1.0"
+
+[dependencies]
+clap = { bp-managed = true, features = ["derive"] }
+
+[package.metadata.battery-pack]
+managed-battery-pack = { features = ["default"] }
+"#;
+
+    let err = resolve_with_fixture(cargo_toml, &bp_root).unwrap_err();
+    assert!(
+        err.to_string().contains("conflicting keys") && err.to_string().contains("features"),
+        "should error on bp-managed with features: {err}"
+    );
+}
+
+#[test]
+fn resolve_bp_managed_errors_on_no_default_features_and_bp_managed() {
+    let bp_root = fixtures_dir().join("managed-battery-pack");
+    let cargo_toml = r#"[package]
+name = "my-app"
+version = "0.1.0"
+
+[dependencies]
+clap = { bp-managed = true, default-features = false }
+
+[package.metadata.battery-pack]
+managed-battery-pack = { features = ["default"] }
+"#;
+
+    let err = resolve_with_fixture(cargo_toml, &bp_root).unwrap_err();
+    assert!(
+        err.to_string().contains("conflicting keys")
+            && err.to_string().contains("default-features"),
+        "should error on bp-managed with default-features: {err}"
     );
 }
