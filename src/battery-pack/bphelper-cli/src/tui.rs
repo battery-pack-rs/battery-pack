@@ -1711,7 +1711,7 @@ fn render_list(frame: &mut Frame, state: &mut ListScreen) {
     // Footer
     frame.render_widget(
         Paragraph::new("↑↓/jk Navigate | Enter Select | q Quit")
-            .style(Style::default().fg(Color::White).bg(Color::DarkGray)),
+            .style(Style::default().white().on_dark_gray()),
         footer,
     );
 }
@@ -1884,7 +1884,7 @@ fn render_detail(frame: &mut Frame, state: &DetailScreen) {
         format!("↑↓/jk Navigate | Enter Open/Select | {}", back_hint)
     };
     frame.render_widget(
-        Paragraph::new(footer_text).style(Style::default().fg(Color::White).bg(Color::DarkGray)),
+        Paragraph::new(footer_text).style(Style::default().white().on_dark_gray()),
         footer,
     );
 }
@@ -1970,7 +1970,7 @@ fn render_form(frame: &mut Frame, state: &FormScreen) {
     // Hint
     frame.render_widget(
         Paragraph::new("Tab Switch | Enter Create | Esc Cancel")
-            .style(Style::default().fg(Color::White).bg(Color::DarkGray)),
+            .style(Style::default().white().on_dark_gray()),
         hint,
     );
 
@@ -2070,7 +2070,7 @@ fn render_preview(frame: &mut Frame, state: &PreviewScreen) {
 
     frame.render_widget(
         Paragraph::new("↑↓/jk Scroll | Esc Back")
-            .style(Style::default().fg(Color::White).bg(Color::DarkGray)),
+            .style(Style::default().white().on_dark_gray()),
         footer,
     );
 }
@@ -2183,7 +2183,7 @@ fn render_add(frame: &mut Frame, state: &mut AddScreen) {
         }
     };
     frame.render_widget(
-        Paragraph::new(footer_text).style(Style::default().fg(Color::White).bg(Color::DarkGray)),
+        Paragraph::new(footer_text).style(Style::default().white().on_dark_gray()),
         footer,
     );
 }
