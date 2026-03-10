@@ -1,27 +1,19 @@
 # All crates get published to crates.io when their version changes.
-# Battery packs get GitHub releases; internal bphelper-* crates do not.
+# Only battery-pack gets a GitHub release; all other crates roll their
+# commits into the battery-pack changelog so there's one unified release post.
 [workspace]
-git_release_enable = true
+git_release_enable = false
 
 [[package]]
 name = "battery-pack"
 git_release_enable = true
-# Roll commits from these crates into the battery-pack changelog,
+# Roll commits from every other crate into the battery-pack changelog,
 # so the GitHub release notes cover the whole workspace.
 changelog_include = [
     "bphelper-build",
     "bphelper-cli",
     "bphelper-manifest",
+    "cli-battery-pack",
+    "error-battery-pack",
+    "logging-battery-pack",
 ]
-
-[[package]]
-name = "bphelper-build"
-git_release_enable = false
-
-[[package]]
-name = "bphelper-cli"
-git_release_enable = false
-
-[[package]]
-name = "bphelper-manifest"
-git_release_enable = false
