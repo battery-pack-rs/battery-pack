@@ -1,6 +1,6 @@
 [package]
 name = "bphelper-cli"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2024"
 description = "CLI for creating and managing battery packs"
 license = "MIT OR Apache-2.0"
@@ -8,7 +8,7 @@ repository = "https://github.com/battery-pack-rs/battery-pack"
 keywords = ["battery-pack", "cli", "cargo"]
 
 [dependencies]
-bphelper-manifest = { path = "../bphelper-manifest", version = "0.5.1" }
+bphelper-manifest = { path = "../bphelper-manifest", version = "0.5.2" }
 clap.workspace = true
 minijinja.workspace = true
 walkdir = "2"

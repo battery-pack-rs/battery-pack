@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-cli-v0.6.0...bphelper-cli-v0.6.1) - 2026-03-12
+
+### Added
+
+- with_template uses bp-managed, move discovery to bphelper-manifest
+- wire bp-managed resolution into template generation
+- implement bp-managed dependency resolution
+
+### Fixed
+
+- reject any extra keys alongside bp-managed, not just version
+
+### Other
+
+- *(template)* Use dotted key syntax for `bp-managed` dependencies ([#56](https://github.com/battery-pack-rs/battery-pack/pull/56))
+- remove unused resolve_bp_managed file-walking wrapper
+- resolve bp-managed in all Cargo.toml files within project dir
+- use expect-test snapshots for bp-managed resolution output
+- verify preview resolves bp-managed deps
+- move bp-managed resolution into shared render pipeline
+- write bp metadata as inline tables instead of dotted sub-tables
+
 ## [0.6.0](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-cli-v0.5.0...bphelper-cli-v0.6.0) - 2026-03-12
 
 ### Added

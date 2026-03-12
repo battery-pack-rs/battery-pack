@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-manifest-v0.5.1...bphelper-manifest-v0.5.2) - 2026-03-12
+
+### Added
+
+- with_template uses bp-managed, move discovery to bphelper-manifest
+
+### Other
+
+- add managed-battery-pack fixture with bp-managed deps
+
 ## [0.5.1](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-manifest-v0.5.0...bphelper-manifest-v0.5.1) - 2026-03-05
 
 ### Added
