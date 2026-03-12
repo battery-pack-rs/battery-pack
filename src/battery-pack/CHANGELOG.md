@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.6](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.4.5...battery-pack-v0.4.6) - 2026-03-12
+
+### Added
+
+- template preview — render and display templates without generating a project ([#45](https://github.com/battery-pack-rs/battery-pack/pull/45))
+
+### Fixed
+
+- remove unused variables param from render_template_dir ([#46](https://github.com/battery-pack-rs/battery-pack/pull/46))
+
 ## [0.4.5](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.4.4...battery-pack-v0.4.5) - 2026-03-05
 
 ### Added

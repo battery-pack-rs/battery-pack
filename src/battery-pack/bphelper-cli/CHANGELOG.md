@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-cli-v0.5.0...bphelper-cli-v0.6.0) - 2026-03-12
+
+### Added
+
+- template preview — render and display templates without generating a project ([#45](https://github.com/battery-pack-rs/battery-pack/pull/45))
+
+### Fixed
+
+- remove unused variables param from render_template_dir ([#46](https://github.com/battery-pack-rs/battery-pack/pull/46))
+
 ## [0.5.0](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-cli-v0.4.1...bphelper-cli-v0.5.0) - 2026-03-05
 
 ### Added
