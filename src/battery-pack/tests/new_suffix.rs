@@ -13,13 +13,17 @@ fn crate_root() -> std::path::PathBuf {
 /// Run `cargo bp new battery-pack --name <name> --path <template_root>` in a temp dir
 /// and return the generated package name from Cargo.toml.
 fn generate(name: &str) -> (String, String) {
+    generate_with_pack("battery-pack", name)
+}
+
+fn generate_with_pack(pack: &str, name: &str) -> (String, String) {
     let tmp = tempfile::tempdir().unwrap();
 
     cargo_bp()
         .args([
             "bp",
             "new",
-            "battery-pack",
+            pack,
             "--name",
             name,
             "--path",
@@ -53,4 +57,13 @@ fn new_preserves_existing_suffix() {
     let (dir_name, pkg_name) = generate("kafka-battery-pack");
     assert_eq!(dir_name, "kafka-battery-pack");
     assert_eq!(pkg_name, "kafka-battery-pack");
+}
+
+#[test]
+fn new_non_battery_pack_preserves_name() {
+    // When the battery pack is not "battery-pack", the project name should
+    // be used as-is without appending -battery-pack.
+    let (dir_name, pkg_name) = generate_with_pack("other-pack", "my-app");
+    assert_eq!(dir_name, "my-app");
+    assert_eq!(pkg_name, "my-app");
 }

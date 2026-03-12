@@ -57,70 +57,80 @@ pub enum Commands {
     },
 }
 
+#[derive(Debug, clap::Args)]
+pub struct NewArgs {
+    /// Name of the battery pack (e.g., "cli" resolves to "cli-battery-pack")
+    pub battery_pack: String,
+
+    /// Name for the new project (prompted interactively if not provided)
+    #[arg(long, short = 'n')]
+    pub name: Option<String>,
+
+    /// Which template to use (defaults to first available, or prompts if multiple)
+    // [impl cli.new.template-flag]
+    #[arg(long, short = 't')]
+    pub template: Option<String>,
+
+    /// Use a local path instead of downloading from crates.io
+    #[arg(long)]
+    pub path: Option<String>,
+
+    /// Set a template placeholder value (e.g., -d description="My project")
+    #[arg(long = "define", short = 'd', value_parser = parse_define)]
+    pub define: Vec<(String, String)>,
+
+    /// Render the template and print to stdout without generating a project
+    #[arg(long)]
+    pub preview: bool,
+}
+
+#[derive(Debug, clap::Args)]
+pub struct AddArgs {
+    /// Name of the battery pack (e.g., "cli" resolves to "cli-battery-pack").
+    /// Omit to open the interactive manager.
+    pub battery_pack: Option<String>,
+
+    /// Specific crates to add from the battery pack (ignores defaults/features)
+    pub crates: Vec<String>,
+
+    // [impl cli.add.features]
+    // [impl cli.add.features-multiple]
+    /// Named features to enable (comma-separated or repeated)
+    #[arg(long = "features", short = 'F', value_delimiter = ',')]
+    pub features: Vec<String>,
+
+    // [impl cli.add.no-default-features]
+    /// Skip the default crates; only add crates from named features
+    #[arg(long)]
+    pub no_default_features: bool,
+
+    // [impl cli.add.all-features]
+    /// Add every crate the battery pack offers
+    #[arg(long)]
+    pub all_features: bool,
+
+    // [impl cli.add.target]
+    /// Where to store the battery pack registration
+    /// (workspace, package, or default)
+    #[arg(long)]
+    pub target: Option<AddTarget>,
+
+    /// Use a local path instead of downloading from crates.io
+    #[arg(long)]
+    pub path: Option<String>,
+}
+
 #[derive(Subcommand)]
 pub enum BpCommands {
     /// Create a new project from a battery pack template
-    New {
-        /// Name of the battery pack (e.g., "cli" resolves to "cli-battery-pack")
-        battery_pack: String,
-
-        /// Name for the new project (prompted interactively if not provided)
-        #[arg(long, short = 'n')]
-        name: Option<String>,
-
-        /// Which template to use (defaults to first available, or prompts if multiple)
-        // [impl cli.new.template-flag]
-        #[arg(long, short = 't')]
-        template: Option<String>,
-
-        /// Use a local path instead of downloading from crates.io
-        #[arg(long)]
-        path: Option<String>,
-
-        /// Set a template placeholder value (e.g., -d description="My project")
-        #[arg(long = "define", short = 'd', value_parser = parse_define)]
-        define: Vec<(String, String)>,
-    },
+    New(NewArgs),
 
     /// Add a battery pack and sync its dependencies.
     ///
     /// Without arguments, opens an interactive TUI for managing all battery packs.
     /// With a battery pack name, adds that specific pack (with an interactive picker
     /// for choosing crates if the pack has features or many dependencies).
-    Add {
-        /// Name of the battery pack (e.g., "cli" resolves to "cli-battery-pack").
-        /// Omit to open the interactive manager.
-        battery_pack: Option<String>,
-
-        /// Specific crates to add from the battery pack (ignores defaults/features)
-        crates: Vec<String>,
-
-        // [impl cli.add.features]
-        // [impl cli.add.features-multiple]
-        /// Named features to enable (comma-separated or repeated)
-        #[arg(long = "features", short = 'F', value_delimiter = ',')]
-        features: Vec<String>,
-
-        // [impl cli.add.no-default-features]
-        /// Skip the default crates; only add crates from named features
-        #[arg(long)]
-        no_default_features: bool,
-
-        // [impl cli.add.all-features]
-        /// Add every crate the battery pack offers
-        #[arg(long)]
-        all_features: bool,
-
-        // [impl cli.add.target]
-        /// Where to store the battery pack registration
-        /// (workspace, package, or default)
-        #[arg(long)]
-        target: Option<AddTarget>,
-
-        /// Use a local path instead of downloading from crates.io
-        #[arg(long)]
-        path: Option<String>,
-    },
+    Add(AddArgs),
 
     /// Update dependencies from installed battery packs
     Sync {
@@ -220,33 +230,9 @@ pub fn main() -> Result<()> {
                 }
             };
             match command {
-                BpCommands::New {
-                    battery_pack,
-                    name,
-                    template,
-                    path,
-                    define,
-                } => new_from_battery_pack(&battery_pack, name, template, path, &source, &define),
-                BpCommands::Add {
-                    battery_pack,
-                    crates,
-                    features,
-                    no_default_features,
-                    all_features,
-                    target,
-                    path,
-                } => match battery_pack {
-                    Some(name) => add_battery_pack(
-                        &name,
-                        &features,
-                        no_default_features,
-                        all_features,
-                        &crates,
-                        target,
-                        path.as_deref(),
-                        &source,
-                        &project_dir,
-                    ),
+                BpCommands::New(args) => new_from_battery_pack(args, &source),
+                BpCommands::Add(args) => match args.battery_pack {
+                    Some(_) => add_battery_pack(args, &source, &project_dir),
                     None if interactive => tui::run_add(source),
                     None => {
                         bail!(
@@ -430,26 +416,68 @@ pub struct ExampleInfo {
 // [impl cli.new.name-prompt]
 // [impl cli.path.flag]
 // [impl cli.source.replace]
-fn new_from_battery_pack(
-    battery_pack: &str,
-    name: Option<String>,
-    template: Option<String>,
-    path_override: Option<String>,
-    source: &CrateSource,
-    define: &[(String, String)],
-) -> Result<()> {
-    let defines: std::collections::BTreeMap<String, String> = define.iter().cloned().collect();
+fn new_from_battery_pack(args: NewArgs, source: &CrateSource) -> Result<()> {
+    let defines: std::collections::BTreeMap<String, String> = args.define.into_iter().collect();
 
-    // --path takes precedence over --crate-source
-    if let Some(path) = path_override {
-        return generate_from_local(&path, name, template, defines);
+    let _temp_dir: Option<tempfile::TempDir>;
+    let (crate_dir, template_path) = if let Some(path) = args.path {
+        _temp_dir = None;
+        resolve_local_template(&path, args.template.as_deref())?
+    } else {
+        let (dir, tp, temp) =
+            resolve_remote_template(&args.battery_pack, args.template.as_deref(), source)?;
+        _temp_dir = temp;
+        (dir, tp)
+    };
+
+    let render = template_engine::RenderOpts {
+        crate_root: crate_dir,
+        template_path,
+        project_name: if args.preview {
+            args.name.unwrap_or_else(|| "my-project".to_string())
+        } else {
+            let raw = prompt_project_name(args.name)?;
+            // For the battery-pack crate, we special case it to resolve
+            // the project name as `*-battery-pack`.
+            //
+            // TODO: We can add pre/post hooks to our bp-template.toml
+            // if there are more fancy template use cases
+            if args.battery_pack == "battery-pack" {
+                ensure_battery_pack_suffix(raw)
+            } else {
+                raw
+            }
+        },
+        defines,
+    };
+
+    if args.preview {
+        let files = template_engine::preview(render)?;
+        for file in &files {
+            println!("── {} ──", file.path);
+            println!("{}", file.content);
+            println!();
+        }
+        return Ok(());
     }
 
-    let crate_name = resolve_crate_name(battery_pack);
+    template_engine::generate(template_engine::GenerateOpts {
+        render,
+        destination: None,
+        git_init: true,
+    })?;
+    Ok(())
+}
 
-    // Locate the crate directory based on source
+/// Resolve crate directory and template path from a registry or local workspace source.
+fn resolve_remote_template(
+    battery_pack: &str,
+    template: Option<&str>,
+    source: &CrateSource,
+) -> Result<(PathBuf, String, Option<tempfile::TempDir>)> {
+    let crate_name = resolve_crate_name(battery_pack);
     let crate_dir: PathBuf;
-    let _temp_dir: Option<tempfile::TempDir>; // keep alive for Registry
+    let temp_dir: Option<tempfile::TempDir>;
     match source {
         CrateSource::Registry => {
             let crate_info = lookup_crate(&crate_name)?;
@@ -457,25 +485,19 @@ fn new_from_battery_pack(
             crate_dir = temp
                 .path()
                 .join(format!("{}-{}", crate_name, crate_info.version));
-            _temp_dir = Some(temp);
+            temp_dir = Some(temp);
         }
         CrateSource::Local(workspace_dir) => {
             crate_dir = find_local_battery_pack_dir(workspace_dir, &crate_name)?;
-            _temp_dir = None;
+            temp_dir = None;
         }
     }
-
-    // Read template metadata from the Cargo.toml
     let manifest_path = crate_dir.join("Cargo.toml");
     let manifest_content = std::fs::read_to_string(&manifest_path)
         .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
     let templates = parse_template_metadata(&manifest_content, &crate_name)?;
-
-    // Resolve which template to use
-    let template_path = resolve_template(&templates, template.as_deref())?;
-
-    // Generate the project from the crate directory
-    generate_from_path(&crate_dir, &template_path, name, defines)
+    let template_path = resolve_template(&templates, template)?;
+    Ok((crate_dir, template_path, temp_dir))
 }
 
 /// Result of resolving which crates to add from a battery pack.
@@ -579,18 +601,11 @@ pub fn resolve_add_crates(
 // [impl manifest.features.storage]
 // [impl manifest.deps.add]
 // [impl manifest.deps.version-features]
-#[allow(clippy::too_many_arguments)]
-pub fn add_battery_pack(
-    name: &str,
-    with_features: &[String],
-    no_default_features: bool,
-    all_features: bool,
-    specific_crates: &[String],
-    target: Option<AddTarget>,
-    path: Option<&str>,
-    source: &CrateSource,
-    project_dir: &Path,
-) -> Result<()> {
+pub fn add_battery_pack(args: AddArgs, source: &CrateSource, project_dir: &Path) -> Result<()> {
+    let name = args
+        .battery_pack
+        .as_deref()
+        .context("battery pack name required")?;
     let crate_name = resolve_crate_name(name);
 
     // Step 1: Read the battery pack spec WITHOUT modifying any manifests.
@@ -598,7 +613,7 @@ pub fn add_battery_pack(
     // [impl cli.path.flag]
     // [impl cli.path.no-resolve]
     // [impl cli.source.replace]
-    let (bp_version, bp_spec) = if let Some(local_path) = path {
+    let (bp_version, bp_spec) = if let Some(ref local_path) = args.path {
         let manifest_path = Path::new(local_path).join("Cargo.toml");
         let manifest_content = std::fs::read_to_string(&manifest_path)
             .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
@@ -614,10 +629,10 @@ pub fn add_battery_pack(
     let resolved = resolve_add_crates(
         &bp_spec,
         &crate_name,
-        with_features,
-        no_default_features,
-        all_features,
-        specific_crates,
+        &args.features,
+        args.no_default_features,
+        args.all_features,
+        &args.crates,
     );
     let (active_features, crates_to_sync) = match resolved {
         ResolvedAdd::Crates {
@@ -661,9 +676,9 @@ pub fn add_battery_pack(
     let build_deps =
         user_doc["build-dependencies"].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
     if let Some(table) = build_deps.as_table_mut() {
-        if let Some(local_path) = path {
+        if let Some(ref local_path) = args.path {
             let mut dep = toml_edit::InlineTable::new();
-            dep.insert("path", toml_edit::Value::from(local_path));
+            dep.insert("path", toml_edit::Value::from(local_path.as_str()));
             table.insert(
                 &crate_name,
                 toml_edit::Item::Value(toml_edit::Value::InlineTable(dep)),
@@ -704,9 +719,9 @@ pub fn add_battery_pack(
             .or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
         if let Some(ws_table) = ws_deps.as_table_mut() {
             // Add the battery pack itself to workspace deps
-            if let Some(local_path) = path {
+            if let Some(ref local_path) = args.path {
                 let mut dep = toml_edit::InlineTable::new();
-                dep.insert("path", toml_edit::Value::from(local_path));
+                dep.insert("path", toml_edit::Value::from(local_path.as_str()));
                 ws_table.insert(
                     &crate_name,
                     toml_edit::Item::Value(toml_edit::Value::InlineTable(dep)),
@@ -736,7 +751,7 @@ pub fn add_battery_pack(
     // [impl manifest.features.storage]
     // [impl cli.add.target]
     // Record active features — location depends on --target flag
-    let use_workspace_metadata = match target {
+    let use_workspace_metadata = match args.target {
         Some(AddTarget::Workspace) => true,
         Some(AddTarget::Package) => false,
         Some(AddTarget::Default) | None => workspace_manifest.is_some(),
@@ -1742,15 +1757,8 @@ fn update_build_rs(build_rs_path: &Path, crate_name: &str) -> Result<()> {
     Ok(())
 }
 
-fn generate_from_local(
-    local_path: &str,
-    name: Option<String>,
-    template: Option<String>,
-    defines: std::collections::BTreeMap<String, String>,
-) -> Result<()> {
+fn resolve_local_template(local_path: &str, template: Option<&str>) -> Result<(PathBuf, String)> {
     let local_path = Path::new(local_path);
-
-    // Read local Cargo.toml
     let manifest_path = local_path.join("Cargo.toml");
     let manifest_content = std::fs::read_to_string(&manifest_path)
         .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
@@ -1760,53 +1768,31 @@ fn generate_from_local(
         .and_then(|s| s.to_str())
         .unwrap_or("unknown");
     let templates = parse_template_metadata(&manifest_content, crate_name)?;
-    let template_path = resolve_template(&templates, template.as_deref())?;
+    let template_path = resolve_template(&templates, template)?;
 
-    generate_from_path(local_path, &template_path, name, defines)
+    Ok((local_path.to_path_buf(), template_path))
 }
 
-/// Resolve the project name, prompting interactively if not provided, and
-/// ensure it ends with `-battery-pack`.
-fn ensure_battery_pack_suffix(name: Option<String>) -> Result<String> {
-    let raw = match name {
-        Some(n) => n,
+/// Prompt for a project name if not provided.
+fn prompt_project_name(name: Option<String>) -> Result<String> {
+    match name {
+        Some(n) => Ok(n),
         None => dialoguer::Input::<String>::new()
             .with_prompt("Project name")
             .interact_text()
-            .context("Failed to read project name")?,
-    };
-    if raw.ends_with("-battery-pack") {
-        Ok(raw)
-    } else {
-        let fixed = format!("{}-battery-pack", raw);
-        println!("Renaming project to: {}", fixed);
-        Ok(fixed)
+            .context("Failed to read project name"),
     }
 }
 
-fn generate_from_path(
-    crate_path: &Path,
-    template_path: &str,
-    name: Option<String>,
-    defines: std::collections::BTreeMap<String, String>,
-) -> Result<()> {
-    // Ensure the project name ends with -battery-pack.
-    // We always resolve the name before calling the template engine so the suffix
-    // applies to both the directory name and the project-name variable.
-    let project_name = ensure_battery_pack_suffix(name)?;
-
-    let opts = template_engine::GenerateOpts {
-        crate_root: crate_path.to_path_buf(),
-        template_path: template_path.to_string(),
-        project_name,
-        destination: None,
-        defines,
-        git_init: true,
-    };
-
-    template_engine::generate(opts)?;
-
-    Ok(())
+/// Ensure a project name ends with `-battery-pack`.
+fn ensure_battery_pack_suffix(name: String) -> String {
+    if name.ends_with("-battery-pack") {
+        name
+    } else {
+        let fixed = format!("{}-battery-pack", name);
+        println!("Renaming project to: {}", fixed);
+        fixed
+    }
 }
 
 /// Parse a `key=value` string for clap's `value_parser`.
@@ -2905,11 +2891,13 @@ pub fn validate_templates(manifest_dir: &str) -> Result<()> {
         let project_name = format!("bp-validate-{name}");
 
         let opts = template_engine::GenerateOpts {
-            crate_root: manifest_dir.to_path_buf(),
-            template_path: template.path.clone(),
-            project_name,
+            render: template_engine::RenderOpts {
+                crate_root: manifest_dir.to_path_buf(),
+                template_path: template.path.clone(),
+                project_name,
+                defines: std::collections::BTreeMap::new(),
+            },
             destination: Some(tmp.path().to_path_buf()),
-            defines: std::collections::BTreeMap::new(),
             git_init: false,
         };
 

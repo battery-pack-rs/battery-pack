@@ -74,7 +74,7 @@ fn parse_add_command(args: &[&str]) -> ParsedAdd {
     let cli = bphelper_cli::Cli::try_parse_from(args)
         .unwrap_or_else(|e| panic!("parse failed for {args:?}: {e}"));
     match unwrap_bp_command(cli) {
-        Some(bphelper_cli::BpCommands::Add {
+        Some(bphelper_cli::BpCommands::Add(bphelper_cli::AddArgs {
             battery_pack,
             crates,
             features,
@@ -82,7 +82,7 @@ fn parse_add_command(args: &[&str]) -> ParsedAdd {
             all_features,
             target,
             path,
-        }) => ParsedAdd {
+        })) => ParsedAdd {
             _battery_pack: battery_pack,
             crates,
             features,

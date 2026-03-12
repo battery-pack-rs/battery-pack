@@ -34,6 +34,12 @@ To set placeholder values non-interactively (e.g. in CI), use `-d`:
 cargo bp new cli --name my-app -d description="My CLI tool"
 ```
 
+To preview what a template will generate without writing any files:
+
+```bash
+cargo bp new cli --preview
+```
+
 ## Add a battery pack to an existing project
 
 If you already have a Rust project, you can add a battery pack to it:

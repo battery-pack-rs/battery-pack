@@ -155,6 +155,13 @@ r[cli.new.define-flag]
 named placeholder to the given value, skipping the prompt for that
 placeholder. Multiple `-d` flags MAY be provided.
 
+r[cli.new.preview]
+`cargo bp new <pack> --preview` MUST render the template and print
+the resulting files to stdout without writing anything to disk.
+Placeholders without a default MUST fall back to `<name>` so the
+preview always succeeds. If `--name` is not provided, the preview
+MUST use `my-project` as the project name.
+
 ## `cargo bp status`
 
 r[cli.status.list]

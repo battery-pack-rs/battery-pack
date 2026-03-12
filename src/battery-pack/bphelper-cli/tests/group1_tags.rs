@@ -49,7 +49,7 @@ fn new_name_flag_is_parsed() {
             .expect("--name flag should be accepted");
 
     match unwrap_bp_command(cli) {
-        Some(bphelper_cli::BpCommands::New { name, .. }) => {
+        Some(bphelper_cli::BpCommands::New(bphelper_cli::NewArgs { name, .. })) => {
             assert_eq!(name.as_deref(), Some("my-project"));
         }
         None => panic!("expected Some(New), got None"),
@@ -65,7 +65,7 @@ fn new_name_short_flag_is_parsed() {
         .expect("-n flag should be accepted");
 
     match unwrap_bp_command(cli) {
-        Some(bphelper_cli::BpCommands::New { name, .. }) => {
+        Some(bphelper_cli::BpCommands::New(bphelper_cli::NewArgs { name, .. })) => {
             assert_eq!(name.as_deref(), Some("my-project"));
         }
         None => panic!("expected Some(New), got None"),
@@ -86,7 +86,7 @@ fn new_without_name_parses_as_none() {
         .expect("new without --name should parse");
 
     match unwrap_bp_command(cli) {
-        Some(bphelper_cli::BpCommands::New { name, .. }) => {
+        Some(bphelper_cli::BpCommands::New(bphelper_cli::NewArgs { name, .. })) => {
             assert!(name.is_none(), "name should be None when --name is omitted");
         }
         None => panic!("expected Some(New), got None"),
@@ -195,6 +195,38 @@ fn resolve_template_explicit_flag_overrides() {
 
     let result = bphelper_cli::resolve_template(&templates, Some("advanced")).unwrap();
     assert_eq!(result, "templates/advanced");
+}
+
+// ============================================================================
+// cli.new.preview — --preview flag is accepted by the `new` subcommand
+// ============================================================================
+
+#[test]
+fn new_preview_flag_is_parsed() {
+    let cli = bphelper_cli::Cli::try_parse_from(["cargo", "bp", "new", "cli", "--preview"])
+        .expect("--preview flag should be accepted");
+
+    match unwrap_bp_command(cli) {
+        Some(bphelper_cli::BpCommands::New(bphelper_cli::NewArgs { preview, .. })) => {
+            assert!(preview, "preview should be true");
+        }
+        None => panic!("expected Some(New), got None"),
+        Some(other) => panic!("expected New, got {:?}", std::mem::discriminant(&other)),
+    }
+}
+
+#[test]
+fn new_preview_defaults_to_false() {
+    let cli = bphelper_cli::Cli::try_parse_from(["cargo", "bp", "new", "cli"])
+        .expect("new without --preview should parse");
+
+    match unwrap_bp_command(cli) {
+        Some(bphelper_cli::BpCommands::New(bphelper_cli::NewArgs { preview, .. })) => {
+            assert!(!preview, "preview should default to false");
+        }
+        None => panic!("expected Some(New), got None"),
+        Some(other) => panic!("expected New, got {:?}", std::mem::discriminant(&other)),
+    }
 }
 
 // ============================================================================

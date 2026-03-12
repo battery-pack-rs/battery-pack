@@ -127,13 +127,15 @@ fn add(
     let features: Vec<String> = features.iter().map(|s| s.to_string()).collect();
     let specific: Vec<String> = specific_crates.iter().map(|s| s.to_string()).collect();
     bphelper_cli::add_battery_pack(
-        pack_name,
-        &features,
-        no_default_features,
-        all_features,
-        &specific,
-        target,
-        Some(fixture_path.to_str().unwrap()),
+        bphelper_cli::AddArgs {
+            battery_pack: Some(pack_name.to_string()),
+            crates: specific,
+            features,
+            no_default_features,
+            all_features,
+            target,
+            path: Some(fixture_path.to_str().unwrap().to_string()),
+        },
         &bphelper_cli::CrateSource::Registry,
         project_dir,
     )
