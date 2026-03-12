@@ -210,7 +210,10 @@ fn prepare_render(
 ) -> Result<BTreeMap<String, String>> {
     let mut variables = BTreeMap::new();
     variables.insert("project_name".to_string(), opts.project_name.clone());
-    variables.insert("crate_name".to_string(), opts.project_name.replace('-', "_"));
+    variables.insert(
+        "crate_name".to_string(),
+        opts.project_name.replace('-', "_"),
+    );
     resolve_placeholders(&config.placeholders, &opts.defines, &mut variables)?;
     Ok(variables)
 }

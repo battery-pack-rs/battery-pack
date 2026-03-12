@@ -6,15 +6,15 @@ description = "A CLI application with subcommands"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-anyhow = { bp-managed = true }
-clap = { bp-managed = true }
-dialoguer = { bp-managed = true }
-tracing = { bp-managed = true }
-tracing-subscriber = { bp-managed = true }
+anyhow.bp-managed = true
+clap.bp-managed = true
+dialoguer.bp-managed = true
+tracing.bp-managed = true
+tracing-subscriber.bp-managed = true
 
 [build-dependencies]
-cli-battery-pack = { bp-managed = true }
-logging-battery-pack = { bp-managed = true }
+cli-battery-pack.bp-managed = true
+logging-battery-pack.bp-managed = true
 
 [package.metadata.battery-pack]
 cli-battery-pack = { features = ["default"] }

@@ -230,10 +230,10 @@ battery pack's spec:
 
 ```toml
 [dependencies]
-clap = { bp-managed = true }
+clap.bp-managed = true
 
 [build-dependencies]
-cli-battery-pack = { bp-managed = true }
+cli-battery-pack.bp-managed = true
 
 [package.metadata.battery-pack]
 cli-battery-pack = { features = ["default"] }
@@ -249,7 +249,7 @@ entry instead:
 
 ```toml
 # Managed: version and features come from the spec:
-anyhow = { bp-managed = true }
+anyhow.bp-managed = true
 
 # Explicit: left as-is during resolution:
 clap = { version = "4", features = ["derive", "color"] }

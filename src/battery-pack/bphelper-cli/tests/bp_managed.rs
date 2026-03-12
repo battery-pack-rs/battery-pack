@@ -29,11 +29,11 @@ name = "my-app"
 version = "0.1.0"
 
 [dependencies]
-anyhow = { bp-managed = true }
-clap = { bp-managed = true }
+anyhow.bp-managed = true
+clap.bp-managed = true
 
 [build-dependencies]
-managed-battery-pack = { bp-managed = true }
+managed-battery-pack.bp-managed = true
 
 [package.metadata.battery-pack]
 managed-battery-pack = { features = ["default"] }
@@ -109,7 +109,7 @@ name = "my-app"
 version = "0.1.0"
 
 [dependencies]
-nonexistent = { bp-managed = true }
+nonexistent.bp-managed = true
 
 [package.metadata.battery-pack]
 managed-battery-pack = { features = ["default"] }
@@ -182,4 +182,44 @@ managed-battery-pack = { features = ["default"] }
             && err.to_string().contains("default-features"),
         "should error on bp-managed with default-features: {err}"
     );
+}
+
+#[test]
+fn resolve_bp_managed_inline_table_syntax() {
+    use expect_test::expect;
+
+    let bp_root = fixtures_dir().join("managed-battery-pack");
+    let cargo_toml = r#"[package]
+name = "my-app"
+version = "0.1.0"
+
+[dependencies]
+anyhow = { bp-managed = true }
+clap = { bp-managed = true }
+
+[build-dependencies]
+managed-battery-pack = { bp-managed = true }
+
+[package.metadata.battery-pack]
+managed-battery-pack = { features = ["default"] }
+"#;
+
+    let result = resolve_with_fixture(cargo_toml, &bp_root).unwrap();
+
+    expect![[r#"
+        [package]
+        name = "my-app"
+        version = "0.1.0"
+
+        [dependencies]
+        anyhow = "1"
+        clap = { version = "4", features = ["derive"] }
+
+        [build-dependencies]
+        managed-battery-pack = "0.2.0"
+
+        [package.metadata.battery-pack]
+        managed-battery-pack = { features = ["default"] }
+    "#]]
+    .assert_eq(&result);
 }
