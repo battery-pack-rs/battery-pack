@@ -85,10 +85,10 @@ be resolved at template generation time from the battery pack's own spec.
 
 ```toml
 [dependencies]
-clap = { bp-managed = true }
+clap.bp-managed = true
 
 [build-dependencies]
-cli-battery-pack = { bp-managed = true }
+cli-battery-pack.bp-managed = true
 ```
 
 r[manifest.managed.conflict]
