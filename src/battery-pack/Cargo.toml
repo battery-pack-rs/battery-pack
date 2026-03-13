@@ -25,19 +25,25 @@ schema_version = 1
 default = { path = "templates/default", description = "Starter template for authoring a battery pack" }
 with_template = { path = "templates/with_template", description = "Starter template with an example project template" }
 
+[features]
+default = []
+build = ["bphelper-build"]
+cli = ["bphelper-cli"]
+
 [[bin]]
 name = "cargo-bp"
 path = "src/main.rs"
+required-features = ["cli"]
 
 [dependencies]
-bphelper-build = { path = "bphelper-build", version = "0.4.3" }
-bphelper-cli = { path = "bphelper-cli", version = "0.6.1" }
+bphelper-build = { path = "bphelper-build", version = "0.4.3", optional = true }
+bphelper-cli = { path = "bphelper-cli", version = "0.6.1", optional = true }
 bphelper-manifest = { path = "bphelper-manifest", version = "0.5.2" }
 anyhow.workspace = true
 
 [dev-dependencies]
 assert_cmd = "2"
-battery-pack = { path = "." }
+battery-pack = { path = ".", features = ["build", "cli"] }
 expect-test.workspace = true
 tempfile.workspace = true
 toml.workspace = true

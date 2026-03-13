@@ -35,6 +35,7 @@ pub use bphelper_manifest::{BatteryPackSpec, CrateSpec, DepKind};
 ///
 /// See the [docgen spec](https://battery-pack-rs.github.io/battery-pack/spec/docgen.html)
 /// for details on templates and helpers.
+#[cfg(feature = "build")]
 pub mod build {
     pub use bphelper_build::{
         CrateEntry, DocsContext, Error, FeatureEntry, PackageInfo, build_context, generate_docs,
@@ -85,6 +86,7 @@ pub fn validate(self_manifest: &str) {
 ///     }
 /// }
 /// ```
+#[cfg(feature = "cli")]
 pub mod testing {
     pub use bphelper_cli::validate_templates;
 }
@@ -92,6 +94,7 @@ pub mod testing {
 #[cfg(test)]
 mod tests {
     #[test]
+    #[cfg(feature = "cli")]
     fn validate_templates() {
         battery_pack::testing::validate_templates(env!("CARGO_MANIFEST_DIR")).unwrap();
     }
