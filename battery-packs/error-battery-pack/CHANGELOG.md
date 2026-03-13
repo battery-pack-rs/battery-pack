@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3](https://github.com/battery-pack-rs/battery-pack/compare/error-battery-pack-v0.5.2...error-battery-pack-v0.5.3) - 2026-03-13
+
+### Other
+
+- refactor bphelper-cli and narrow battery-pack dependency ([#48](https://github.com/battery-pack-rs/battery-pack/pull/48))
+
 ## [0.5.2](https://github.com/battery-pack-rs/battery-pack/compare/error-battery-pack-v0.5.1...error-battery-pack-v0.5.2) - 2026-03-05
 
 ### Other
