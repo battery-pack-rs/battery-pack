@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.9](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.4.8...battery-pack-v0.4.9) - 2026-03-15
+
+### Fixed
+
+- remove double panic hook from `tui.rs`
+
 ## [0.4.8](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.4.7...battery-pack-v0.4.8) - 2026-03-13
 
 ### Other
