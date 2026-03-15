@@ -687,23 +687,11 @@ impl App {
     }
 
     fn run(mut self) -> Result<()> {
-        // Install a panic hook that restores the terminal before printing the
-        // panic message, so the user isn't left with a broken terminal.
-        let original_hook = std::panic::take_hook();
-        std::panic::set_hook(Box::new(move |info| {
-            let _ = ratatui::try_restore();
-            let _ = crossterm::execute!(std::io::stdout(), crossterm::cursor::Show);
-            original_hook(info);
-        }));
-
         let result = self.run_inner();
 
         // Always restore the terminal, even if run_inner returned an error.
         ratatui::restore();
         let _ = crossterm::execute!(std::io::stdout(), crossterm::cursor::Show);
-
-        // Put the original panic hook back.
-        let _ = std::panic::take_hook();
 
         result
     }
@@ -724,6 +712,7 @@ impl App {
             if let Some(action) = self.pending_action.take() {
                 ratatui::restore();
                 self.execute_action(&action)?;
+                // This sets a panic hook
                 terminal = ratatui::init();
                 continue;
             }
