@@ -16,9 +16,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
+      - name: Formatting
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
       - name: Build
         run: cargo build
-      - name: Clippy
-        run: cargo clippy -- -D clippy::all
       - name: Run tests
         run: cargo test --verbose
