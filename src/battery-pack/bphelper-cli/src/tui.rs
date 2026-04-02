@@ -1153,6 +1153,10 @@ impl App {
                 ),
                 KeyCode::Down | KeyCode::Char('j') => Action::PreviewScroll(1),
                 KeyCode::Up | KeyCode::Char('k') => Action::PreviewScroll(-1),
+                KeyCode::PageDown | KeyCode::Char('f') => Action::PreviewScroll(20),
+                KeyCode::PageUp | KeyCode::Char('b') => Action::PreviewScroll(-20),
+                KeyCode::Home | KeyCode::Char('g') => Action::PreviewScroll(-30000),
+                KeyCode::End | KeyCode::Char('G') => Action::PreviewScroll(30000),
                 _ => Action::None,
             },
         };
@@ -1393,9 +1397,9 @@ impl App {
             }
             Action::PreviewScroll(delta) => {
                 if let Screen::Preview(state) = &mut self.screen {
-                    let new_scroll = state.scroll as i16 + delta;
+                    let new_scroll = state.scroll as i32 + delta as i32;
                     state.scroll =
-                        new_scroll.clamp(0, state.line_count.saturating_sub(1) as i16) as u16;
+                        new_scroll.clamp(0, state.line_count.saturating_sub(1) as i32) as u16;
                 }
             }
             Action::PreviewBack(detail, selected_index, came_from_list) => {
@@ -2058,7 +2062,7 @@ fn render_preview(frame: &mut Frame, state: &PreviewScreen) {
     frame.render_widget(preview, main);
 
     frame.render_widget(
-        Paragraph::new("↑↓/jk Scroll | Esc Back").style(Style::default().white().on_dark_gray()),
+        Paragraph::new("↑↓/jk/PgUp/PgDn Scroll | Esc Back").style(Style::default().white().on_dark_gray()),
         footer,
     );
 }
