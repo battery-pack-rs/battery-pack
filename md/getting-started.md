@@ -21,24 +21,7 @@ You'll be prompted for a project name and directory.
 The result is a ready-to-go Rust project with the battery pack's
 recommended crates already in your `Cargo.toml`.
 
-If a battery pack offers multiple templates, you can pick one:
-
-```bash
-cargo bp new cli --template simple
-cargo bp new cli --template subcmds
-```
-
-To set placeholder values non-interactively (e.g. in CI), use `-d`:
-
-```bash
-cargo bp new cli --name my-app -d description="My CLI tool"
-```
-
-To preview what a template will generate without writing any files:
-
-```bash
-cargo bp new cli --preview
-```
+See [Using Battery Packs](./using.md#creating-a-new-project-from-a-template) for the full set of template options, including choosing specific templates, non-interactive mode, and previewing output.
 
 ## Add a battery pack to an existing project
 
