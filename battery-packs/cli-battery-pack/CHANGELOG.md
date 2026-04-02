@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4](https://github.com/battery-pack-rs/battery-pack/compare/cli-battery-pack-v0.4.3...cli-battery-pack-v0.4.4) - 2026-04-02
+
+### Added
+
+- *(cli)* Expand capabilities ([#67](https://github.com/battery-pack-rs/battery-pack/pull/67))
+
 ## [0.4.3](https://github.com/battery-pack-rs/battery-pack/compare/cli-battery-pack-v0.4.2...cli-battery-pack-v0.4.3) - 2026-03-13
 
 ### Other
