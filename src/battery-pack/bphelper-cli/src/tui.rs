@@ -1373,6 +1373,7 @@ impl App {
                             template_path,
                             project_name: "my-project".to_string(),
                             defines: BTreeMap::new(),
+                            interactive_override: None,
                         };
                         match crate::template_engine::preview(opts) {
                             Ok(files) => highlight_preview(&files),
@@ -2062,7 +2063,8 @@ fn render_preview(frame: &mut Frame, state: &PreviewScreen) {
     frame.render_widget(preview, main);
 
     frame.render_widget(
-        Paragraph::new("↑↓/jk/PgUp/PgDn Scroll | Esc Back").style(Style::default().white().on_dark_gray()),
+        Paragraph::new("↑↓/jk/PgUp/PgDn Scroll | Esc Back")
+            .style(Style::default().white().on_dark_gray()),
         footer,
     );
 }

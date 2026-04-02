@@ -72,6 +72,9 @@ pub(crate) struct RenderOpts {
     pub(crate) project_name: String,
     /// Pre-set placeholder values (skip prompting for these).
     pub(crate) defines: BTreeMap<String, String>,
+    /// Force treating the context as interactive or not, used to avoid prompting for input during tests,
+    /// used to make sure we don't prompt for input during tests
+    pub(crate) interactive_override: Option<bool>,
 }
 
 /// A rendered file from a template preview.
@@ -214,7 +217,12 @@ fn prepare_render(
         "crate_name".to_string(),
         opts.project_name.replace('-', "_"),
     );
-    resolve_placeholders(&config.placeholders, &opts.defines, &mut variables)?;
+    resolve_placeholders(
+        &config.placeholders,
+        &opts.defines,
+        &mut variables,
+        opts.interactive_override,
+    )?;
     Ok(variables)
 }
 
@@ -238,8 +246,13 @@ fn resolve_placeholders(
     defs: &BTreeMap<String, PlaceholderDef>,
     defines: &BTreeMap<String, String>,
     variables: &mut BTreeMap<String, String>,
+    interactive_override: Option<bool>,
 ) -> Result<()> {
-    let interactive = std::io::stdout().is_terminal();
+    let interactive = if let Some(interactive) = interactive_override {
+        interactive
+    } else {
+        std::io::stdout().is_terminal()
+    };
 
     for (name, def) in defs {
         // MiniJinja parses `-` as the minus operator, so kebab-case names
@@ -452,7 +465,7 @@ mod tests {
         defines.insert("description".to_string(), "override".to_string());
         let mut vars = BTreeMap::new();
 
-        resolve_placeholders(&defs, &defines, &mut vars).unwrap();
+        resolve_placeholders(&defs, &defines, &mut vars, None).unwrap();
         assert_eq!(vars["description"], "override");
     }
 
@@ -471,7 +484,7 @@ mod tests {
         let mut vars = BTreeMap::new();
 
         // In test/CI, stdout is not a terminal, so non-interactive path is taken
-        resolve_placeholders(&defs, &defines, &mut vars).unwrap();
+        resolve_placeholders(&defs, &defines, &mut vars, None).unwrap();
         assert_eq!(vars["description"], "fallback");
     }
 
@@ -489,7 +502,7 @@ mod tests {
         let defines = BTreeMap::new();
         let mut vars = BTreeMap::new();
 
-        let err = resolve_placeholders(&defs, &defines, &mut vars).unwrap_err();
+        let err = resolve_placeholders(&defs, &defines, &mut vars, None).unwrap_err();
         assert!(err.to_string().contains("description"));
         assert!(err.to_string().contains("no default"));
     }
@@ -505,7 +518,8 @@ mod tests {
                 placeholder_type: PlaceholderType::String,
             },
         );
-        let err = resolve_placeholders(&defs, &BTreeMap::new(), &mut BTreeMap::new()).unwrap_err();
+        let err =
+            resolve_placeholders(&defs, &BTreeMap::new(), &mut BTreeMap::new(), None).unwrap_err();
         assert!(err.to_string().contains("my-thing"));
         assert!(err.to_string().contains("snake_case"));
     }
@@ -593,6 +607,7 @@ mod tests {
             template_path: "templates/default".to_string(),
             project_name: "my-project".to_string(),
             defines: BTreeMap::new(),
+            interactive_override: None,
         };
 
         let files = preview(opts).unwrap();
@@ -636,6 +651,7 @@ mod tests {
             template_path: "templates/default".to_string(),
             project_name: "my-project".to_string(),
             defines: BTreeMap::new(),
+            interactive_override: None,
         };
 
         let files = preview(opts).unwrap();

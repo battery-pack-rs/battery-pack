@@ -138,6 +138,7 @@ pub fn validate_templates(manifest_dir: &str) -> Result<()> {
                 template_path: template.path.clone(),
                 project_name,
                 defines: std::collections::BTreeMap::new(),
+                interactive_override: Some(false),
             },
             destination: Some(tmp.path().to_path_buf()),
             git_init: false,

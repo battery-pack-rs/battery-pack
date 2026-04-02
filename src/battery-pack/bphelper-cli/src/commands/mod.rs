@@ -1131,6 +1131,7 @@ fn generate_from_path(
             template_path: template_path.to_string(),
             project_name,
             defines,
+            interactive_override: None,
         },
         destination: None,
         git_init: true,
