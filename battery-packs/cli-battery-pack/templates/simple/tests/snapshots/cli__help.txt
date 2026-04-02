@@ -1,0 +1,11 @@
+A CLI application
+
+[1m[4mUsage:[0m [1m{{ project_name }}[0m [OPTIONS]
+
+[1m[4mOptions:[0m
+  [1m-n[0m, [1m--name[0m <NAME>   Name to greet [default: World]
+      [1m--color[0m <WHEN>  Controls when to use color [default: auto] [possible values: auto, always, never]
+  [1m-v[0m, [1m--verbose[0m       Enable verbose output
+  [1m-h[0m, [1m--help[0m          Print help
+  [1m-V[0m, [1m--version[0m       Print version
+
