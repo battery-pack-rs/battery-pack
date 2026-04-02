@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-cli-v0.7.0...bphelper-cli-v0.7.1) - 2026-04-02
+
+### Added
+
+- add page and jump scrolling to preview ([#66](https://github.com/battery-pack-rs/battery-pack/pull/66))
+
+### Fixed
+
+- force validate_templates to use non_interactive mode ([#70](https://github.com/battery-pack-rs/battery-pack/pull/70))
+- remove double panic hook from `tui.rs`
+
 ## [0.7.0](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-cli-v0.6.1...bphelper-cli-v0.7.0) - 2026-03-13
 
 ### Other

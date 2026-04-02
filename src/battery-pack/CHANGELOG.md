@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.9](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.4.8...battery-pack-v0.4.9) - 2026-04-02
+
+### Added
+
+- add page and jump scrolling to preview ([#66](https://github.com/battery-pack-rs/battery-pack/pull/66))
+- *(cli)* Expand capabilities ([#67](https://github.com/battery-pack-rs/battery-pack/pull/67))
+
+### Fixed
+
+- force validate_templates to use non_interactive mode ([#70](https://github.com/battery-pack-rs/battery-pack/pull/70))
+- remove double panic hook from `tui.rs`
+
+### Other
+
+- update Cargo.lock dependencies
+
 ## [0.4.8](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.4.7...battery-pack-v0.4.8) - 2026-03-13
 
 ### Other
