@@ -6,15 +6,30 @@ description = "A CLI application"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+anstream.bp-managed = true
+anstyle.bp-managed = true
+anstyle-hyperlink.bp-managed = true
+supports-hyperlinks.bp-managed = true
+
 anyhow.bp-managed = true
+
 clap.bp-managed = true
+colorchoice-clap.bp-managed = true
+wild.bp-managed = true
+
 dialoguer.bp-managed = true
+
+human-panic.bp-managed = true
+
 tracing.bp-managed = true
 tracing-subscriber.bp-managed = true
 
 [build-dependencies]
 cli-battery-pack.bp-managed = true
 logging-battery-pack.bp-managed = true
+
+[dev-dependencies]
+snapbox.bp-managed = true
 
 [package.metadata.battery-pack]
 cli-battery-pack = { features = ["default"] }
