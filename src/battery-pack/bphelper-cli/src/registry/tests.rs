@@ -191,6 +191,48 @@ managed-battery-pack = { features = ["default"] }
 }
 
 #[test]
+fn resolve_bp_managed_resolves_dev_and_build_deps() {
+    let bp_root = fixtures_dir().join("managed-battery-pack");
+    let cargo_toml = r#"[package]
+name = "my-app"
+version = "0.1.0"
+
+[dependencies]
+anyhow.bp-managed = true
+
+[dev-dependencies]
+insta.bp-managed = true
+
+[build-dependencies]
+cc.bp-managed = true
+
+[package.metadata.battery-pack]
+managed-battery-pack = { features = ["default"] }
+"#;
+
+    let result = resolve_with_fixture(cargo_toml, &bp_root).unwrap();
+
+    expect![[r#"
+        [package]
+        name = "my-app"
+        version = "0.1.0"
+
+        [dependencies]
+        anyhow = "1"
+
+        [dev-dependencies]
+        insta = "1.34"
+
+        [build-dependencies]
+        cc = "1.0"
+
+        [package.metadata.battery-pack]
+        managed-battery-pack = { features = ["default"] }
+    "#]]
+    .assert_eq(&result);
+}
+
+#[test]
 fn resolve_bp_managed_errors_on_version_and_bp_managed() {
     let bp_root = fixtures_dir().join("managed-battery-pack");
     let cargo_toml = r#"[package]

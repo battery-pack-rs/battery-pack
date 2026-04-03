@@ -588,9 +588,14 @@ fn resolve_default_crates_fancy_via_named_feature() {
     assert!(crate_names.contains("indicatif"), "indicators crate");
     assert!(crate_names.contains("console"), "indicators crate");
     assert!(
-        !crate_names.contains("assert_cmd"),
-        "dev dep not in default or indicators"
+        crate_names.contains("assert_cmd"),
+        "non-hidden dev dep always included"
     );
+    assert!(
+        crate_names.contains("predicates"),
+        "non-hidden dev dep always included"
+    );
+    assert!(!crate_names.contains("cc"), "hidden build dep excluded");
 }
 
 // ============================================================================
@@ -1061,6 +1066,33 @@ fn add_default_crates_basic() {
         thiserror = "2"
     "#]]
     .assert_eq(&deps);
+}
+
+#[test]
+fn add_default_includes_dev_and_build_deps() {
+    let tmp = make_temp_project();
+    add(
+        "managed",
+        "managed-battery-pack",
+        &["default"],
+        FeatureMode::Default,
+        &[],
+        None,
+        tmp.path(),
+    );
+
+    let content = read_cargo_toml(&tmp);
+    let dev_deps = extract_section(&content, "[dev-dependencies]");
+    let build_deps = extract_section(&content, "[build-dependencies]");
+
+    assert!(
+        dev_deps.contains("insta"),
+        "dev-dep should be included with default features: {dev_deps}"
+    );
+    assert!(
+        build_deps.contains("cc"),
+        "build-dep should be included with default features: {build_deps}"
+    );
 }
 
 // ============================================================================
