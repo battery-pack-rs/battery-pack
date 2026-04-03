@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.10](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.4.9...battery-pack-v0.4.10) - 2026-04-03
+
+### Fixed
+
+- include dev/build deps in feature resolution ([#76](https://github.com/battery-pack-rs/battery-pack/pull/76))
+- *(cli-battery-pack)* move snapbox to dev-dependencies, update README ([#77](https://github.com/battery-pack-rs/battery-pack/pull/77))
+
 ## [0.4.9](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.4.8...battery-pack-v0.4.9) - 2026-04-02
 
 ### Added

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-cli-v0.7.1...bphelper-cli-v0.7.2) - 2026-04-03
+
+### Fixed
+
+- include dev/build deps in feature resolution ([#76](https://github.com/battery-pack-rs/battery-pack/pull/76))
+
 ## [0.7.1](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-cli-v0.7.0...bphelper-cli-v0.7.1) - 2026-04-02
 
 ### Added
