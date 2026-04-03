@@ -275,6 +275,14 @@ impl BatteryPackSpec {
             }
         }
 
+        // [impl format.features.dev-build-always]
+        // Dev/build deps are never gated by Cargo features, so always include them.
+        for (name, spec) in &self.crates {
+            if spec.dep_kind != DepKind::Normal && !self.is_hidden(name) {
+                result.entry(name.clone()).or_insert_with(|| spec.clone());
+            }
+        }
+
         result
     }
 
@@ -1606,21 +1614,23 @@ mod tests {
         // Templates
         assert_eq!(spec.templates.len(), 1);
 
-        // Resolution: default
+        // Resolution: default (+ non-optional, non-hidden dev/build deps)
         let default = spec.resolve_crates(&[]);
-        assert_eq!(default.len(), 2);
+        assert_eq!(default.len(), 3);
         assert!(default.contains_key("clap"));
         assert!(default.contains_key("dialoguer"));
+        assert!(default.contains_key("assert_cmd"));
 
         // Resolution: default + indicators
         let with_indicators = spec.resolve_crates(&["default", "indicators"]);
-        assert_eq!(with_indicators.len(), 4);
+        assert_eq!(with_indicators.len(), 5);
 
         // Resolution: only indicators (no default)
         let only_indicators = spec.resolve_crates(&["indicators"]);
-        assert_eq!(only_indicators.len(), 2);
+        assert_eq!(only_indicators.len(), 3);
         assert!(only_indicators.contains_key("indicatif"));
         assert!(only_indicators.contains_key("console"));
+        assert!(only_indicators.contains_key("assert_cmd"));
 
         // Resolution: all
         let all = spec.resolve_all();
@@ -1675,11 +1685,13 @@ mod tests {
         assert!(!fancy.is_hidden("clap"));
         assert_eq!(fancy.templates.len(), 2);
 
-        // fancy default resolution
+        // fancy default resolution (+ non-hidden dev/build deps)
         let default = fancy.resolve_crates(&[]);
-        assert_eq!(default.len(), 2);
+        assert_eq!(default.len(), 4);
         assert!(default.contains_key("clap"));
         assert!(default.contains_key("dialoguer"));
+        assert!(default.contains_key("assert_cmd"));
+        assert!(default.contains_key("predicates"));
 
         // fancy visible crates (hidden: serde, serde_json, cc)
         let visible = fancy.visible_crates();
@@ -1694,14 +1706,16 @@ mod tests {
             .find(|p| p.name == "managed-battery-pack")
             .unwrap();
         assert_eq!(managed.version, "0.2.0");
-        assert_eq!(managed.crates.len(), 2); // anyhow, clap
+        assert_eq!(managed.crates.len(), 4); // anyhow, clap, insta, cc
         assert!(managed.crates["anyhow"].optional);
         assert!(managed.crates["clap"].optional);
         assert_eq!(managed.templates.len(), 1);
         let default = managed.resolve_crates(&[]);
-        assert_eq!(default.len(), 2);
+        assert_eq!(default.len(), 4);
         assert!(default.contains_key("anyhow"));
         assert!(default.contains_key("clap"));
+        assert!(default.contains_key("insta"));
+        assert!(default.contains_key("cc"));
     }
 
     #[test]

@@ -63,6 +63,10 @@ a user runs `cargo bp add <pack>` without additional flags. If no
 `default` feature is defined, all non-optional crates are
 considered part of the default set.
 
+r[format.features.dev-build-always]
+`[dev-dependencies]` and `[build-dependencies]` are always included
+regardless of feature selection.
+
 r[format.features.optional]
 Crates marked `optional = true` in the dependency section are not
 part of the default installation. They are available through named

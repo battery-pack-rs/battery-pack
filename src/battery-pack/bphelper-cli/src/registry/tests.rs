@@ -192,8 +192,6 @@ managed-battery-pack = { features = ["default"] }
 
 #[test]
 fn resolve_bp_managed_resolves_dev_and_build_deps() {
-    use expect_test::expect;
-
     let bp_root = fixtures_dir().join("managed-battery-pack");
     let cargo_toml = r#"[package]
 name = "my-app"

@@ -588,9 +588,14 @@ fn resolve_default_crates_fancy_via_named_feature() {
     assert!(crate_names.contains("indicatif"), "indicators crate");
     assert!(crate_names.contains("console"), "indicators crate");
     assert!(
-        !crate_names.contains("assert_cmd"),
-        "dev dep not in default or indicators"
+        crate_names.contains("assert_cmd"),
+        "non-hidden dev dep always included"
     );
+    assert!(
+        crate_names.contains("predicates"),
+        "non-hidden dev dep always included"
+    );
+    assert!(!crate_names.contains("cc"), "hidden build dep excluded");
 }
 
 // ============================================================================
