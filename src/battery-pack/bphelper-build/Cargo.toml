@@ -15,5 +15,5 @@ serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-expect-test.workspace = true
+snapbox = { version = "1.2.1", features = ["debug"] }
 tempfile.workspace = true

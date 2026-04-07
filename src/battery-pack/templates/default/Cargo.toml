@@ -15,7 +15,6 @@ battery-pack = "0.4"
 
 [dev-dependencies]
 battery-pack = { version = "0.4", features = ["cli"] }
-# expect-test = "1.5"
 
 [build-dependencies]
 battery-pack = { version = "0.4", features = ["build"] }

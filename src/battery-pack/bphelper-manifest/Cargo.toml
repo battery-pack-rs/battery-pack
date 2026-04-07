@@ -13,5 +13,4 @@ toml.workspace = true
 serde.workspace = true
 
 [dev-dependencies]
-expect-test.workspace = true
 tempfile.workspace = true

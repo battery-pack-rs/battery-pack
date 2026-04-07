@@ -1,0 +1,15 @@
+[
+    AddPack {
+        name: "web-battery-pack",
+        crates: [
+            CrateChange {
+                name: "axum",
+                dep_kind: Normal,
+            },
+            CrateChange {
+                name: "tower",
+                dep_kind: Normal,
+            },
+        ],
+    },
+]

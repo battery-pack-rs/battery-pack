@@ -1,0 +1,8 @@
+# test-battery-pack v0.1.0
+
+A test pack
+
+## Crates
+
+- **anyhow** (1): Flexible concrete Error type
+- **thiserror** (2): derive(Error)

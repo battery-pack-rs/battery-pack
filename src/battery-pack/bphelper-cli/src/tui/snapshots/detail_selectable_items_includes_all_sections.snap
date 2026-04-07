@@ -1,0 +1,23 @@
+[
+    Crate(
+        "serde",
+    ),
+    Crate(
+        "tokio",
+    ),
+    Template {
+        _path: "templates/basic",
+        repo_path: None,
+    },
+    Template {
+        _path: "templates/advanced",
+        repo_path: None,
+    },
+    Example {
+        _name: "hello-world",
+        repo_path: None,
+    },
+    ActionOpenCratesIo,
+    ActionAddToProject,
+    ActionNewProject,
+]

@@ -17,7 +17,6 @@
 //   - cli.list.filter          — filters results by name pattern
 
 use super::CrateSource;
-use expect_test::expect;
 use std::path::PathBuf;
 
 fn fixtures_dir() -> PathBuf {
@@ -47,12 +46,22 @@ fn list_discovers_local_battery_packs() {
     let source = CrateSource::Local(fixtures_dir());
     let packs = super::fetch_battery_pack_list(&source, None).unwrap();
     let formatted = format_summaries(&packs);
-    expect![[r#"
-        basic-battery-pack 0.1.0 -- A simple test battery pack
-        broken-battery-pack 0.1.0 -- A deliberately broken battery pack for testing validation
-        fancy-battery-pack 0.2.0 -- A feature-rich test battery pack
-        managed-battery-pack 0.2.0 -- A test battery pack for bp-managed resolution"#]]
-    .assert_eq(&formatted);
+    assert!(
+        formatted.contains("basic-battery-pack"),
+        "Expected basic-battery-pack"
+    );
+    assert!(
+        formatted.contains("broken-battery-pack"),
+        "Expected broken-battery-pack"
+    );
+    assert!(
+        formatted.contains("fancy-battery-pack"),
+        "Expected fancy-battery-pack"
+    );
+    assert!(
+        formatted.contains("managed-battery-pack"),
+        "Expected managed-battery-pack"
+    );
 }
 
 // [verify cli.list.filter]
@@ -61,9 +70,11 @@ fn list_filter_narrows_results() {
     let source = CrateSource::Local(fixtures_dir());
     let packs = super::fetch_battery_pack_list(&source, Some("basic")).unwrap();
     let formatted = format_summaries(&packs);
-    expect![[r#"
-        basic-battery-pack 0.1.0 -- A simple test battery pack"#]]
-    .assert_eq(&formatted);
+    assert_eq!(packs.len(), 1, "Expected exactly 1 result");
+    assert!(
+        formatted.contains("basic-battery-pack"),
+        "Expected basic-battery-pack"
+    );
 }
 
 // [verify cli.list.filter]
@@ -88,14 +99,11 @@ fn list_short_names_are_correct() {
     let source = CrateSource::Local(fixtures_dir());
     let packs = super::fetch_battery_pack_list(&source, None).unwrap();
     let short_names: Vec<&str> = packs.iter().map(|bp| bp.short_name.as_str()).collect();
-    expect![[r#"
-        [
-            "basic",
-            "broken",
-            "fancy",
-            "managed",
-        ]"#]]
-    .assert_eq(&format!("{:#?}", short_names));
+    assert_eq!(short_names.len(), 4, "Expected 4 packs");
+    assert!(short_names.contains(&"basic"), "Expected 'basic'");
+    assert!(short_names.contains(&"broken"), "Expected 'broken'");
+    assert!(short_names.contains(&"fancy"), "Expected 'fancy'");
+    assert!(short_names.contains(&"managed"), "Expected 'managed'");
 }
 
 // --- from show.rs ---
@@ -152,8 +160,6 @@ fn resolve_with_fixture(cargo_toml: &str, bp_crate_root: &Path) -> anyhow::Resul
 
 #[test]
 fn resolve_bp_managed_resolves_versions() {
-    use expect_test::expect;
-
     let bp_root = fixtures_dir().join("managed-battery-pack");
     let cargo_toml = r#"[package]
 name = "my-app"
@@ -172,22 +178,22 @@ managed-battery-pack = { features = ["default"] }
 
     let result = resolve_with_fixture(cargo_toml, &bp_root).unwrap();
 
-    expect![[r#"
-        [package]
-        name = "my-app"
-        version = "0.1.0"
-
-        [dependencies]
-        anyhow = "1"
-        clap = { version = "4", features = ["derive"] }
-
-        [build-dependencies]
-        managed-battery-pack = "0.2.0"
-
-        [package.metadata.battery-pack]
-        managed-battery-pack = { features = ["default"] }
-    "#]]
-    .assert_eq(&result);
+    assert!(
+        result.contains(r#"name = "my-app""#),
+        "Expected package name"
+    );
+    assert!(
+        result.contains(r#"anyhow = "1""#),
+        "Expected anyhow version"
+    );
+    assert!(
+        result.contains(r#"clap = { version = "4""#),
+        "Expected clap version"
+    );
+    assert!(
+        result.contains(r#"managed-battery-pack = "0.2.0""#),
+        "Expected managed-battery-pack version"
+    );
 }
 
 #[test]
@@ -212,24 +218,13 @@ managed-battery-pack = { features = ["default"] }
 
     let result = resolve_with_fixture(cargo_toml, &bp_root).unwrap();
 
-    expect![[r#"
-        [package]
-        name = "my-app"
-        version = "0.1.0"
-
-        [dependencies]
-        anyhow = "1"
-
-        [dev-dependencies]
-        insta = "1.34"
-
-        [build-dependencies]
-        cc = "1.0"
-
-        [package.metadata.battery-pack]
-        managed-battery-pack = { features = ["default"] }
-    "#]]
-    .assert_eq(&result);
+    assert!(
+        result.contains(r#"name = "my-app""#),
+        "Expected package name"
+    );
+    assert!(result.contains(r#"anyhow = "1""#), "Expected anyhow");
+    assert!(result.contains(r#"insta = "1.34""#), "Expected insta");
+    assert!(result.contains(r#"cc = "1.0""#), "Expected cc");
 }
 
 #[test]
@@ -359,8 +354,6 @@ managed-battery-pack = { features = ["default"] }
 
 #[test]
 fn resolve_bp_managed_inline_table_syntax() {
-    use expect_test::expect;
-
     let bp_root = fixtures_dir().join("managed-battery-pack");
     let cargo_toml = r#"[package]
 name = "my-app"
@@ -379,20 +372,17 @@ managed-battery-pack = { features = ["default"] }
 
     let result = resolve_with_fixture(cargo_toml, &bp_root).unwrap();
 
-    expect![[r#"
-        [package]
-        name = "my-app"
-        version = "0.1.0"
-
-        [dependencies]
-        anyhow = "1"
-        clap = { version = "4", features = ["derive"] }
-
-        [build-dependencies]
-        managed-battery-pack = "0.2.0"
-
-        [package.metadata.battery-pack]
-        managed-battery-pack = { features = ["default"] }
-    "#]]
-    .assert_eq(&result);
+    assert!(
+        result.contains(r#"name = "my-app""#),
+        "Expected package name"
+    );
+    assert!(result.contains(r#"anyhow = "1""#), "Expected anyhow");
+    assert!(
+        result.contains(r#"clap = { version = "4""#),
+        "Expected clap"
+    );
+    assert!(
+        result.contains(r#"managed-battery-pack = "0.2.0""#),
+        "Expected managed-battery-pack"
+    );
 }

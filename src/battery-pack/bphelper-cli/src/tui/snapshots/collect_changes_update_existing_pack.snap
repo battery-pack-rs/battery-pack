@@ -1,0 +1,14 @@
+[
+    UpdatePack {
+        name: "web-battery-pack",
+        add_crates: [
+            CrateChange {
+                name: "reqwest",
+                dep_kind: Normal,
+            },
+        ],
+        remove_crates: [
+            "tower",
+        ],
+    },
+]

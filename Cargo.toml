@@ -19,7 +19,6 @@ anyhow = "1"
 minijinja = { version = "2", features = ["loader"] }
 cargo_metadata = "0.23"
 handlebars = "6"
-expect-test = "1"
 tempfile = "3"
 serde_json = "1"
 thiserror = "2"
