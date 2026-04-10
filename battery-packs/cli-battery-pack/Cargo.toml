@@ -45,7 +45,7 @@ battery-pack = { workspace = true, features = ["build"] }
 
 [dev-dependencies]
 battery-pack = { workspace = true, features = ["cli"] }
-snapbox = { version = "1.2.1", features = ["cmd"] }
+snapbox = { version = "1.2.1", features = ["cmd", "term-svg"] }
 
 [features]
 default = [
