@@ -16,6 +16,7 @@
 //   - cli.add.idempotent     — re-adding same dep doesn't create duplicates
 
 use clap::Parser;
+use snapbox::{assert_data_eq, file};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Unwrap `Commands::Bp { command }` → `Option<BpCommands>`.
@@ -1058,8 +1059,7 @@ fn add_default_crates_basic() {
     let content = read_cargo_toml(&tmp);
     let deps = extract_section(&content, "[dependencies]");
 
-    assert!(deps.contains("anyhow = \"1\""), "Expected anyhow");
-    assert!(deps.contains("thiserror = \"2\""), "Expected thiserror");
+    assert_data_eq!(deps, file![_]);
 }
 
 #[test]
@@ -1133,13 +1133,7 @@ fn add_with_named_feature_records_metadata() {
     let content = read_cargo_toml(&tmp);
     let meta = extract_metadata(&content, "fancy-battery-pack");
 
-    assert!(
-        meta.contains("fancy-battery-pack"),
-        "Expected fancy-battery-pack metadata"
-    );
-    assert!(meta.contains("features"), "Expected features");
-    assert!(meta.contains("default"), "Expected default feature");
-    assert!(meta.contains("indicators"), "Expected indicators feature");
+    assert_data_eq!(meta, file![_])
 }
 
 // ============================================================================

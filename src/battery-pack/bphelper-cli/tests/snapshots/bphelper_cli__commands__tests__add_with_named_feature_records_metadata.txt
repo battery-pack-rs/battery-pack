@@ -1,0 +1,5 @@
+[package.metadata.battery-pack.fancy-battery-pack]
+features = [
+    "default",
+    "indicators",
+]

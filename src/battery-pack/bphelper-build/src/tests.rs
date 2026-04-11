@@ -1,3 +1,5 @@
+use snapbox::{assert_data_eq, file, str};
+
 use super::*;
 
 fn fixtures_dir() -> std::path::PathBuf {
@@ -204,7 +206,14 @@ fn simple_context() -> DocsContext {
 fn test_render_readme_helper() {
     let ctx = simple_context();
     let output = render_docs("{{readme}}", &ctx).unwrap();
-    assert_eq!(output, "# My Pack\n\nA great battery pack.");
+    assert_data_eq!(
+        output,
+        str![[r#"
+# My Pack
+
+A great battery pack.
+"#]]
+    )
 }
 
 #[test]
@@ -212,9 +221,7 @@ fn test_render_readme_helper() {
 fn test_render_crate_table() {
     let ctx = simple_context();
     let output = render_docs("{{crate-table}}", &ctx).unwrap();
-    assert!(output.contains("| Crate |"), "Expected table header");
-    assert!(output.contains("[anyhow]"), "Expected anyhow crate");
-    assert!(output.contains("[thiserror]"), "Expected thiserror crate");
+    assert_data_eq!(output, file![_])
 }
 
 #[test]
@@ -222,9 +229,7 @@ fn test_render_crate_table() {
 fn test_render_default_template() {
     let ctx = simple_context();
     let output = render_docs("{{readme}}\n\n{{crate-table}}", &ctx).unwrap();
-    assert!(output.contains("# My Pack"), "Expected readme");
-    assert!(output.contains("[anyhow]"), "Expected anyhow");
-    assert!(output.contains("[thiserror]"), "Expected thiserror");
+    assert_data_eq!(output, file![_])
 }
 
 #[test]
@@ -241,15 +246,8 @@ fn test_render_custom_template() {
 - **{{name}}** ({{version}}): {{description}}
 {{/each}}"#;
     let output = render_docs(template, &ctx).unwrap();
-    assert!(
-        output.contains("# test-battery-pack v0.1.0"),
-        "Expected package name"
-    );
-    assert!(output.contains("- **anyhow** (1):"), "Expected anyhow");
-    assert!(
-        output.contains("- **thiserror** (2):"),
-        "Expected thiserror"
-    );
+
+    assert_data_eq!(output, file![_])
 }
 
 #[test]
@@ -306,13 +304,7 @@ fn test_full_pipeline_basic() {
     let ctx = build_context(&spec, &descriptions, readme);
     let output = render_docs("{{readme}}\n\n{{crate-table}}", &ctx).unwrap();
 
-    assert!(
-        output.contains("basic-battery-pack"),
-        "Expected package name"
-    );
-    assert!(output.contains("[anyhow]"), "Expected anyhow");
-    assert!(output.contains("[eyre]"), "Expected eyre");
-    assert!(output.contains("[thiserror]"), "Expected thiserror");
+    assert_data_eq!(output, file![_]);
 }
 
 // ================================================================

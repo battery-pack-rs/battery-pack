@@ -1,6 +1,6 @@
 use super::*;
 use bphelper_manifest::{BatteryPackSpec, CrateSpec, DepKind};
-use snapbox::assert_data_eq;
+use snapbox::{ToDebug, assert_data_eq};
 use std::collections::{BTreeMap, BTreeSet};
 
 // ====================================================================
@@ -532,10 +532,7 @@ fn collect_changes_new_pack() {
 
     let changes = state.collect_changes();
     let actual = format!("{:#?}", changes);
-    assert_data_eq!(
-        actual,
-        snapbox::file!["snapshots/collect_changes_new_pack.snap"]
-    );
+    assert_data_eq!(actual, snapbox::file![_]);
 }
 
 /// [verify tui.nav.exit]
@@ -552,10 +549,7 @@ fn collect_changes_update_existing_pack() {
 
     let changes = state.collect_changes();
     let actual = format!("{:#?}", changes);
-    assert_data_eq!(
-        actual,
-        snapbox::file!["snapshots/collect_changes_update_existing_pack.snap"]
-    );
+    assert_data_eq!(actual, snapbox::file![_]);
 }
 
 /// [verify tui.nav.exit]
@@ -578,11 +572,8 @@ fn collect_changes_skips_unchanged_packs() {
     ]);
 
     let changes = state.collect_changes();
-    let actual = format!("{:#?}", changes);
-    assert_data_eq!(
-        actual,
-        snapbox::file!["snapshots/collect_changes_skips_unchanged_packs.snap"]
-    );
+    let actual = changes.to_debug();
+    assert_data_eq!(actual, snapbox::file![_]);
 }
 
 // --- DetailScreen ---
@@ -605,10 +596,7 @@ fn detail_selectable_items_includes_all_sections() {
     assert_eq!(screen.item_count(), items.len());
 
     let actual = format!("{:#?}", items);
-    assert_data_eq!(
-        actual,
-        snapbox::file!["snapshots/detail_selectable_items_includes_all_sections.snap"]
-    );
+    assert_data_eq!(actual, snapbox::file![_]);
 }
 
 /// [verify tui.browse.detail]

@@ -1,3 +1,5 @@
+use snapbox::{ToDebug, assert_data_eq, str};
+
 use super::*;
 
 // -- Config parsing --
@@ -43,8 +45,17 @@ fn parse_config_placeholder_defaults() {
         "#;
     let config: BpTemplateConfig = toml::from_str(toml).unwrap();
     let p = &config.placeholders["name"];
-    assert!(p.prompt.is_none());
-    assert!(p.default.is_none());
+    assert_data_eq!(
+        p.to_debug(),
+        str![[r#"
+PlaceholderDef {
+    prompt: None,
+    default: None,
+    placeholder_type: String,
+}
+
+"#]]
+    );
     assert_eq!(p.placeholder_type, PlaceholderType::String);
 }
 
