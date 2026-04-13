@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.4](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-manifest-v0.5.3...bphelper-manifest-v0.5.4) - 2026-04-13
+
+### Other
+
+- refactor test: change tests to use snapbox instead of expect-test ([#80](https://github.com/battery-pack-rs/battery-pack/pull/80))
+
 ## [0.5.3](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-manifest-v0.5.2...bphelper-manifest-v0.5.3) - 2026-04-03
 
 ### Fixed

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1](https://github.com/battery-pack-rs/battery-pack/compare/cli-battery-pack-v0.5.0...cli-battery-pack-v0.5.1) - 2026-04-13
+
+### Other
+
+- *(deps)* upgrade ratatui to 0.30 and enable snapbox term-svg ([#81](https://github.com/battery-pack-rs/battery-pack/pull/81))
+
 ## [0.5.0](https://github.com/battery-pack-rs/battery-pack/compare/cli-battery-pack-v0.4.4...cli-battery-pack-v0.5.0) - 2026-04-03
 
 ### Fixed
