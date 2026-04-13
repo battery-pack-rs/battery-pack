@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-cli-v0.7.2...bphelper-cli-v0.7.3) - 2026-04-13
+
+### Other
+
+- refactor test: change tests to use snapbox instead of expect-test ([#80](https://github.com/battery-pack-rs/battery-pack/pull/80))
+- *(deps)* upgrade ratatui to 0.30 and enable snapbox term-svg ([#81](https://github.com/battery-pack-rs/battery-pack/pull/81))
+
 ## [0.7.2](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-cli-v0.7.1...bphelper-cli-v0.7.2) - 2026-04-03
 
 ### Fixed
