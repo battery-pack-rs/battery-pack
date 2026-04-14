@@ -14,6 +14,7 @@ changelog_include = [
     "bphelper-build",
     "bphelper-cli",
     "bphelper-manifest",
+    "cargo-bp",
     "cli-battery-pack",
     "error-battery-pack",
     "logging-battery-pack",
