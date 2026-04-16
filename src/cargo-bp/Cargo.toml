@@ -1,0 +1,32 @@
+[package]
+name = "cargo-bp"
+version = "0.4.11"
+edition = "2024"
+description = "CLI for creating and managing battery packs (cargo bp)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/battery-pack-rs/battery-pack"
+keywords = ["battery-pack", "cli", "cargo"]
+readme = "../../README.md"
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/cargo-bp-v{ version }/cargo-bp-{ target }-v{ version }{ archive-suffix }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
+
+[package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
+pkg-fmt = "zip"
+
+[[bin]]
+name = "cargo-bp"
+path = "src/main.rs"
+
+[dependencies]
+bphelper-cli = { path = "../battery-pack/bphelper-cli", version = "0.7" }
+anyhow.workspace = true
+
+[dev-dependencies]
+assert_cmd = "2"
+tempfile.workspace = true
+toml.workspace = true

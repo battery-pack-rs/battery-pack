@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g., battery-pack-v0.2.0)'
+        description: 'Release tag (e.g., cargo-bp-v0.4.11)'
         required: true
         type: string
 
@@ -17,7 +17,7 @@ jobs:
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
-    if: ${{ github.repository_owner == 'battery-pack-rs' && (github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'battery-pack-v')) }}
+    if: ${{ github.repository_owner == 'battery-pack-rs' && (github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'cargo-bp-v')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -48,18 +48,18 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }} -p battery-pack --features cli
+        run: cargo build --release --target ${{ matrix.target }} -p cargo-bp
 
       - name: Determine version
         id: version
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # Extract version from input tag (battery-pack-v0.2.0 -> v0.2.0)
-            VERSION=$(echo "${{ inputs.tag }}" | sed 's/battery-pack-//')
+            # Extract version from input tag (cargo-bp-v0.2.0 -> v0.2.0)
+            VERSION=$(echo "${{ inputs.tag }}" | sed 's/cargo-bp-//')
           else
             # Extract version from release tag
-            VERSION=$(echo "${{ github.event.release.tag_name }}" | sed 's/battery-pack-//')
+            VERSION=$(echo "${{ github.event.release.tag_name }}" | sed 's/cargo-bp-//')
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 

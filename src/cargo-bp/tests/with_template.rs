@@ -8,8 +8,11 @@ fn cargo_bp() -> Command {
     Command::new(assert_cmd::cargo::cargo_bin!("cargo-bp"))
 }
 
-fn crate_root() -> std::path::PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
+fn battery_pack_root() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("battery-pack")
 }
 
 /// Patch crates-io deps so the generated battery pack resolves against local
@@ -19,7 +22,7 @@ fn write_patches(bp_dir: &Path) {
     let cargo_dir = bp_dir.join(".cargo");
     std::fs::create_dir_all(&cargo_dir).unwrap();
 
-    let crate_root = crate_root();
+    let crate_root = battery_pack_root();
     let patch = format!(
         "[patch.crates-io]\nbattery-pack = {{ path = \"{}\" }}\n",
         crate_root.display()
@@ -40,7 +43,7 @@ fn with_template_two_level_generation() {
             "--name",
             "http",
             "--path",
-            &crate_root().to_string_lossy(),
+            &battery_pack_root().to_string_lossy(),
             "--template",
             "with_template",
             "-d",

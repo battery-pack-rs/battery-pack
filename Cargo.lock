@@ -224,13 +224,10 @@ name = "battery-pack"
 version = "0.4.11"
 dependencies = [
  "anyhow",
- "assert_cmd",
  "battery-pack",
  "bphelper-build",
  "bphelper-cli",
  "bphelper-manifest",
- "tempfile",
- "toml 0.8.23",
 ]
 
 [[package]]
@@ -382,6 +379,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e629a66d692cb9ff1a1c664e41771b3dcaf961985a9774c0eb0bd1b51cf60a48"
 dependencies = [
  "serde_core",
+]
+
+[[package]]
+name = "cargo-bp"
+version = "0.4.11"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "bphelper-cli",
+ "tempfile",
+ "toml 0.8.23",
 ]
 
 [[package]]

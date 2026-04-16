@@ -8,16 +8,6 @@ repository = "https://github.com/battery-pack-rs/battery-pack"
 keywords = ["battery-pack", "curation", "templates", "cargo"]
 readme = "README.md"
 
-[package.metadata.binstall]
-pkg-url = "{ repo }/releases/download/{ name }-v{ version }/cargo-bp-{ target }-v{ version }{ archive-suffix }"
-pkg-fmt = "tgz"
-
-[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
-pkg-fmt = "zip"
-
-[package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
-pkg-fmt = "zip"
-
 [package.metadata.battery]
 schema_version = 1
 
@@ -30,11 +20,6 @@ default = []
 build = ["bphelper-build"]
 cli = ["bphelper-cli"]
 
-[[bin]]
-name = "cargo-bp"
-path = "src/main.rs"
-required-features = ["cli"]
-
 [dependencies]
 bphelper-build = { path = "bphelper-build", version = "0.4.5", optional = true }
 bphelper-cli = { path = "bphelper-cli", version = "0.7.3", optional = true }
@@ -42,7 +27,4 @@ bphelper-manifest = { path = "bphelper-manifest", version = "0.5.4" }
 anyhow.workspace = true
 
 [dev-dependencies]
-assert_cmd = "2"
 battery-pack = { path = ".", features = ["build", "cli"] }
-tempfile.workspace = true
-toml.workspace = true

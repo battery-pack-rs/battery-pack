@@ -6,8 +6,11 @@ fn cargo_bp() -> Command {
     Command::new(assert_cmd::cargo::cargo_bin!("cargo-bp"))
 }
 
-fn crate_root() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
+fn battery_pack_root() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("battery-pack")
 }
 
 /// Run `cargo bp new battery-pack --name <name> --path <template_root>` in a temp dir
@@ -27,7 +30,7 @@ fn generate_with_pack(pack: &str, name: &str) -> (String, String) {
             "--name",
             name,
             "--path",
-            &crate_root().to_string_lossy(),
+            &battery_pack_root().to_string_lossy(),
         ])
         .current_dir(tmp.path())
         .assert()
