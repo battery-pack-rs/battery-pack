@@ -1721,11 +1721,12 @@ fn render_selectable_section<'a, T>(
     items: &[T],
     normal_color: Option<Color>,
     format_item: impl Fn(&T) -> String,
-) {
+) -> Option<usize> {
     if items.is_empty() {
-        return;
+        return None;
     }
 
+    let mut selected_line = None;
     lines.push(Line::styled(label, Style::default().bold()));
     for item in items {
         let selected = selected_index == *item_index;
@@ -1738,6 +1739,9 @@ fn render_selectable_section<'a, T>(
             }
         };
         let prefix = if selected { "> " } else { "  " };
+        if selected {
+            selected_line = Some(lines.len());
+        }
         lines.push(Line::styled(
             format!("{}{}", prefix, format_item(item)),
             style,
@@ -1745,6 +1749,7 @@ fn render_selectable_section<'a, T>(
         *item_index += 1;
     }
     lines.push(Line::from(""));
+    selected_line
 }
 
 fn render_detail(frame: &mut Frame, state: &DetailScreen) {
@@ -1772,6 +1777,7 @@ fn render_detail(frame: &mut Frame, state: &DetailScreen) {
     // Info section
     let mut lines: Vec<Line> = Vec::new();
     let mut item_index: usize = 0;
+    let mut selected_line: Option<usize> = None;
 
     if !detail.description.is_empty() {
         lines.push(Line::from(detail.description.clone()));
@@ -1790,7 +1796,7 @@ fn render_detail(frame: &mut Frame, state: &DetailScreen) {
         lines.push(Line::from(""));
     }
 
-    render_selectable_section(
+    selected_line = selected_line.or(render_selectable_section(
         &mut lines,
         &mut item_index,
         state.selected_index,
@@ -1798,9 +1804,9 @@ fn render_detail(frame: &mut Frame, state: &DetailScreen) {
         &detail.crates,
         None,
         |crate_name| crate_name.clone(),
-    );
+    ));
 
-    render_selectable_section(
+    selected_line = selected_line.or(render_selectable_section(
         &mut lines,
         &mut item_index,
         state.selected_index,
@@ -1808,9 +1814,9 @@ fn render_detail(frame: &mut Frame, state: &DetailScreen) {
         &detail.extends,
         Some(Color::Yellow),
         |bp| bp.clone(),
-    );
+    ));
 
-    render_selectable_section(
+    selected_line = selected_line.or(render_selectable_section(
         &mut lines,
         &mut item_index,
         state.selected_index,
@@ -1821,9 +1827,9 @@ fn render_detail(frame: &mut Frame, state: &DetailScreen) {
             Some(desc) => format!("{} - {}", tmpl.name, desc),
             None => tmpl.name.clone(),
         },
-    );
+    ));
 
-    render_selectable_section(
+    selected_line = selected_line.or(render_selectable_section(
         &mut lines,
         &mut item_index,
         state.selected_index,
@@ -1834,7 +1840,7 @@ fn render_detail(frame: &mut Frame, state: &DetailScreen) {
             Some(desc) => format!("{} - {}", example.name, desc),
             None => example.name.clone(),
         },
-    );
+    ));
 
     // Actions section (always present)
     let action_labels = [
@@ -1842,7 +1848,7 @@ fn render_detail(frame: &mut Frame, state: &DetailScreen) {
         "Add to project",
         "Create new project from template",
     ];
-    render_selectable_section(
+    selected_line = selected_line.or(render_selectable_section(
         &mut lines,
         &mut item_index,
         state.selected_index,
@@ -1850,7 +1856,7 @@ fn render_detail(frame: &mut Frame, state: &DetailScreen) {
         &action_labels,
         None,
         |label| (*label).to_string(),
-    );
+    ));
 
     // Sanity check
     debug_assert_eq!(
@@ -1859,9 +1865,15 @@ fn render_detail(frame: &mut Frame, state: &DetailScreen) {
         "Mismatch between rendered items and selectable_items()"
     );
 
+    let visible_height = main.height.saturating_sub(2) as usize; // borders
+    let scroll_offset = selected_line
+        .map(|line| line.saturating_sub(visible_height.saturating_sub(1)))
+        .unwrap_or(0);
+
     let info = Paragraph::new(lines)
         .block(Block::default().borders(Borders::ALL))
-        .wrap(Wrap { trim: false });
+        .wrap(Wrap { trim: false })
+        .scroll((scroll_offset as u16, 0));
     frame.render_widget(info, main);
 
     // Footer - show 'n' hint when template is selected
