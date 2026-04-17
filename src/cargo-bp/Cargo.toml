@@ -6,7 +6,7 @@ description = "CLI for creating and managing battery packs (cargo bp)"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/battery-pack-rs/battery-pack"
 keywords = ["battery-pack", "cli", "cargo"]
-readme = "../../README.md"
+readme = "README.md"
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/cargo-bp-v{ version }/cargo-bp-{ target }-v{ version }{ archive-suffix }"

@@ -1,9 +1,6 @@
 # battery-pack
 
-The `battery-pack` crate provides two things:
-
-1. **The `cargo bp` CLI** for working with battery packs
-2. **Common infrastructure** for authoring battery packs
+Curated crate bundles with docs, templates, and agentic skills.
 
 📖 **[Read the book](https://battery-pack-rs.github.io/battery-pack)**
 
@@ -14,6 +11,8 @@ A battery pack bundles everything you need to get started in an area: curated cr
 Think of it like an addition to the standard library targeting a particular use case, like building a CLI tool or web server.
 
 ## Installing the CLI
+
+Install [`cargo-bp`](https://crates.io/crates/cargo-bp):
 
 ```bash
 cargo install cargo-bp
@@ -27,7 +26,7 @@ cargo binstall cargo-bp
 # Create a new project from a battery pack template
 cargo bp new cli
 
-# Add a battery pack to your project
+# Add a battery pack to an existing project
 cargo bp add cli
 
 # Show info about a battery pack
