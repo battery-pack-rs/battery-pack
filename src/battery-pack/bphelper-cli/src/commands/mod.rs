@@ -19,7 +19,7 @@ use crate::manifest::{
 use crate::registry::{
     CrateSource, InstalledPack, TemplateConfig, download_and_extract_crate,
     fetch_battery_pack_detail, fetch_battery_pack_detail_from_source, fetch_battery_pack_list,
-    fetch_battery_pack_spec, fetch_bp_spec, find_local_battery_pack_dir, load_installed_bp_spec,
+    fetch_bp_spec, find_local_battery_pack_dir, load_installed_bp_spec,
     lookup_crate, resolve_crate_name, short_name,
 };
 
@@ -118,16 +118,6 @@ pub(crate) enum BpCommands {
         /// Use a local path instead of downloading from crates.io
         #[arg(long)]
         path: Option<String>,
-    },
-
-    /// Enable a named feature from a battery pack
-    Enable {
-        /// Name of the feature to enable
-        feature_name: String,
-
-        /// Battery pack to search (optional — searches all installed if omitted)
-        #[arg(long)]
-        battery_pack: Option<String>,
     },
 
     /// List available battery packs on crates.io
@@ -236,10 +226,6 @@ pub fn main() -> Result<()> {
                 BpCommands::Sync { path } => {
                     sync_battery_packs(&project_dir, path.as_deref(), &source)
                 }
-                BpCommands::Enable {
-                    feature_name,
-                    battery_pack,
-                } => enable_feature(&feature_name, battery_pack.as_deref(), &project_dir),
                 BpCommands::List {
                     filter,
                     non_interactive,
@@ -783,129 +769,6 @@ fn sync_battery_packs(project_dir: &Path, path: Option<&str>, source: &CrateSour
         println!("Synced {} change(s).", total_changes);
     }
 
-    Ok(())
-}
-
-fn enable_feature(
-    feature_name: &str,
-    battery_pack: Option<&str>,
-    project_dir: &Path,
-) -> Result<()> {
-    let user_manifest_path = find_user_manifest(project_dir)?;
-    let user_manifest_content =
-        std::fs::read_to_string(&user_manifest_path).context("Failed to read Cargo.toml")?;
-
-    // Find which battery pack has this feature
-    let bp_name = if let Some(name) = battery_pack {
-        resolve_crate_name(name)
-    } else {
-        // Search all installed battery packs
-        let bp_names = find_installed_bp_names(&user_manifest_content)?;
-
-        let mut found = None;
-        for name in &bp_names {
-            let spec = fetch_battery_pack_spec(name)?;
-            if spec.features.contains_key(feature_name) {
-                found = Some(name.clone());
-                break;
-            }
-        }
-        found.ok_or_else(|| {
-            anyhow::anyhow!(
-                "No installed battery pack defines feature '{}'",
-                feature_name
-            )
-        })?
-    };
-
-    let bp_spec = fetch_battery_pack_spec(&bp_name)?;
-
-    if !bp_spec.features.contains_key(feature_name) {
-        let available: Vec<_> = bp_spec.features.keys().collect();
-        bail!(
-            "Battery pack '{}' has no feature '{}'. Available: {:?}",
-            bp_name,
-            feature_name,
-            available
-        );
-    }
-
-    // Add feature to active features
-    let metadata_location = resolve_metadata_location(&user_manifest_path)?;
-    let mut active_features =
-        read_active_features_from(&metadata_location, &user_manifest_content, &bp_name);
-    if active_features.contains(feature_name) {
-        println!(
-            "Feature '{}' is already active for {}.",
-            feature_name, bp_name
-        );
-        return Ok(());
-    }
-    active_features.insert(feature_name.to_string());
-
-    // Resolve what this changes
-    let str_features: Vec<&str> = active_features.iter().map(|s| s.as_str()).collect();
-    let crates_to_sync = bp_spec.resolve_crates(&str_features);
-
-    // Update user manifest
-    let mut user_doc: toml_edit::DocumentMut = user_manifest_content
-        .parse()
-        .context("Failed to parse Cargo.toml")?;
-
-    let workspace_manifest = find_workspace_manifest(&user_manifest_path)?;
-
-    // Sync the new crates and update active features
-    if let Some(ref ws_path) = workspace_manifest {
-        let ws_content =
-            std::fs::read_to_string(ws_path).context("Failed to read workspace Cargo.toml")?;
-        let mut ws_doc: toml_edit::DocumentMut = ws_content
-            .parse()
-            .context("Failed to parse workspace Cargo.toml")?;
-
-        let ws_deps = ws_doc["workspace"]["dependencies"]
-            .or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
-        if let Some(ws_table) = ws_deps.as_table_mut() {
-            for (dep_name, dep_spec) in &crates_to_sync {
-                add_dep_to_table(ws_table, dep_name, dep_spec);
-            }
-        }
-
-        // If metadata lives in the workspace manifest, write features there too
-        if matches!(metadata_location, MetadataLocation::Workspace { .. }) {
-            write_bp_features_to_doc(
-                &mut ws_doc,
-                &["workspace", "metadata"],
-                &bp_name,
-                &active_features,
-                None,
-            );
-        }
-
-        std::fs::write(ws_path, ws_doc.to_string())
-            .context("Failed to write workspace Cargo.toml")?;
-
-        // [impl cli.add.dep-kind]
-        write_workspace_refs_by_kind(&mut user_doc, &crates_to_sync, true);
-    } else {
-        // [impl cli.add.dep-kind]
-        write_deps_by_kind(&mut user_doc, &crates_to_sync, true);
-    }
-
-    // If metadata lives in the package manifest, write features there
-    if matches!(metadata_location, MetadataLocation::Package) {
-        write_bp_features_to_doc(
-            &mut user_doc,
-            &["package", "metadata"],
-            &bp_name,
-            &active_features,
-            None,
-        );
-    }
-
-    std::fs::write(&user_manifest_path, user_doc.to_string())
-        .context("Failed to write Cargo.toml")?;
-
-    println!("Enabled feature '{}' from {}", feature_name, bp_name);
     Ok(())
 }
 
