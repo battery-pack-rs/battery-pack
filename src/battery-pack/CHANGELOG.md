@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.12](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.4.11...battery-pack-v0.4.12) - 2026-04-17
+
+### Added
+
+- add battery-pack-cli binary crate for cargo install
+
+### Other
+
+- give cargo-bp its own README, refine battery-pack README ([#86](https://github.com/battery-pack-rs/battery-pack/pull/86))
+- rename battery-pack-cli crate to cargo-bp
+
 ## [0.4.11](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.4.10...battery-pack-v0.4.11) - 2026-04-13
 
 ### Other
