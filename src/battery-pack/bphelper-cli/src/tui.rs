@@ -2,6 +2,7 @@
 #[cfg(test)]
 mod tests;
 
+use crate::manifest::{find_installed_bp_names, find_user_manifest};
 use crate::registry::{
     BatteryPackDetail, BatteryPackSummary, CrateSource, InstalledPack, fetch_battery_pack_detail,
     fetch_battery_pack_list, load_installed_packs,
@@ -51,6 +52,8 @@ struct App {
     screen: Screen,
     should_quit: bool,
     pending_action: Option<PendingAction>,
+    in_project: bool,
+    installed_bp_names: Vec<String>,
 }
 
 /// A single crate being added or updated.
@@ -146,6 +149,8 @@ struct DetailScreen {
     /// Index into selectable_items()
     selected_index: usize,
     came_from_list: bool,
+    in_project: bool,
+    is_installed: bool,
 }
 
 /// A selectable item in the detail view
@@ -664,8 +669,24 @@ enum PendingAction {
 // App implementation
 // ============================================================================
 
+/// Detect whether we're inside a Cargo project and which battery packs are installed.
+fn detect_project_state() -> (bool, Vec<String>) {
+    let Ok(project_dir) = std::env::current_dir() else {
+        return (false, Vec::new());
+    };
+    let Ok(manifest_path) = find_user_manifest(&project_dir) else {
+        return (false, Vec::new());
+    };
+    let Ok(content) = std::fs::read_to_string(&manifest_path) else {
+        return (true, Vec::new());
+    };
+    let names = find_installed_bp_names(&content).unwrap_or_default();
+    (true, names)
+}
+
 impl App {
     fn new_list(source: CrateSource, filter: Option<String>) -> Self {
+        let (in_project, installed_bp_names) = detect_project_state();
         Self {
             source,
             screen: Screen::Loading(LoadingState {
@@ -674,10 +695,13 @@ impl App {
             }),
             should_quit: false,
             pending_action: None,
+            in_project,
+            installed_bp_names,
         }
     }
 
     fn new_add(source: CrateSource) -> Self {
+        let (in_project, installed_bp_names) = detect_project_state();
         Self {
             source,
             screen: Screen::Loading(LoadingState {
@@ -686,10 +710,13 @@ impl App {
             }),
             should_quit: false,
             pending_action: None,
+            in_project,
+            installed_bp_names,
         }
     }
 
     fn new_show(name: &str, path: Option<&str>, source: CrateSource) -> Self {
+        let (in_project, installed_bp_names) = detect_project_state();
         Self {
             source,
             screen: Screen::Loading(LoadingState {
@@ -702,6 +729,8 @@ impl App {
             }),
             should_quit: false,
             pending_action: None,
+            in_project,
+            installed_bp_names,
         }
     }
 
@@ -730,8 +759,12 @@ impl App {
             // Execute pending actions (exit TUI, run command, re-enter)
             if let Some(action) = self.pending_action.take() {
                 ratatui::restore();
-                self.execute_action(&action)?;
-                // This sets a panic hook
+                let success = self.execute_action(&action)?;
+                if success {
+                    // Exit on success for add/new actions
+                    return Ok(());
+                }
+                // Cancel/error: return to TUI
                 terminal = ratatui::init();
                 continue;
             }
@@ -813,6 +846,7 @@ impl App {
                 };
                 match result {
                     Ok(detail) => {
+                        let is_installed = self.installed_bp_names.contains(&detail.name);
                         let initial_index = detail.crates.len()
                             + detail.extends.len()
                             + detail.templates.len()
@@ -821,6 +855,8 @@ impl App {
                             detail: Rc::new(detail),
                             selected_index: initial_index,
                             came_from_list,
+                            in_project: self.in_project,
+                            is_installed,
                         });
                     }
                     Err(e) => {
@@ -913,7 +949,8 @@ impl App {
         }
     }
 
-    fn execute_action(&self, action: &PendingAction) -> Result<()> {
+    /// Execute a pending action. Returns true on success (caller should exit).
+    fn execute_action(&self, action: &PendingAction) -> Result<bool> {
         match action {
             PendingAction::OpenUrl { url } => {
                 if let Err(e) = open::that(url) {
@@ -921,7 +958,7 @@ impl App {
                     println!("URL: {}", url);
                     wait_for_enter();
                 }
-                // No "press enter" for successful open - just return immediately
+                Ok(false) // Don't exit for URL opens
             }
             PendingAction::AddToProject { battery_pack } => {
                 let status = std::process::Command::new("cargo")
@@ -930,8 +967,11 @@ impl App {
 
                 if status.success() {
                     println!("\nSuccessfully added {}!", battery_pack);
+                    Ok(true)
+                } else {
+                    wait_for_enter();
+                    Ok(false)
                 }
-                wait_for_enter();
             }
             PendingAction::NewProject {
                 battery_pack,
@@ -948,11 +988,13 @@ impl App {
 
                 if status.success() {
                     println!("\nSuccessfully created project '{}'!", name);
+                    Ok(true)
+                } else {
+                    wait_for_enter();
+                    Ok(false)
                 }
-                wait_for_enter();
             }
         }
-        Ok(())
     }
 
     fn handle_key(&mut self, key: KeyCode) {
@@ -1054,7 +1096,11 @@ impl App {
                                 Action::DetailOpenCratesIo(state.detail.name.clone())
                             }
                             DetailItem::ActionAddToProject => {
-                                Action::DetailAdd(state.detail.short_name.clone())
+                                if state.in_project {
+                                    Action::DetailAdd(state.detail.short_name.clone())
+                                } else {
+                                    Action::None
+                                }
                             }
                             DetailItem::ActionNewProject => {
                                 Action::DetailNewProject(
@@ -1283,16 +1329,20 @@ impl App {
                     name,
                 });
                 self.screen = Screen::Detail(DetailScreen {
-                    detail,
+                    detail: detail.clone(),
                     selected_index,
                     came_from_list,
+                    in_project: self.in_project,
+                    is_installed: self.installed_bp_names.contains(&detail.name),
                 });
             }
             Action::FormCancel(detail, selected_index, came_from_list) => {
                 self.screen = Screen::Detail(DetailScreen {
-                    detail,
+                    detail: detail.clone(),
                     selected_index,
                     came_from_list,
+                    in_project: self.in_project,
+                    is_installed: self.installed_bp_names.contains(&detail.name),
                 });
             }
             Action::FormChar(c) => {
@@ -1407,9 +1457,11 @@ impl App {
             }
             Action::PreviewBack(detail, selected_index, came_from_list) => {
                 self.screen = Screen::Detail(DetailScreen {
-                    detail,
+                    detail: detail.clone(),
                     selected_index,
                     came_from_list,
+                    in_project: self.in_project,
+                    is_installed: self.installed_bp_names.contains(&detail.name),
                 });
             }
         }
@@ -1856,10 +1908,17 @@ fn render_detail(frame: &mut Frame, state: &DetailScreen) {
     ));
 
     // Actions section (always present)
+    let add_label = if !state.in_project {
+        "Add to project (not in a project)".to_string()
+    } else if state.is_installed {
+        "Add crates or features".to_string()
+    } else {
+        "Add to project".to_string()
+    };
     let action_labels = [
-        "Open on crates.io",
-        "Add to project",
-        "Create new project from template",
+        "Open on crates.io".to_string(),
+        add_label,
+        "Create new project from template".to_string(),
     ];
     selected_line = selected_line.or(render_selectable_section(
         &mut lines,
@@ -1943,6 +2002,8 @@ fn render_form(frame: &mut Frame, state: &FormScreen) {
         detail: Rc::clone(&state.detail),
         selected_index: state.selected_index,
         came_from_list: state.came_from_list,
+        in_project: true,  // doesn't matter for dimmed background
+        is_installed: false,
     };
     render_detail(frame, &dimmed_detail);
 
