@@ -21,7 +21,7 @@ You'll be prompted for a project name and directory.
 The result is a ready-to-go Rust project with the battery pack's
 recommended crates already in your `Cargo.toml`.
 
-See [Using Battery Packs](./using.md#creating-a-new-project-from-a-template) for the full set of template options, including choosing specific templates, non-interactive mode, and previewing output.
+See [Using Battery Packs](./using.md#creating-a-new-project-from-a-template) for the full set of template options, including choosing specific templates, [non-interactive mode](./using.md#non-interactive-mode), and previewing output.
 
 ## Add a battery pack to an existing project
 

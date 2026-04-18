@@ -19,6 +19,31 @@ The TUI is context-dependent. If you're inside a Rust project, you'll see:
 If you're not in a Rust project, the installed-packs section is
 greyed out, but you can still browse and create new projects.
 
+## Non-interactive mode
+
+Pass `--non-interactive` (or `-N`) to suppress TUI and prompts:
+
+```bash
+cargo bp -N list                        # plain text output
+cargo bp -N show cli                    # plain text output
+cargo bp -N new cli --name my-app       # no prompts
+cargo bp -N rm cli                      # skip "remove deps?" prompt
+```
+
+Set `CARGO_BP_NON_INTERACTIVE=true` to activate for an entire session:
+
+```bash
+export CARGO_BP_NON_INTERACTIVE=true
+cargo bp list              # plain text, no TUI
+cargo bp new cli -n my-app # no prompts
+```
+
+For `new`, use `--name` and `-d` to provide values that would otherwise be prompted:
+
+```bash
+cargo bp new cli --name my-app -d description="My CLI tool"
+```
+
 ## Browsing available packs
 
 ### From the TUI
@@ -62,9 +87,7 @@ To see what a template will generate without writing any files:
 cargo bp new cli --preview
 ```
 
-### Non-interactive mode
-
-To set placeholder values non-interactively (e.g. in CI), use `--name` and `-d`:
+For `new`, use `--name` and `-d` to provide values that would otherwise be prompted:
 
 ```bash
 cargo bp new cli --name my-app -d description="My CLI tool"

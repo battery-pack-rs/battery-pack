@@ -49,6 +49,22 @@ r[cli.path.no-resolve]
 When `--path` is provided, name resolution is not needed.
 The battery pack is read directly from the given directory.
 
+## Non-interactive mode
+
+r[cli.non-interactive.flag]
+`cargo bp --non-interactive` (or `-N`) MUST suppress interactive
+prompts and TUI mode. This is a global flag accepted by all
+subcommands.
+
+r[cli.non-interactive.env]
+Setting `CARGO_BP_NON_INTERACTIVE=true` MUST have the same effect
+as passing `--non-interactive`. The flag and env var are combined
+with OR logic.
+
+r[cli.non-interactive.tty]
+When stdout is not a TTY, `cargo bp` MUST behave as if
+`--non-interactive` were passed.
+
 ## Name resolution
 
 r[cli.name.resolve]
@@ -163,6 +179,11 @@ Placeholders without a default MUST fall back to `<name>` so the
 preview always succeeds. If `--name` is not provided, the preview
 MUST use `my-project` as the project name.
 
+r[cli.new.non-interactive]
+In non-interactive mode, `cargo bp new` MUST fail with an error
+if `--name` is not provided. Template placeholders without a
+default or `--define` override MUST also cause an error.
+
 ## `cargo bp status`
 
 r[cli.status.list]
@@ -210,7 +231,8 @@ If running in a TTY, `cargo bp list` SHOULD display results
 in the interactive TUI.
 
 r[cli.list.non-interactive]
-`cargo bp list --non-interactive` MUST print results as plain text.
+In non-interactive mode, `cargo bp list` MUST print results as
+plain text.
 
 ## `cargo bp validate`
 
@@ -293,4 +315,5 @@ If running in a TTY, `cargo bp show` SHOULD display results
 in the interactive TUI.
 
 r[cli.show.non-interactive]
-`cargo bp show --non-interactive` MUST print results as plain text.
+In non-interactive mode, `cargo bp show` MUST print results as
+plain text.

@@ -26,6 +26,14 @@ fn unwrap_bp_command(cli: super::Cli) -> super::BpCommands {
     }
 }
 
+fn unwrap_bp_non_interactive(cli: &super::Cli) -> bool {
+    match &cli.command {
+        super::Commands::Bp {
+            non_interactive, ..
+        } => *non_interactive,
+    }
+}
+
 // ============================================================================
 // cli.bare.tui — bare `cargo bp` requires a subcommand (prints usage)
 // ============================================================================
@@ -114,7 +122,7 @@ fn resolve_template_single_template_uses_it() {
         },
     );
 
-    let result = super::resolve_template(&templates, None).unwrap();
+    let result = super::resolve_template(&templates, None, true).unwrap();
     assert_eq!(result, "templates/simple");
 }
 
@@ -138,7 +146,7 @@ fn resolve_template_picks_default_when_present() {
         },
     );
 
-    let result = super::resolve_template(&templates, None).unwrap();
+    let result = super::resolve_template(&templates, None, true).unwrap();
     assert_eq!(result, "templates/default");
 }
 
@@ -163,7 +171,7 @@ fn resolve_template_unknown_name_errors() {
         },
     );
 
-    let result = super::resolve_template(&templates, Some("nonexistent"));
+    let result = super::resolve_template(&templates, Some("nonexistent"), true);
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(
@@ -196,7 +204,7 @@ fn resolve_template_explicit_flag_overrides() {
         },
     );
 
-    let result = super::resolve_template(&templates, Some("advanced")).unwrap();
+    let result = super::resolve_template(&templates, Some("advanced"), true).unwrap();
     assert_eq!(result, "templates/advanced");
 }
 
@@ -324,14 +332,10 @@ fn show_non_interactive_flag_is_parsed() {
     let cli = super::Cli::try_parse_from(["cargo", "bp", "show", "cli", "--non-interactive"])
         .expect("--non-interactive should be accepted");
 
-    match unwrap_bp_command(cli) {
-        super::BpCommands::Show {
-            non_interactive, ..
-        } => {
-            assert!(non_interactive, "non_interactive should be true");
-        }
-        other => panic!("expected Show, got {:?}", std::mem::discriminant(&other)),
-    }
+    assert!(
+        unwrap_bp_non_interactive(&cli),
+        "non_interactive should be true"
+    );
 }
 
 // [verify cli.show.non-interactive]
@@ -340,14 +344,10 @@ fn show_defaults_to_interactive() {
     let cli = super::Cli::try_parse_from(["cargo", "bp", "show", "cli"])
         .expect("show without --non-interactive should parse");
 
-    match unwrap_bp_command(cli) {
-        super::BpCommands::Show {
-            non_interactive, ..
-        } => {
-            assert!(!non_interactive, "non_interactive should default to false");
-        }
-        other => panic!("expected Show, got {:?}", std::mem::discriminant(&other)),
-    }
+    assert!(
+        !unwrap_bp_non_interactive(&cli),
+        "non_interactive should default to false"
+    );
 }
 
 // [verify cli.list.non-interactive]
@@ -356,14 +356,10 @@ fn list_non_interactive_flag_is_parsed() {
     let cli = super::Cli::try_parse_from(["cargo", "bp", "list", "--non-interactive"])
         .expect("--non-interactive should be accepted");
 
-    match unwrap_bp_command(cli) {
-        super::BpCommands::List {
-            non_interactive, ..
-        } => {
-            assert!(non_interactive, "non_interactive should be true");
-        }
-        other => panic!("expected List, got {:?}", std::mem::discriminant(&other)),
-    }
+    assert!(
+        unwrap_bp_non_interactive(&cli),
+        "non_interactive should be true"
+    );
 }
 
 // [verify cli.list.non-interactive]
@@ -372,14 +368,66 @@ fn list_defaults_to_interactive() {
     let cli = super::Cli::try_parse_from(["cargo", "bp", "list"])
         .expect("list without --non-interactive should parse");
 
-    match unwrap_bp_command(cli) {
-        super::BpCommands::List {
-            non_interactive, ..
-        } => {
-            assert!(!non_interactive, "non_interactive should default to false");
-        }
-        other => panic!("expected List, got {:?}", std::mem::discriminant(&other)),
-    }
+    assert!(
+        !unwrap_bp_non_interactive(&cli),
+        "non_interactive should default to false"
+    );
+}
+
+// --non-interactive is global: accepted before the subcommand
+#[test]
+fn non_interactive_before_subcommand() {
+    let cli = super::Cli::try_parse_from(["cargo", "bp", "--non-interactive", "list"])
+        .expect("--non-interactive before subcommand should parse");
+
+    assert!(unwrap_bp_non_interactive(&cli));
+}
+
+// -N short flag
+#[test]
+fn short_flag_n_is_parsed() {
+    let cli = super::Cli::try_parse_from(["cargo", "bp", "-N", "show", "cli"])
+        .expect("-N should be accepted");
+
+    assert!(unwrap_bp_non_interactive(&cli));
+}
+
+// --non-interactive on new subcommand
+#[test]
+fn new_non_interactive_flag_is_parsed() {
+    let cli = super::Cli::try_parse_from([
+        "cargo",
+        "bp",
+        "new",
+        "cli",
+        "--non-interactive",
+        "-n",
+        "foo",
+    ])
+    .expect("--non-interactive on new should parse");
+
+    assert!(unwrap_bp_non_interactive(&cli));
+}
+
+// cargo bp new without --name in non-interactive mode
+#[test]
+fn new_non_interactive_requires_name() {
+    let source = crate::registry::CrateSource::Registry;
+    let result = super::new_from_battery_pack(super::NewFromBpOpts {
+        battery_pack: "cli",
+        name: None,
+        template: None,
+        path_override: None,
+        source: &source,
+        define: &[],
+        interactive: false,
+    });
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string().contains("--name is required"),
+        "expected --name error, got: {}",
+        err
+    );
 }
 
 // --- from group2_add.rs ---

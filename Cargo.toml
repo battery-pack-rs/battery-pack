@@ -28,7 +28,7 @@ toml = "0.8"
 
 [workspace.dependencies.clap]
 version = "4"
-features = ["derive"]
+features = ["derive", "env"]
 
 [workspace.dependencies.reqwest]
 version = "0.13"
