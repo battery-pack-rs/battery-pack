@@ -221,7 +221,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "battery-pack"
-version = "0.4.12"
+version = "0.4.13"
 dependencies = [
  "anyhow",
  "battery-pack",
@@ -305,7 +305,7 @@ dependencies = [
 
 [[package]]
 name = "bphelper-cli"
-version = "0.7.3"
+version = "0.7.4"
 dependencies = [
  "anyhow",
  "bphelper-manifest",
@@ -383,7 +383,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-bp"
-version = "0.4.12"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "assert_cmd",

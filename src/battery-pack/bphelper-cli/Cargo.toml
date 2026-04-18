@@ -1,6 +1,6 @@
 [package]
 name = "bphelper-cli"
-version = "0.7.3"
+version = "0.7.4"
 edition = "2024"
 description = "CLI for creating and managing battery packs"
 license = "MIT OR Apache-2.0"
