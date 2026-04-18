@@ -295,14 +295,14 @@ pub fn main() -> Result<()> {
 // ============================================================================
 
 /// Input options for [`new_from_battery_pack`].
-pub(crate) struct NewFromBpOpts<'a> {
-    pub battery_pack: &'a str,
-    pub name: Option<String>,
-    pub template: Option<String>,
-    pub path_override: Option<String>,
-    pub source: &'a CrateSource,
-    pub define: &'a [(String, String)],
-    pub interactive: bool,
+struct NewFromBpOpts<'a> {
+    battery_pack: &'a str,
+    name: Option<String>,
+    template: Option<String>,
+    path_override: Option<String>,
+    source: &'a CrateSource,
+    define: &'a [(String, String)],
+    interactive: bool,
 }
 
 // [impl cli.new.template]
