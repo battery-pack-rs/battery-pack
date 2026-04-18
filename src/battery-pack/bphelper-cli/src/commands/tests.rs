@@ -346,6 +346,48 @@ fn show_defaults_to_interactive() {
     );
 }
 
+// [verify cli.show.template-preview]
+#[test]
+fn show_template_flag_is_parsed() {
+    let cli = super::Cli::try_parse_from(["cargo", "bp", "show", "cli", "-t", "default"])
+        .expect("-t should be accepted");
+
+    match unwrap_bp_command(cli) {
+        super::BpCommands::Show { template, .. } => {
+            assert_eq!(template.as_deref(), Some("default"));
+        }
+        other => panic!("expected Show, got {:?}", std::mem::discriminant(&other)),
+    }
+}
+
+// [verify cli.show.template-preview]
+#[test]
+fn show_template_long_flag_is_parsed() {
+    let cli = super::Cli::try_parse_from(["cargo", "bp", "show", "cli", "--template", "subcmds"])
+        .expect("--template should be accepted");
+
+    match unwrap_bp_command(cli) {
+        super::BpCommands::Show { template, .. } => {
+            assert_eq!(template.as_deref(), Some("subcmds"));
+        }
+        other => panic!("expected Show, got {:?}", std::mem::discriminant(&other)),
+    }
+}
+
+// [verify cli.show.template-preview]
+#[test]
+fn show_without_template_has_none() {
+    let cli = super::Cli::try_parse_from(["cargo", "bp", "show", "cli"])
+        .expect("show without -t should parse");
+
+    match unwrap_bp_command(cli) {
+        super::BpCommands::Show { template, .. } => {
+            assert!(template.is_none());
+        }
+        other => panic!("expected Show, got {:?}", std::mem::discriminant(&other)),
+    }
+}
+
 // [verify cli.list.non-interactive]
 #[test]
 fn list_non_interactive_flag_is_parsed() {

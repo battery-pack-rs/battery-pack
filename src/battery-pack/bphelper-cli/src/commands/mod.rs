@@ -16,10 +16,9 @@ use crate::manifest::{
     write_bp_features_to_doc, write_deps_by_kind, write_workspace_refs_by_kind,
 };
 use crate::registry::{
-    CrateSource, InstalledPack, TemplateConfig, download_and_extract_crate,
-    fetch_battery_pack_detail, fetch_battery_pack_detail_from_source, fetch_battery_pack_list,
-    fetch_bp_spec, find_local_battery_pack_dir, load_installed_bp_spec, lookup_crate,
-    resolve_crate_name, short_name,
+    CrateSource, InstalledPack, TemplateConfig, fetch_battery_pack_detail,
+    fetch_battery_pack_detail_from_source, fetch_battery_pack_list, fetch_bp_spec,
+    load_installed_bp_spec, resolve_crate_name, short_name,
 };
 
 // [impl cli.bare.help]
@@ -153,6 +152,11 @@ pub(crate) enum BpCommands {
         /// Name of the battery pack (e.g., "cli" resolves to "cli-battery-pack")
         battery_pack: String,
 
+        /// Preview a specific template's rendered output
+        // [impl cli.show.template-preview]
+        #[arg(long, short = 't')]
+        template: Option<String>,
+
         /// Use a local path instead of downloading from crates.io
         #[arg(long)]
         path: Option<String>,
@@ -272,16 +276,35 @@ pub fn main() -> Result<()> {
                         print_battery_pack_list(&source, filter.as_deref())
                     }
                 }
-                BpCommands::Show { battery_pack, path } => {
-                    // [impl cli.show.interactive]
-                    // [impl cli.show.non-interactive]
+                BpCommands::Show {
+                    battery_pack,
+                    template,
+                    path,
+                } => {
+                    let show_opts = crate::tui::ShowOpts {
+                        battery_pack: &battery_pack,
+                        template: template.as_deref(),
+                        path: path.as_deref(),
+                        source,
+                    };
                     if interactive {
-                        crate::tui::run_show(&battery_pack, path.as_deref(), source)
+                        // [impl cli.show.interactive]
+                        // [impl cli.show.template-preview]
+                        crate::tui::run_show(show_opts)
+                    } else if let Some(tmpl) = show_opts.template {
+                        // [impl cli.show.template-preview]
+                        print_template_preview(&crate::template_engine::PreviewOpts {
+                            battery_pack: show_opts.battery_pack,
+                            template: tmpl,
+                            path: show_opts.path,
+                            source: &show_opts.source,
+                        })
                     } else {
+                        // [impl cli.show.non-interactive]
                         print_battery_pack_detail(
-                            &battery_pack,
-                            path.as_deref(),
-                            &source,
+                            show_opts.battery_pack,
+                            show_opts.path,
+                            &show_opts.source,
                             &project_dir,
                         )
                     }
@@ -338,27 +361,10 @@ fn new_from_battery_pack(opts: NewFromBpOpts<'_>) -> Result<()> {
     }
 
     let crate_name = resolve_crate_name(opts.battery_pack);
-
-    // Locate the crate directory based on source
-    let crate_dir: PathBuf;
-    let _temp_dir: Option<tempfile::TempDir>; // keep alive for Registry
-    match opts.source {
-        CrateSource::Registry => {
-            let crate_info = lookup_crate(&crate_name)?;
-            let temp = download_and_extract_crate(&crate_name, &crate_info.version)?;
-            crate_dir = temp
-                .path()
-                .join(format!("{}-{}", crate_name, crate_info.version));
-            _temp_dir = Some(temp);
-        }
-        CrateSource::Local(workspace_dir) => {
-            crate_dir = find_local_battery_pack_dir(workspace_dir, &crate_name)?;
-            _temp_dir = None;
-        }
-    }
+    let resolved = crate::registry::resolve_crate_dir(opts.battery_pack, None, opts.source)?;
 
     // Read template metadata from the Cargo.toml
-    let manifest_path = crate_dir.join("Cargo.toml");
+    let manifest_path = resolved.dir.join("Cargo.toml");
     let manifest_content = std::fs::read_to_string(&manifest_path)
         .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
     let templates = parse_template_metadata(&manifest_content, &crate_name)?;
@@ -367,7 +373,7 @@ fn new_from_battery_pack(opts: NewFromBpOpts<'_>) -> Result<()> {
     let template_path = resolve_template(&templates, opts.template.as_deref(), opts.interactive)?;
 
     // Generate the project from the crate directory
-    generate_from_path(new_opts, &crate_dir, &template_path)
+    generate_from_path(new_opts, &resolved.dir, &template_path)
 }
 
 /// Result of resolving which crates to add from a battery pack.
@@ -1680,6 +1686,19 @@ fn print_battery_pack_detail(
     println!("  cargo bp add {}", detail.short_name);
     println!("  cargo bp new {}", detail.short_name);
     println!();
+
+    Ok(())
+}
+
+// [impl cli.show.template-preview]
+fn print_template_preview(opts: &crate::template_engine::PreviewOpts<'_>) -> Result<()> {
+    let (_crate_name, files) = crate::template_engine::preview_template(opts)?;
+
+    for file in &files {
+        println!("── {} ──", file.path);
+        println!("{}", file.content);
+        println!();
+    }
 
     Ok(())
 }

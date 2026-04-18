@@ -847,5 +847,45 @@ pub(crate) fn find_template_path(tree: &[String], template_path: &str) -> Option
         .cloned()
 }
 
+/// A resolved battery pack crate directory. Owns the temp dir (if any) to keep it alive.
+pub(crate) struct ResolvedCrate {
+    pub dir: PathBuf,
+    _temp: Option<tempfile::TempDir>,
+}
+
+/// Resolve a battery pack name to a local crate directory.
+///
+/// If `path_override` is set, uses that directly. Otherwise resolves via
+/// `source` (registry download or local workspace lookup).
+pub(crate) fn resolve_crate_dir(
+    battery_pack: &str,
+    path_override: Option<&str>,
+    source: &CrateSource,
+) -> Result<ResolvedCrate> {
+    if let Some(path) = path_override {
+        return Ok(ResolvedCrate {
+            dir: PathBuf::from(path),
+            _temp: None,
+        });
+    }
+
+    let crate_name = resolve_crate_name(battery_pack);
+    match source {
+        CrateSource::Registry => {
+            let info = lookup_crate(&crate_name)?;
+            let temp = download_and_extract_crate(&crate_name, &info.version)?;
+            let dir = temp.path().join(format!("{}-{}", crate_name, info.version));
+            Ok(ResolvedCrate {
+                dir,
+                _temp: Some(temp),
+            })
+        }
+        CrateSource::Local(workspace_dir) => {
+            let dir = find_local_battery_pack_dir(workspace_dir, &crate_name)?;
+            Ok(ResolvedCrate { dir, _temp: None })
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;

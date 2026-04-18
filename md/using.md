@@ -84,7 +84,13 @@ cargo bp new cli --template subcmds
 To see what a template will generate without writing any files:
 
 ```bash
-cargo bp new cli --preview
+cargo bp show cli -t default
+```
+
+In a terminal, this opens an interactive scrollable preview. For plain text output (e.g. in CI or piped to another command):
+
+```bash
+cargo bp show cli -t default --non-interactive
 ```
 
 For `new`, use `--name` and `-d` to provide values that would otherwise be prompted:

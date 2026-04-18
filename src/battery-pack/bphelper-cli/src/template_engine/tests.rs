@@ -394,3 +394,29 @@ fake-battery-pack = { features = ["default"] }
 "#]]
     );
 }
+
+#[test]
+fn preview_template_resolves_and_renders() {
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("tests/fixtures/fancy-battery-pack");
+
+    let source = crate::registry::CrateSource::Local(fixtures.parent().unwrap().to_path_buf());
+    let opts = PreviewOpts {
+        battery_pack: "fancy",
+        template: "default",
+        path: None,
+        source: &source,
+    };
+
+    let (crate_name, files) = preview_template(&opts).unwrap();
+    assert_eq!(crate_name, "fancy-battery-pack");
+    assert!(!files.is_empty());
+    assert!(files.iter().any(|f| f.path == "Cargo.toml"));
+    assert!(files.iter().any(|f| f.path == "src/main.rs"));
+}

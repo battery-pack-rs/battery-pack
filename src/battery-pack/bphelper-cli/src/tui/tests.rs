@@ -433,10 +433,11 @@ fn preview_esc_returns_to_detail() {
     let detail = make_detail(&["serde"], &["default"], &[]);
     let mut app = make_app(Screen::Preview(PreviewScreen {
         content: Text::from("test content"),
+        battery_pack_name: "test-battery-pack".to_string(),
         template_name: "default".to_string(),
         scroll: 0,
         line_count: 1,
-        detail: Rc::new(detail),
+        detail: Some(Rc::new(detail)),
         selected_index: 2,
         came_from_list: true,
     }));
@@ -454,10 +455,11 @@ fn preview_scroll_down_and_up() {
     let detail = make_detail(&[], &["default"], &[]);
     let mut app = make_app(Screen::Preview(PreviewScreen {
         content: Text::from("line1\nline2\nline3\nline4\nline5"),
+        battery_pack_name: "test-battery-pack".to_string(),
         template_name: "default".to_string(),
         scroll: 0,
         line_count: 5,
-        detail: Rc::new(detail),
+        detail: Some(Rc::new(detail)),
         selected_index: 0,
         came_from_list: false,
     }));
@@ -488,10 +490,11 @@ fn preview_scroll_clamps_at_bounds() {
     let detail = make_detail(&[], &["default"], &[]);
     let mut app = make_app(Screen::Preview(PreviewScreen {
         content: Text::from("line1\nline2"),
+        battery_pack_name: "test-battery-pack".to_string(),
         template_name: "default".to_string(),
         scroll: 0,
         line_count: 2,
-        detail: Rc::new(detail),
+        detail: Some(Rc::new(detail)),
         selected_index: 0,
         came_from_list: false,
     }));
@@ -501,4 +504,54 @@ fn preview_scroll_clamps_at_bounds() {
     if let Screen::Preview(state) = &app.screen {
         assert_eq!(state.scroll, 0);
     }
+}
+
+// [verify cli.show.template-preview]
+#[test]
+fn preview_standalone_esc_quits() {
+    let mut app = make_app(Screen::Preview(PreviewScreen {
+        content: Text::from("standalone preview"),
+        battery_pack_name: "cli-battery-pack".to_string(),
+        template_name: "default".to_string(),
+        scroll: 0,
+        line_count: 1,
+        detail: None,
+        selected_index: 0,
+        came_from_list: false,
+    }));
+
+    app.handle_key(KeyCode::Esc);
+    assert!(app.should_quit);
+}
+
+// [verify cli.show.template-preview]
+#[test]
+fn preview_standalone_renders_header_and_content() {
+    let mut app = make_app(Screen::Preview(PreviewScreen {
+        content: Text::from("fn main() {}"),
+        battery_pack_name: "cli-battery-pack".to_string(),
+        template_name: "simple".to_string(),
+        scroll: 0,
+        line_count: 1,
+        detail: None,
+        selected_index: 0,
+        came_from_list: false,
+    }));
+
+    let output = render_app_to_string(&mut app, 60, 10);
+    assert!(
+        output.contains("cli-battery-pack"),
+        "Expected pack name in header:\n{}",
+        output
+    );
+    assert!(
+        output.contains("simple"),
+        "Expected template name in header:\n{}",
+        output
+    );
+    assert!(
+        output.contains("fn main()"),
+        "Expected content in output:\n{}",
+        output
+    );
 }
