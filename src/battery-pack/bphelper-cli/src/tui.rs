@@ -1357,7 +1357,7 @@ fn render_form(frame: &mut Frame, state: &FormScreen) {
         detail: Rc::clone(&state.detail),
         selected_index: state.selected_index,
         came_from_list: state.came_from_list,
-        in_project: true,  // doesn't matter for dimmed background
+        in_project: true, // doesn't matter for dimmed background
         is_installed: false,
     };
     render_detail(frame, &dimmed_detail);

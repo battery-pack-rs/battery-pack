@@ -48,12 +48,12 @@ fn detail_selectable_items_includes_all_sections() {
         &["hello-world"],       // 1 example
     );
     let screen = DetailScreen {
-            detail: Rc::new(detail),
-            selected_index: 0,
-            came_from_list: false,
-            in_project: true,
-            is_installed: false,
-        };
+        detail: Rc::new(detail),
+        selected_index: 0,
+        came_from_list: false,
+        in_project: true,
+        is_installed: false,
+    };
 
     let items: Vec<_> = screen.selectable_items().collect();
     assert_eq!(screen.item_count(), items.len());
@@ -67,12 +67,12 @@ fn detail_selectable_items_includes_all_sections() {
 fn detail_navigation_wraps() {
     let detail = make_detail(&["serde"], &[], &[]);
     let mut screen = DetailScreen {
-            detail: Rc::new(detail),
-            selected_index: 0,
-            came_from_list: false,
-            in_project: true,
-            is_installed: false,
-        };
+        detail: Rc::new(detail),
+        selected_index: 0,
+        came_from_list: false,
+        in_project: true,
+        is_installed: false,
+    };
 
     // 1 crate + 3 actions = 4 items
     assert_eq!(screen.item_count(), 4);
@@ -201,12 +201,12 @@ fn list_esc_quits() {
 fn detail_tab_and_arrows_navigate() {
     let detail = make_detail(&["serde", "tokio"], &[], &[]);
     let mut app = make_app(Screen::Detail(DetailScreen {
-            detail: Rc::new(detail),
-            selected_index: 0,
-            came_from_list: false,
-            in_project: true,
-            is_installed: false,
-        }));
+        detail: Rc::new(detail),
+        selected_index: 0,
+        came_from_list: false,
+        in_project: true,
+        is_installed: false,
+    }));
 
     // Tab moves forward
     app.handle_key(KeyCode::Tab);
@@ -226,12 +226,12 @@ fn detail_tab_and_arrows_navigate() {
 fn detail_esc_when_came_from_list_goes_back() {
     let detail = make_detail(&["serde"], &[], &[]);
     let mut app = make_app(Screen::Detail(DetailScreen {
-            detail: Rc::new(detail),
-            selected_index: 0,
-            came_from_list: true,
-            in_project: true,
-            is_installed: false,
-        }));
+        detail: Rc::new(detail),
+        selected_index: 0,
+        came_from_list: true,
+        in_project: true,
+        is_installed: false,
+    }));
 
     // Esc with came_from_list transitions to Loading (process_loading runs in the
     // main loop, not inline). The important thing: it didn't quit.
@@ -244,12 +244,12 @@ fn detail_esc_when_came_from_list_goes_back() {
 fn detail_esc_when_not_from_list_quits() {
     let detail = make_detail(&["serde"], &[], &[]);
     let mut app = make_app(Screen::Detail(DetailScreen {
-            detail: Rc::new(detail),
-            selected_index: 0,
-            came_from_list: false,
-            in_project: true,
-            is_installed: false,
-        }));
+        detail: Rc::new(detail),
+        selected_index: 0,
+        came_from_list: false,
+        in_project: true,
+        is_installed: false,
+    }));
 
     app.handle_key(KeyCode::Esc);
     assert!(app.should_quit);

@@ -11,16 +11,15 @@ use std::path::{Path, PathBuf};
 
 use crate::manifest::{
     MetadataLocation, add_dep_to_table, dep_kind_section, find_installed_bp_names,
-    find_user_manifest, find_workspace_manifest, read_active_features_from,
-    read_managed_deps_from, remove_deps_by_kind, resolve_metadata_location,
-    should_upgrade_version, sync_dep_in_table, write_bp_features_to_doc, write_deps_by_kind,
-    write_workspace_refs_by_kind,
+    find_user_manifest, find_workspace_manifest, read_active_features_from, read_managed_deps_from,
+    remove_deps_by_kind, resolve_metadata_location, should_upgrade_version, sync_dep_in_table,
+    write_bp_features_to_doc, write_deps_by_kind, write_workspace_refs_by_kind,
 };
 use crate::registry::{
     CrateSource, InstalledPack, TemplateConfig, download_and_extract_crate,
     fetch_battery_pack_detail, fetch_battery_pack_detail_from_source, fetch_battery_pack_list,
-    fetch_bp_spec, find_local_battery_pack_dir, load_installed_bp_spec,
-    lookup_crate, resolve_crate_name, short_name,
+    fetch_bp_spec, find_local_battery_pack_dir, load_installed_bp_spec, lookup_crate,
+    resolve_crate_name, short_name,
 };
 
 // [impl cli.bare.help]
@@ -273,7 +272,12 @@ pub fn main() -> Result<()> {
                     if !non_interactive && interactive {
                         crate::tui::run_show(&battery_pack, path.as_deref(), source)
                     } else {
-                        print_battery_pack_detail(&battery_pack, path.as_deref(), &source, &project_dir)
+                        print_battery_pack_detail(
+                            &battery_pack,
+                            path.as_deref(),
+                            &source,
+                            &project_dir,
+                        )
                     }
                 }
                 BpCommands::Status { path } => {
@@ -605,7 +609,8 @@ pub(crate) fn add_battery_pack(
     // [impl cli.add.target]
     // Edit semantics: remove deselected crates from previous installation
     let metadata_location = resolve_metadata_location(&user_manifest_path)?;
-    let prev_managed = read_managed_deps_from(&metadata_location, &user_manifest_content, &crate_name);
+    let prev_managed =
+        read_managed_deps_from(&metadata_location, &user_manifest_content, &crate_name);
     let new_crate_names: BTreeSet<String> = crates_to_sync.keys().cloned().collect();
     let mut removed_count = 0;
 
@@ -615,15 +620,17 @@ pub(crate) fn add_battery_pack(
             .iter()
             .filter(|name| !new_crate_names.contains(name.as_str()))
             .filter_map(|name| {
-                bp_spec.crates.get(name).map(|spec| (name.clone(), spec.clone()))
+                bp_spec
+                    .crates
+                    .get(name)
+                    .map(|spec| (name.clone(), spec.clone()))
             })
             .collect();
 
         if !to_remove.is_empty() {
             if let Some(ref mut doc) = ws_doc {
                 // Remove from workspace deps
-                let ws_deps = doc["workspace"]["dependencies"]
-                    .as_table_mut();
+                let ws_deps = doc["workspace"]["dependencies"].as_table_mut();
                 if let Some(ws_table) = ws_deps {
                     for name in to_remove.keys() {
                         ws_table.remove(name);
@@ -1115,8 +1122,8 @@ pub(crate) struct PickerResult {
 
 /// An item in the picker — either a feature or an individual crate.
 enum PickerItem {
-    Feature(String),       // feature name
-    Crate(String),         // crate name
+    Feature(String), // feature name
+    Crate(String),   // crate name
 }
 
 /// Show an interactive multi-select picker for choosing which crates to install.
@@ -1153,7 +1160,11 @@ fn pick_crates_interactive(
 
     let use_defaults = pre_selected.is_empty();
     let default_crates: BTreeSet<String> = if use_defaults {
-        bp_spec.resolve_crates(&["default"]).keys().cloned().collect()
+        bp_spec
+            .resolve_crates(&["default"])
+            .keys()
+            .cloned()
+            .collect()
     } else {
         BTreeSet::new()
     };
@@ -1177,10 +1188,16 @@ fn pick_crates_interactive(
         ));
         let checked = if use_defaults {
             // Feature is checked if all its visible members are in defaults
-            feat_crates.iter().filter(|c| !bp_spec.is_hidden(c)).all(|c| default_crates.contains(c))
+            feat_crates
+                .iter()
+                .filter(|c| !bp_spec.is_hidden(c))
+                .all(|c| default_crates.contains(c))
         } else {
             // Feature is checked if all its visible members are pre-selected
-            feat_crates.iter().filter(|c| !bp_spec.is_hidden(c)).all(|c| pre_selected.contains(c))
+            feat_crates
+                .iter()
+                .filter(|c| !bp_spec.is_hidden(c))
+                .all(|c| pre_selected.contains(c))
         };
         defaults.push(checked);
         items.push(PickerItem::Feature(feat_name.to_string()));
@@ -1193,7 +1210,11 @@ fn pick_crates_interactive(
             format!(
                 "({}, features: {})",
                 spec.version,
-                spec.features.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+                spec.features
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             )
         };
         labels.push(format!("  {} {}", crate_name, style(&version_info).dim()));
@@ -1263,7 +1284,10 @@ fn pick_crates_interactive(
     // Check if all default crates are selected
     let default_members = bp_spec.features.get("default");
     if default_members.is_some_and(|members| {
-        members.iter().filter(|c| !bp_spec.is_hidden(c)).all(|c| selected_crates.contains(c))
+        members
+            .iter()
+            .filter(|c| !bp_spec.is_hidden(c))
+            .all(|c| selected_crates.contains(c))
     }) {
         active_features.insert("default".to_string());
     }
@@ -1271,7 +1295,11 @@ fn pick_crates_interactive(
         if feat_name == "default" {
             continue;
         }
-        if feat_crates.iter().filter(|c| !bp_spec.is_hidden(c)).all(|c| selected_crates.contains(c)) {
+        if feat_crates
+            .iter()
+            .filter(|c| !bp_spec.is_hidden(c))
+            .all(|c| selected_crates.contains(c))
+        {
             active_features.insert(feat_name.clone());
         }
     }
@@ -1589,7 +1617,10 @@ fn print_battery_pack_list(source: &CrateSource, filter: Option<&str>) -> Result
 
 /// Read installed state (managed-deps and active features) for a battery pack.
 /// Returns empty sets if not in a project or pack not installed.
-fn read_installed_state(project_dir: &Path, crate_name: &str) -> (BTreeSet<String>, BTreeSet<String>) {
+fn read_installed_state(
+    project_dir: &Path,
+    crate_name: &str,
+) -> (BTreeSet<String>, BTreeSet<String>) {
     let empty = (BTreeSet::new(), BTreeSet::new());
     let Ok(manifest_path) = find_user_manifest(project_dir) else {
         return empty;
@@ -1600,13 +1631,17 @@ fn read_installed_state(project_dir: &Path, crate_name: &str) -> (BTreeSet<Strin
     let Ok(location) = resolve_metadata_location(&manifest_path) else {
         return empty;
     };
-    let managed = read_managed_deps_from(&location, &content, crate_name)
-        .unwrap_or_default();
+    let managed = read_managed_deps_from(&location, &content, crate_name).unwrap_or_default();
     let features = read_active_features_from(&location, &content, crate_name);
     (managed, features)
 }
 
-fn print_battery_pack_detail(name: &str, path: Option<&str>, source: &CrateSource, project_dir: &Path) -> Result<()> {
+fn print_battery_pack_detail(
+    name: &str,
+    path: Option<&str>,
+    source: &CrateSource,
+    project_dir: &Path,
+) -> Result<()> {
     use console::style;
 
     // --path takes precedence over --crate-source
@@ -1668,7 +1703,12 @@ fn print_battery_pack_detail(name: &str, path: Option<&str>, source: &CrateSourc
             } else {
                 String::new()
             };
-            println!("  {} → {}{}", style(feat_name).cyan(), members.join(", "), marker);
+            println!(
+                "  {} → {}{}",
+                style(feat_name).cyan(),
+                members.join(", "),
+                marker
+            );
         }
     }
 

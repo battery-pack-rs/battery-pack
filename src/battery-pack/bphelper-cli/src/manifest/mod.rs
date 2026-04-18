@@ -493,9 +493,10 @@ pub(crate) fn read_managed_deps_from(
     bp_name: &str,
 ) -> Option<BTreeSet<String>> {
     let (content, prefix): (std::borrow::Cow<'_, str>, &[&str]) = match location {
-        MetadataLocation::Package => {
-            (std::borrow::Cow::Borrowed(user_manifest_content), &["package", "metadata"])
-        }
+        MetadataLocation::Package => (
+            std::borrow::Cow::Borrowed(user_manifest_content),
+            &["package", "metadata"],
+        ),
         MetadataLocation::Workspace { ws_manifest_path } => {
             let ws = std::fs::read_to_string(ws_manifest_path).ok()?;
             (std::borrow::Cow::Owned(ws), &["workspace", "metadata"])
