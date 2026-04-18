@@ -750,37 +750,38 @@ fn remove_battery_pack(
         read_managed_deps_from(&metadata_location, &user_manifest_content, &crate_name);
 
     // Determine which deps to remove
-    let should_remove_deps = if managed_deps.is_none() {
-        // Pre-migration: no managed-deps, don't touch deps
-        false
-    } else if remove_deps {
-        true
-    } else if keep_deps {
-        false
-    } else if interactive {
-        // Prompt
-        let safe = deps_safe_to_remove(
-            managed_deps.as_ref().unwrap(),
-            &bp_names,
-            &crate_name,
-            &metadata_location,
-            &user_manifest_content,
-        );
-        if safe.is_empty() {
+    let should_remove_deps = if let Some(ref managed) = managed_deps {
+        if remove_deps {
+            true
+        } else if keep_deps {
             false
-        } else {
-            println!("The following dependencies were added by {}:", crate_name);
-            for dep in &safe {
-                println!("  {}", dep);
+        } else if interactive {
+            let safe = deps_safe_to_remove(
+                managed,
+                &bp_names,
+                &crate_name,
+                &metadata_location,
+                &user_manifest_content,
+            );
+            if safe.is_empty() {
+                false
+            } else {
+                println!("The following dependencies were added by {}:", crate_name);
+                for dep in &safe {
+                    println!("  {}", dep);
+                }
+                dialoguer::Confirm::new()
+                    .with_prompt("Also remove these dependencies?")
+                    .default(false)
+                    .interact()
+                    .unwrap_or(false)
             }
-            dialoguer::Confirm::new()
-                .with_prompt("Also remove these dependencies?")
-                .default(false)
-                .interact()
-                .unwrap_or(false)
+        } else {
+            false // non-TTY default
         }
     } else {
-        false // non-TTY default
+        // Pre-migration: no managed-deps, don't touch deps
+        false
     };
 
     let mut user_doc: toml_edit::DocumentMut = user_manifest_content
@@ -798,8 +799,7 @@ fn remove_battery_pack(
     }
 
     // Remove managed deps if confirmed
-    if should_remove_deps {
-        if let Some(ref managed) = managed_deps {
+    if should_remove_deps && let Some(ref managed) = managed_deps {
             let safe = deps_safe_to_remove(
                 managed,
                 &bp_names,
@@ -838,15 +838,14 @@ fn remove_battery_pack(
                 }
 
                 // Remove metadata from workspace if that's where it lives
-                if matches!(metadata_location, MetadataLocation::Workspace { .. }) {
-                    if let Some(bp_table) = ws_doc
+                if matches!(metadata_location, MetadataLocation::Workspace { .. })
+                    && let Some(bp_table) = ws_doc
                         .get_mut("workspace")
                         .and_then(|w| w.get_mut("metadata"))
                         .and_then(|m| m.get_mut("battery-pack"))
                         .and_then(|bp| bp.as_table_mut())
-                    {
-                        bp_table.remove(&crate_name);
-                    }
+                {
+                    bp_table.remove(&crate_name);
                 }
 
                 std::fs::write(ws_path, ws_doc.to_string())
@@ -856,19 +855,17 @@ fn remove_battery_pack(
             if !safe.is_empty() {
                 println!("Removed {} dependency(ies)", safe.len());
             }
-        }
     }
 
     // Remove metadata from package if that's where it lives
-    if matches!(metadata_location, MetadataLocation::Package) {
-        if let Some(bp_table) = user_doc
+    if matches!(metadata_location, MetadataLocation::Package)
+        && let Some(bp_table) = user_doc
             .get_mut("package")
             .and_then(|p| p.get_mut("metadata"))
             .and_then(|m| m.get_mut("battery-pack"))
             .and_then(|bp| bp.as_table_mut())
-        {
-            bp_table.remove(&crate_name);
-        }
+    {
+        bp_table.remove(&crate_name);
     }
 
     std::fs::write(&user_manifest_path, user_doc.to_string())

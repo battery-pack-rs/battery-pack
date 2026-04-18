@@ -182,10 +182,10 @@ pub(crate) fn remove_deps_by_kind(
     let mut removed = 0;
     for (dep_name, dep_spec) in crates {
         let section = dep_kind_section(dep_spec.dep_kind);
-        if let Some(table) = doc.get_mut(section).and_then(|t| t.as_table_mut()) {
-            if table.remove(dep_name).is_some() {
-                removed += 1;
-            }
+        if let Some(table) = doc.get_mut(section).and_then(|t| t.as_table_mut())
+            && table.remove(dep_name).is_some()
+        {
+            removed += 1;
         }
     }
     removed
