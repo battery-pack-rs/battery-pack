@@ -3,3 +3,11 @@ features = [
     "default",
     "indicators",
 ]
+managed-deps = [
+    "assert_cmd",
+    "clap",
+    "console",
+    "dialoguer",
+    "indicatif",
+    "predicates",
+]

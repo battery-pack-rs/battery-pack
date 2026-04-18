@@ -172,6 +172,25 @@ pub(crate) fn add_dep_to_table(
     }
 }
 
+/// Remove dependencies from the correct sections by `dep_kind`.
+///
+/// Returns the number of crates actually removed.
+pub(crate) fn remove_deps_by_kind(
+    doc: &mut toml_edit::DocumentMut,
+    crates: &BTreeMap<String, bphelper_manifest::CrateSpec>,
+) -> usize {
+    let mut removed = 0;
+    for (dep_name, dep_spec) in crates {
+        let section = dep_kind_section(dep_spec.dep_kind);
+        if let Some(table) = doc.get_mut(section).and_then(|t| t.as_table_mut())
+            && table.remove(dep_name).is_some()
+        {
+            removed += 1;
+        }
+    }
+    removed
+}
+
 /// Return true when `recommended` is strictly newer than `current` (semver).
 ///
 /// Falls back to string equality when either side is not a valid semver
@@ -441,15 +460,69 @@ pub(crate) fn read_active_features_from(
     }
 }
 
-/// Write a features array into a `toml_edit::DocumentMut` at a given path prefix.
+/// Read managed-deps from a parsed TOML value at a given path prefix.
+///
+/// Returns `None` when the key is absent (old-format metadata).
+fn read_managed_deps_at(
+    raw: &toml::Value,
+    prefix: &[&str],
+    bp_name: &str,
+) -> Option<BTreeSet<String>> {
+    let mut node = Some(raw);
+    for key in prefix {
+        node = node.and_then(|n| n.get(key));
+    }
+    let arr = node
+        .and_then(|m| m.get("battery-pack"))
+        .and_then(|bp| bp.get(bp_name))
+        .and_then(|entry| entry.get("managed-deps"))
+        .and_then(|v| v.as_array())?;
+    Some(
+        arr.iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect(),
+    )
+}
+
+/// Read managed-deps for a battery pack, respecting metadata location.
+///
+/// Returns `None` when the key is absent (old-format / pre-migration metadata).
+pub(crate) fn read_managed_deps_from(
+    location: &MetadataLocation,
+    user_manifest_content: &str,
+    bp_name: &str,
+) -> Option<BTreeSet<String>> {
+    let (content, prefix): (std::borrow::Cow<'_, str>, &[&str]) = match location {
+        MetadataLocation::Package => (
+            std::borrow::Cow::Borrowed(user_manifest_content),
+            &["package", "metadata"],
+        ),
+        MetadataLocation::Workspace { ws_manifest_path } => {
+            let ws = std::fs::read_to_string(ws_manifest_path).ok()?;
+            (std::borrow::Cow::Owned(ws), &["workspace", "metadata"])
+        }
+    };
+    let raw: toml::Value = toml::from_str(&content).ok()?;
+    read_managed_deps_at(&raw, prefix, bp_name)
+}
+
+/// Write features and optional managed-deps into a `toml_edit::DocumentMut`.
 ///
 /// `path_prefix` is `["package", "metadata"]` for package metadata or
 /// `["workspace", "metadata"]` for workspace metadata.
+///
+/// Writes as a regular TOML table:
+/// ```toml
+/// [package.metadata.battery-pack.cli-battery-pack]
+/// features = ["default", "indicators"]
+/// managed-deps = ["clap", "dialoguer", "console"]
+/// ```
 pub(crate) fn write_bp_features_to_doc(
     doc: &mut toml_edit::DocumentMut,
     path_prefix: &[&str],
     bp_name: &str,
     active_features: &BTreeSet<String>,
+    managed_deps: Option<&BTreeSet<String>>,
 ) {
     let mut features_array = toml_edit::Array::new();
     for feature in active_features {
@@ -461,16 +534,45 @@ pub(crate) fn write_bp_features_to_doc(
     doc[path_prefix[0]][path_prefix[1]]["battery-pack"]
         .or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
 
-    // Write as inline table: `bp_name = { features = [...] }`
-    let mut inline = toml_edit::InlineTable::new();
-    inline.insert("features", toml_edit::Value::Array(features_array));
     let bp_table = doc[path_prefix[0]][path_prefix[1]]["battery-pack"]
         .as_table_mut()
         .expect("battery-pack table must exist");
-    bp_table.insert(
-        bp_name,
-        toml_edit::Item::Value(toml_edit::Value::InlineTable(inline)),
+
+    // Preserve existing managed-deps when caller passes None.
+    let existing_managed_deps: Option<toml_edit::Array> = bp_table
+        .get(bp_name)
+        .and_then(|item| {
+            let val = if let Some(t) = item.as_table() {
+                t.get("managed-deps").and_then(|i| i.as_value())
+            } else {
+                item.as_inline_table().and_then(|t| t.get("managed-deps"))
+            };
+            val.and_then(|v| v.as_array())
+        })
+        .cloned();
+
+    let mut entry_table = toml_edit::Table::new();
+    entry_table.insert(
+        "features",
+        toml_edit::Item::Value(toml_edit::Value::Array(features_array)),
     );
+    if let Some(deps) = managed_deps {
+        let mut deps_array = toml_edit::Array::new();
+        for dep in deps {
+            deps_array.push(dep.as_str());
+        }
+        entry_table.insert(
+            "managed-deps",
+            toml_edit::Item::Value(toml_edit::Value::Array(deps_array)),
+        );
+    } else if let Some(arr) = existing_managed_deps {
+        entry_table.insert(
+            "managed-deps",
+            toml_edit::Item::Value(toml_edit::Value::Array(arr)),
+        );
+    }
+    entry_table.set_implicit(true);
+    bp_table.insert(bp_name, toml_edit::Item::Table(entry_table));
 }
 
 /// Resolve the manifest path for a battery pack using `cargo metadata`.

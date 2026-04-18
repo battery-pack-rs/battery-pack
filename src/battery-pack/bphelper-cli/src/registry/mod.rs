@@ -7,14 +7,11 @@
 use anyhow::{Context, Result, bail};
 use flate2::read::GzDecoder;
 use serde::Deserialize;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use tar::Archive;
 
-use crate::manifest::{
-    find_installed_bp_names, find_user_manifest, read_active_features_from,
-    resolve_battery_pack_manifest, resolve_metadata_location,
-};
+use crate::manifest::resolve_battery_pack_manifest;
 
 const CRATES_IO_API: &str = "https://crates.io/api/v1/crates";
 const CRATES_IO_CDN: &str = "https://static.crates.io/crates";
@@ -123,6 +120,7 @@ pub(crate) struct BatteryPackDetail {
     pub owners: Vec<OwnerInfo>,
     pub crates: Vec<String>,
     pub extends: Vec<String>,
+    pub features: BTreeMap<String, Vec<String>>,
     pub templates: Vec<TemplateInfo>,
     pub examples: Vec<ExampleInfo>,
 }
@@ -436,41 +434,10 @@ pub(crate) fn load_installed_bp_spec(
 }
 
 pub(crate) struct InstalledPack {
-    pub name: String,
     pub short_name: String,
     pub version: String,
     pub spec: bphelper_manifest::BatteryPackSpec,
     pub active_features: BTreeSet<String>,
-}
-
-/// Load all installed battery packs with their specs and active features.
-///
-/// Reads `[build-dependencies]` from the user's Cargo.toml, fetches each
-/// battery pack's spec via cargo metadata, and reads active features from
-/// `package.metadata.battery-pack`.
-pub(crate) fn load_installed_packs(project_dir: &Path) -> Result<Vec<InstalledPack>> {
-    let user_manifest_path = find_user_manifest(project_dir)?;
-    let user_manifest_content =
-        std::fs::read_to_string(&user_manifest_path).context("Failed to read Cargo.toml")?;
-
-    let bp_names = find_installed_bp_names(&user_manifest_content)?;
-    let metadata_location = resolve_metadata_location(&user_manifest_path)?;
-
-    let mut packs = Vec::new();
-    for bp_name in bp_names {
-        let spec = fetch_battery_pack_spec(&bp_name)?;
-        let active_features =
-            read_active_features_from(&metadata_location, &user_manifest_content, &bp_name);
-        packs.push(InstalledPack {
-            short_name: short_name(&bp_name).to_string(),
-            version: spec.version.clone(),
-            spec,
-            name: bp_name,
-            active_features,
-        });
-    }
-
-    Ok(packs)
 }
 
 pub(crate) fn fetch_battery_pack_list(
@@ -736,6 +703,21 @@ pub(crate) fn build_battery_pack_detail(
     // Scan examples directory
     let examples = scan_examples(crate_dir, repo_tree.as_deref());
 
+    // Build features map (sorted, visible crates only)
+    let features: BTreeMap<String, Vec<String>> = spec
+        .features
+        .iter()
+        .map(|(name, members)| {
+            let visible: Vec<String> = members
+                .iter()
+                .filter(|c| !spec.is_hidden(c))
+                .cloned()
+                .collect();
+            (name.clone(), visible)
+        })
+        .filter(|(_, members)| !members.is_empty())
+        .collect();
+
     Ok(BatteryPackDetail {
         short_name: short_name(&spec.name).to_string(),
         name: spec.name.clone(),
@@ -745,6 +727,7 @@ pub(crate) fn build_battery_pack_detail(
         owners: owners.into_iter().map(OwnerInfo::from).collect(),
         crates,
         extends,
+        features,
         templates,
         examples,
     })
