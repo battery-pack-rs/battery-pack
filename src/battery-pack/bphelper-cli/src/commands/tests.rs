@@ -1062,15 +1062,7 @@ fn add_registers_build_dep() {
     let content = read_cargo_toml(&tmp);
     let build_deps = extract_section(&content, "[build-dependencies]");
 
-    assert_data_eq!(
-        build_deps,
-        str![[r#"
-[build-dependencies]
-basic-battery-pack = { path = "[..]" }
-
-
-"#]]
-    );
+    assert_data_eq!(build_deps, str![""]);
 }
 
 // ============================================================================
@@ -1126,7 +1118,6 @@ insta = "1.34"
         build_deps,
         str![[r#"
 [build-dependencies]
-managed-battery-pack = { path = "[..]" }
 cc = "1.0"
 
 
@@ -1293,17 +1284,9 @@ fn add_all_features_fancy() {
     // [verify cli.add.dep-kind]
     assert_data_eq!(dev_deps, file![_]);
 
-    // Build-deps: only the battery pack itself (cc is hidden)
+    // Build-deps: battery pack no longer added (validate() was removed)
     // [verify format.hidden.effect]
-    assert_data_eq!(
-        build_deps,
-        str![[r#"
-[build-dependencies]
-fancy-battery-pack = { path = "[..]" }
-
-
-"#]]
-    );
+    assert_data_eq!(build_deps, str![""]);
 }
 
 // ============================================================================
@@ -1379,7 +1362,7 @@ fn add_target_package_writes_metadata() {
 }
 
 // ============================================================================
-// build.rs creation
+// build.rs is no longer created (validate() was removed)
 // ============================================================================
 
 // [verify cli.add.register]
@@ -1396,9 +1379,10 @@ fn add_creates_build_rs() {
         tmp.path(),
     );
 
-    let build_rs = std::fs::read_to_string(tmp.path().join("build.rs")).unwrap();
-
-    assert_data_eq!(build_rs, file![_]);
+    assert!(
+        !tmp.path().join("build.rs").exists(),
+        "build.rs should not be created (validate() was removed)"
+    );
 }
 
 // ============================================================================
@@ -1436,10 +1420,6 @@ fn add_twice_is_idempotent() {
         first_content, second_content,
         "adding twice should be idempotent"
     );
-
-    // build.rs should have exactly one validate call
-    let build_rs = std::fs::read_to_string(tmp.path().join("build.rs")).unwrap();
-    assert_data_eq!(build_rs, file![_]);
 }
 
 // ============================================================================

@@ -1,3 +1,1 @@
-fn main() {
-    {{ crate_name }}::validate();
-}
+fn main() {}

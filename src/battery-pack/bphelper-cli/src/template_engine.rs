@@ -78,6 +78,7 @@ pub(crate) struct RenderOpts {
 }
 
 /// A rendered file from a template preview.
+#[derive(Debug)]
 pub(crate) struct RenderedFile {
     /// Relative path within the generated project.
     pub(crate) path: String,
@@ -194,12 +195,15 @@ fn render(
     files.sort_by(|a, b| a.path.cmp(&b.path));
 
     // Resolve bp-managed dependencies in all rendered Cargo.toml files.
-    // Resolution is best-effort: nested template Cargo.toml files (e.g. in a
-    // battery-pack-of-battery-packs) may reference battery packs that don't
-    // exist yet, so we silently skip files that fail to resolve.
+    // Resolution can fail for nested templates (e.g. battery-pack-of-battery-packs)
+    // that reference battery packs not yet published, so we warn instead of failing.
     for file in files.iter_mut().filter(|f| f.path.ends_with("Cargo.toml")) {
-        if let Ok(resolved) = crate::resolve_bp_managed_content(&file.content, crate_root) {
-            file.content = resolved;
+        match crate::resolve_bp_managed_content(&file.content, crate_root) {
+            Ok(resolved) => file.content = resolved,
+            Err(e) => eprintln!(
+                "warning: failed to resolve bp-managed deps in {}: {e:#}",
+                file.path
+            ),
         }
     }
 
