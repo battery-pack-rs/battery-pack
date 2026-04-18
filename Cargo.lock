@@ -383,7 +383,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-bp"
-version = "0.4.13"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
