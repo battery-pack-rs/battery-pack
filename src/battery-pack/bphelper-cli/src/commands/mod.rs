@@ -1452,11 +1452,7 @@ fn generate_from_path(opts: NewOpts, crate_path: &Path, template_path: &str) -> 
         raw
     };
 
-    let interactive_override = if opts.interactive {
-        None
-    } else {
-        Some(false)
-    };
+    let interactive_override = if opts.interactive { None } else { Some(false) };
 
     let gen_opts = crate::template_engine::GenerateOpts {
         render: crate::template_engine::RenderOpts {
