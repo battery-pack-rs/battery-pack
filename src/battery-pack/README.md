@@ -20,6 +20,15 @@ cargo install cargo-bp
 cargo binstall cargo-bp
 ```
 
+### Shell Completions
+
+To enable tab autocompletion, add the following line to your shell configuration (`~/.bashrc`, `~/.zshrc`, etc.):
+
+```bash
+source <(cargo bp completions bash)
+```
+*(Replace `bash` with `zsh`, `fish`, or your specific shell).*
+
 ## Using the CLI
 
 ```bash
