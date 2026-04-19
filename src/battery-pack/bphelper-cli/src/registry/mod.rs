@@ -255,6 +255,13 @@ pub(crate) fn fetch_bp_spec_from_registry(
     let spec = bphelper_manifest::parse_battery_pack(&manifest_content)
         .map_err(|e| anyhow::anyhow!("Failed to parse battery pack '{}': {}", crate_name, e))?;
 
+    // Cache the manifest dynamically for autocomplete
+    let cache_dir = crate::completions::get_cache_dir();
+    if std::fs::create_dir_all(&cache_dir).is_ok() {
+        let cache_file = cache_dir.join(format!("{}_spec.toml", crate_name));
+        let _ = std::fs::write(&cache_file, &manifest_content);
+    }
+
     Ok((crate_info.version, spec))
 }
 
@@ -490,6 +497,19 @@ fn fetch_battery_pack_list_from_registry(filter: Option<&str>) -> Result<Vec<Bat
         .collect();
 
     Ok(battery_packs)
+}
+
+pub(crate) fn update_cache() -> Result<()> {
+    let packs = fetch_battery_pack_list_from_registry(None)?;
+    let pack_names: Vec<String> = packs.into_iter().map(|p| p.name).collect();
+
+    let cache_dir = crate::completions::get_cache_dir();
+    std::fs::create_dir_all(&cache_dir)?;
+    
+    let cache_file = cache_dir.join("registry_packs.json");
+    let content = serde_json::to_string(&pack_names)?;
+    std::fs::write(&cache_file, content)?;
+    Ok(())
 }
 
 pub(crate) fn discover_local_battery_packs(
