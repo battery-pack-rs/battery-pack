@@ -47,26 +47,42 @@ pub fn installed_packs(_current: &OsStr) -> Vec<CompletionCandidate> {
     names
 }
 
-pub fn registry_and_local_packs(current: &OsStr) -> Vec<CompletionCandidate> {
-    let mut names = installed_packs(current);
-    
+pub fn registry_and_local_packs(_current: &OsStr) -> Vec<CompletionCandidate> {
+    let mut names = std::collections::BTreeSet::new();
+
+    if let Ok(dir) = std::env::current_dir() {
+        if let Ok(manifest_path) = crate::manifest::find_user_manifest(&dir) {
+            if let Ok(content) = std::fs::read_to_string(&manifest_path) {
+                if let Ok(installed) = crate::manifest::find_installed_bp_names(&content) {
+                    for name in installed {
+                        names.insert(name);
+                    }
+                }
+            }
+        }
+    }
+
     let cache_file = get_cache_dir().join("registry_packs.json");
     if let Ok(content) = std::fs::read_to_string(&cache_file) {
         if let Ok(packs) = serde_json::from_str::<Vec<String>>(&content) {
             for pack in packs {
-                names.push(CompletionCandidate::new(pack));
+                if let Some(short) = pack.strip_suffix("-battery-pack") {
+                    names.insert(short.to_string());
+                }
+                names.insert(pack);
             }
         }
     } else if let Ok(exe) = std::env::current_exe() {
         // Spawn cache update gracefully
         let _ = std::process::Command::new(exe)
+            .arg("bp")
             .arg("update-cache")
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn();
     }
-    
-    names
+
+    names.into_iter().map(CompletionCandidate::new).collect()
 }
 
 fn get_cached_spec(pack_name: &str) -> Option<bphelper_manifest::BatteryPackSpec> {

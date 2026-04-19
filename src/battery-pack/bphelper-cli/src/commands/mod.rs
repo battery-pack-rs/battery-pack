@@ -55,7 +55,7 @@ pub(crate) enum BpCommands {
     /// Create a new project from a battery pack template
     New {
         /// Name of the battery pack (e.g., "cli" resolves to "cli-battery-pack")
-        #[arg(add = clap_complete::ArgValueCompleter::new(crate::completions::installed_packs))]
+        #[arg(add = clap_complete::ArgValueCompleter::new(crate::completions::registry_and_local_packs))]
         battery_pack: String,
 
         /// Name for the new project (prompted interactively if not provided)
