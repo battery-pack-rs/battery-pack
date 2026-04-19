@@ -1,0 +1,3 @@
+{%- if all or spellcheck -%}
+{% include "templates/spellcheck/_typos.toml" %}
+{% endif %}

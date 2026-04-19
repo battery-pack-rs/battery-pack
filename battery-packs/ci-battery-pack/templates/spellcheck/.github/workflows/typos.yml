@@ -1,0 +1,15 @@
+{%- if ci_platform == "github" -%}
+name: Typos
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+{% include "snippets/github/jobs/spellcheck.yml" %}
+{%- endif %}
