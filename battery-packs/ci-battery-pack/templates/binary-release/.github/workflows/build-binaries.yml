@@ -54,10 +54,13 @@ jobs:
         shell: bash
         run: |
           if [ "{% raw %}${{ github.event_name }}{% endraw %}" = "workflow_dispatch" ]; then
-            echo "version={% raw %}${{ inputs.tag }}{% endraw %}" >> "$GITHUB_OUTPUT"
+            TAG="{% raw %}${{ inputs.tag }}{% endraw %}"
           else
-            echo "version={% raw %}${{ github.event.release.tag_name }}{% endraw %}" >> "$GITHUB_OUTPUT"
+            TAG="{% raw %}${{ github.event.release.tag_name }}{% endraw %}"
           fi
+          # Strip package name prefix (e.g. "my-crate-v0.1.0" -> "v0.1.0")
+          VERSION="${TAG##*-v}"
+          echo "version=v${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Package (Unix)
         if: {% raw %}${{ matrix.archive == 'tar.gz' }}{% endraw %}

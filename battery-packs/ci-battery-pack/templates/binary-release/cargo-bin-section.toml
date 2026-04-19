@@ -1,0 +1,7 @@
+
+[[bin]]
+name = "{{ project_name }}"
+path = "src/main.rs"
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }-v{ version }{ archive-suffix }"

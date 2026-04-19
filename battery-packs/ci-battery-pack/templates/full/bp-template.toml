@@ -14,11 +14,6 @@ type = "string"
 prompt = "Project description"
 default = "TODO: add description"
 
-[placeholders.repository]
-type = "string"
-prompt = "Repository URL (leave empty for GitHub default)"
-default = ""
-
 [placeholders.all]
 type = "bool"
 prompt = "Enable all optional features?"
@@ -63,3 +58,8 @@ default = "false"
 type = "bool"
 prompt = "Include cross-platform binary builds (GitHub Releases + cargo-binstall)?"
 default = "false"
+
+[placeholders.repository]
+type = "string"
+prompt = "Repository URL (leave empty for GitHub default)"
+default = ""

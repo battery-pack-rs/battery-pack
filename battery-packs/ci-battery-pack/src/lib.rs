@@ -579,7 +579,10 @@ xtask/src/main.rs"#]]
             standalone_file_list("binary-release"),
             str![[r#"
 .github/workflows/build-binaries.yml
-src/main.rs"#]]
+Cargo.toml
+cargo-bin-section.toml
+src/main.rs
+"#]]
         );
     }
 

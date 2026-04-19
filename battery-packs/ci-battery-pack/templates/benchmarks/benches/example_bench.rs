@@ -1,5 +1,6 @@
 use {{ crate_name }}::add;
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 
 fn bench_add(c: &mut Criterion) {
     let mut group = c.benchmark_group("add");
