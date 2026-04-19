@@ -1,0 +1,6 @@
+  ci-pass:
+    needs: [fmt, clippy, build, features, msrv, semver{% if all or benchmarks %}, bench, bench-pr{% endif %}{% if all or fuzzing %}, fuzz-smoke{% endif %}{% if all or stress_tests %}, stress-test{% endif %}{% if all or spellcheck %}, spellcheck{% endif %}{% if all or xtask %}, xtask{% endif %}]
+    if: {% raw %}${{ !cancelled() }}{% endraw %}
+    runs-on: ubuntu-latest
+    steps:
+      - run: jq --exit-status 'all(.result == "success" or .result == "skipped")' <<< '{% raw %}${{ toJson(needs) }}{% endraw %}'

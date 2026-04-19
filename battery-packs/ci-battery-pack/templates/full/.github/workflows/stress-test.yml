@@ -1,0 +1,3 @@
+{%- if all or stress_tests %}
+{% include "templates/stress-test/.github/workflows/stress-test.yml" %}
+{%- endif %}

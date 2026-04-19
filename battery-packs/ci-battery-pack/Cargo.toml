@@ -1,0 +1,49 @@
+[package]
+name = "ci-battery-pack"
+version = "0.1.0"
+edition = "2024"
+description = "Battery pack for CI/CD workflows in Rust projects"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/battery-pack-rs/battery-pack"
+keywords = ["battery-pack", "ci", "github-actions", "testing"]
+
+[package.metadata.battery.templates]
+full = { path = "templates/full", description = "Full CI setup with optional benchmarks, fuzzing, mdbook, spellcheck, and xtask" }
+benchmarks = { path = "templates/benchmarks", description = "Criterion bench scaffold + Bencher CI" }
+fuzzing = { path = "templates/fuzzing", description = "cargo-fuzz scaffold + CI workflows" }
+stress-test = { path = "templates/stress-test", description = "nextest stress test workflow" }
+mdbook = { path = "templates/mdbook", description = "mdBook scaffold + GitHub Pages deployment" }
+spellcheck = { path = "templates/spellcheck", description = "crate-ci/typos config + CI workflow" }
+xtask = { path = "templates/xtask", description = "cargo-xtask scaffold with codegen --check" }
+trusted-publishing = { path = "templates/trusted-publishing", description = "release-plz with OIDC trusted publishing" }
+binary-release = { path = "templates/binary-release", description = "Cross-platform binary builds for GitHub Releases + cargo-binstall" }
+
+[package.metadata.battery-pack]
+hidden = ["battery-pack", "snapbox"]
+
+[dependencies]
+battery-pack = { workspace = true }
+
+# Benchmarking
+criterion = { version = "0.5", features = ["html_reports"], optional = true }
+
+# Fuzzing (for the fuzz/ sub-crate)
+libfuzzer-sys = { version = "0.4", optional = true }
+arbitrary = { version = "1", features = ["derive"], optional = true }
+
+# xtask
+xshell = { version = "0.2", optional = true }
+xflags = { version = "0.3", optional = true }
+
+[build-dependencies]
+battery-pack = { workspace = true, features = ["build"] }
+
+[dev-dependencies]
+battery-pack = { workspace = true, features = ["cli"] }
+snapbox = "1"
+
+[features]
+default = []
+benchmarks = ["criterion"]
+fuzzing = ["libfuzzer-sys", "arbitrary"]
+xtask = ["xshell", "xflags"]

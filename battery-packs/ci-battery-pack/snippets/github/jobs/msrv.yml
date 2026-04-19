@@ -1,0 +1,16 @@
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: {{ pin_github_action("actions/checkout", "v6") }}
+      - name: Read MSRV from Cargo.toml
+        id: msrv
+        run: echo "version=$(yq -r '.package.rust-version // .workspace.package.rust-version' Cargo.toml)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: {% raw %}${{ steps.msrv.outputs.version }}{% endraw %}
+      - uses: {{ pin_github_action("Swatinem/rust-cache", "v2") }}
+      - name: Resolve MSRV-compatible dependencies
+        env:
+          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: fallback
+        run: cargo update
+      - run: cargo check --all-features

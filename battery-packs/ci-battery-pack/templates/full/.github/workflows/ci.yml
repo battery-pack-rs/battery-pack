@@ -1,0 +1,44 @@
+{%- if ci_platform == "github" -%}
+name: CI
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: {% raw %}${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}{% endraw %}
+  cancel-in-progress: true
+
+env:
+  RUSTFLAGS: "-Dwarnings"
+  CARGO_TERM_COLOR: always
+
+jobs:
+{% include "snippets/github/jobs/fmt.yml" %}
+{% include "snippets/github/jobs/clippy.yml" %}
+{% include "snippets/github/jobs/build.yml" %}
+{% include "snippets/github/jobs/features.yml" %}
+{% include "snippets/github/jobs/msrv.yml" %}
+{% include "snippets/github/jobs/semver.yml" %}
+{%- if all or benchmarks %}
+{% include "snippets/github/jobs/bench.yml" %}
+{%- endif -%}
+{%- if all or fuzzing %}
+{% include "snippets/github/jobs/fuzz-smoke.yml" %}
+{%- endif -%}
+{%- if all or stress_tests %}
+{% include "snippets/github/jobs/stress-test.yml" %}
+{%- endif -%}
+{%- if all or spellcheck %}
+{% include "snippets/github/jobs/spellcheck.yml" %}
+{%- endif -%}
+{%- if all or xtask %}
+{% include "snippets/github/jobs/xtask.yml" %}
+{%- endif %}
+{% include "snippets/github/ci-pass.yml" %}
+{%- endif %}

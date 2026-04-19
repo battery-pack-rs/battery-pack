@@ -1,0 +1,14 @@
+  fuzz-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: {{ pin_github_action("actions/checkout", "v6") }}
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: {{ pin_github_action("Swatinem/rust-cache", "v2") }}
+        with:
+          workspaces: fuzz -> target
+      - uses: dtolnay/install@cargo-fuzz
+      - name: Smoke test fuzz targets (60s each)
+        run: |
+          for target in $(cargo fuzz list); do
+            cargo fuzz run "$target" -- -max_total_time=60
+          done

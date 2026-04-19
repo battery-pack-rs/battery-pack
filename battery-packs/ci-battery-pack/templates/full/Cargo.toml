@@ -1,0 +1,31 @@
+[package]
+name = "{{ project_name }}"
+version = "0.1.0"
+edition = "2021"
+rust-version = "{{ rust_stable_version() }}"
+description = "{{ description }}"
+license = "MIT OR Apache-2.0"
+repository = "{% if repository %}{{ repository }}{% else %}https://github.com/{{ repo_owner }}/{{ project_name }}{% endif %}"
+{% if all or xtask %}
+
+[workspace]
+members = [".", "xtask"]
+{% endif %}
+{% if all or benchmarks %}
+
+[dev-dependencies]
+criterion.bp-managed = true
+
+[[bench]]
+name = "example_bench"
+harness = false
+{% endif %}
+{% if all or binary_release %}
+
+[[bin]]
+name = "{{ project_name }}"
+path = "src/main.rs"
+{% endif %}
+
+[package.metadata.battery-pack]
+ci-battery-pack = { features = ["benchmarks"] }

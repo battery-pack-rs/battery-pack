@@ -1,0 +1,7 @@
+  xtask:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: {{ pin_github_action("actions/checkout", "v6") }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: {{ pin_github_action("Swatinem/rust-cache", "v2") }}
+      - run: cargo xtask codegen --check

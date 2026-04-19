@@ -1,0 +1,53 @@
+{%- if ci_platform == "github" -%}
+name: Rust Build
+description: Install toolchain, cache, build, and test a Rust project.
+
+inputs:
+  toolchain:
+    description: Rust toolchain to install (e.g. stable, nightly, 1.80.0)
+    required: true
+  flags:
+    description: Cargo flags (e.g. --all-features, --no-default-features)
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: {% raw %}${{ inputs.toolchain }}{% endraw %}
+
+    - uses: {{ pin_github_action("Swatinem/rust-cache", "v2") }}
+
+    - uses: {{ pin_github_action("taiki-e/install-action", "v2") }}
+      with:
+        tool: nextest
+
+    # Remove Cargo.lock for non-stable toolchains so MSRV and nightly
+    # resolve fresh dependencies instead of using a lockfile pinned to stable.
+    - name: Remove Cargo.lock for non-stable
+      if: {% raw %}${{ inputs.toolchain != 'stable' }}{% endraw %}
+      shell: bash
+      run: rm -fv Cargo.lock
+
+    - name: Build
+      shell: bash
+      run: cargo build --verbose {% raw %}${{ inputs.flags }}{% endraw %}
+
+    - name: Test (nextest)
+      shell: bash
+      run: cargo nextest run --verbose {% raw %}${{ inputs.flags }}{% endraw %}
+
+    - name: Test (doctests)
+      shell: bash
+      run: cargo test --doc --verbose {% raw %}${{ inputs.flags }}{% endraw %}
+
+    # Validate docs build on nightly with --cfg docsrs
+    - name: Check docs (nightly only)
+      if: {% raw %}${{ inputs.toolchain == 'nightly' && inputs.flags == '--all-features' }}{% endraw %}
+      shell: bash
+      env:
+        RUSTDOCFLAGS: "-D warnings --cfg docsrs"
+      run: cargo doc --verbose --no-deps {% raw %}${{ inputs.flags }}{% endraw %}
+{%- endif %}

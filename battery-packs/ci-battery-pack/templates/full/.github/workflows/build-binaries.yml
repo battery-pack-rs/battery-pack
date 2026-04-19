@@ -1,0 +1,3 @@
+{%- if all or binary_release -%}
+{% include "templates/binary-release/.github/workflows/build-binaries.yml" %}
+{%- endif %}
