@@ -7,8 +7,6 @@ use std::path::Path;
 // Validate command
 // ============================================================================
 
-// [impl cli.validate.purpose]
-// [impl cli.validate.default-path]
 pub(crate) fn validate_battery_pack_cmd(path: Option<&str>) -> Result<()> {
     let crate_root = match path {
         Some(p) => std::path::PathBuf::from(p),
@@ -24,14 +22,12 @@ pub(crate) fn validate_battery_pack_cmd(path: Option<&str>) -> Result<()> {
         .with_context(|| format!("failed to parse {}", cargo_toml.display()))?;
     if raw.get("package").is_none() {
         if raw.get("workspace").is_some() {
-            // [impl cli.validate.workspace-error]
             bail!(
                 "{} is a workspace manifest, not a battery pack crate.\n\
                  Run this from a battery pack crate directory, or use --path to point to one.",
                 cargo_toml.display()
             );
         } else {
-            // [impl cli.validate.no-package]
             bail!(
                 "{} has no [package] section — is this a battery pack crate?",
                 cargo_toml.display()
@@ -42,19 +38,15 @@ pub(crate) fn validate_battery_pack_cmd(path: Option<&str>) -> Result<()> {
     let spec = bphelper_manifest::parse_battery_pack(&content)
         .with_context(|| format!("failed to parse {}", cargo_toml.display()))?;
 
-    // [impl cli.validate.checks]
     let mut report = spec.validate_spec();
     report.merge(bphelper_manifest::validate_on_disk(&spec, &crate_root));
 
-    // [impl cli.validate.clean]
     if report.is_clean() {
         validate_templates(crate_root.to_str().unwrap_or("."))?;
         println!("{} is valid", spec.name);
         return Ok(());
     }
 
-    // [impl cli.validate.severity]
-    // [impl cli.validate.rule-id]
     let mut errors = 0;
     let mut warnings = 0;
     for diag in &report.diagnostics {
@@ -70,7 +62,6 @@ pub(crate) fn validate_battery_pack_cmd(path: Option<&str>) -> Result<()> {
         }
     }
 
-    // [impl cli.validate.errors]
     if errors > 0 {
         bail!(
             "validation failed: {} error(s), {} warning(s)",
@@ -79,7 +70,6 @@ pub(crate) fn validate_battery_pack_cmd(path: Option<&str>) -> Result<()> {
         );
     }
 
-    // [impl cli.validate.warnings-only]
     // Warnings only — still succeeds
     validate_templates(crate_root.to_str().unwrap_or("."))?;
     println!("{} is valid ({} warning(s))", spec.name, warnings);
@@ -96,8 +86,6 @@ pub(crate) fn validate_battery_pack_cmd(path: Option<&str>) -> Result<()> {
 ///
 /// Compiled artifacts are cached in `<target_dir>/bp-validate/` so that
 /// subsequent runs are faster.
-// [impl cli.validate.templates]
-// [impl cli.validate.templates.cache]
 pub fn validate_templates(manifest_dir: &str) -> Result<()> {
     let manifest_dir = Path::new(manifest_dir);
     let cargo_toml = manifest_dir.join("Cargo.toml");
@@ -112,7 +100,6 @@ pub fn validate_templates(manifest_dir: &str) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("failed to parse {}: {e}", cargo_toml.display()))?;
 
     if spec.templates.is_empty() {
-        // [impl cli.validate.templates.none]
         println!("no templates to validate");
         return Ok(());
     }
@@ -188,7 +175,6 @@ pub fn validate_templates(manifest_dir: &str) -> Result<()> {
 
 /// Write a `.cargo/config.toml` that patches crates-io dependencies with local
 /// workspace packages, so template validation builds against current source.
-// [impl cli.validate.templates.patch]
 fn write_crates_io_patches(project_dir: &Path, metadata: &cargo_metadata::Metadata) -> Result<()> {
     let mut patches = String::from("[patch.crates-io]\n");
     for pkg in &metadata.workspace_packages() {

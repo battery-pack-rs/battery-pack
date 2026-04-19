@@ -25,7 +25,6 @@ pub(crate) fn find_user_manifest(project_dir: &Path) -> Result<PathBuf> {
 /// Extract battery pack crate names from a parsed Cargo.toml.
 ///
 /// Filters `[build-dependencies]` for entries ending in `-battery-pack` or equal to `"battery-pack"`.
-// [impl manifest.register.location]
 pub(crate) fn find_installed_bp_names(manifest_content: &str) -> Result<Vec<String>> {
     let raw: toml::Value =
         toml::from_str(manifest_content).context("Failed to parse Cargo.toml")?;
@@ -45,8 +44,6 @@ pub(crate) fn find_installed_bp_names(manifest_content: &str) -> Result<Vec<Stri
 
 /// Find the workspace root Cargo.toml, if any.
 /// Returns None if the crate is not in a workspace.
-// [impl manifest.register.workspace-default]
-// [impl manifest.register.both-levels]
 pub(crate) fn find_workspace_manifest(crate_manifest: &Path) -> Result<Option<PathBuf>> {
     let parent = crate_manifest.parent().unwrap_or(Path::new("."));
     let parent = if parent.as_os_str().is_empty() {
@@ -95,7 +92,6 @@ pub(crate) fn dep_kind_section(kind: bphelper_manifest::DepKind) -> &'static str
 ///
 /// When `if_missing` is true, only inserts crates that don't already exist in
 /// the target section. Returns the number of crates actually written.
-// [impl cli.add.dep-kind]
 pub(crate) fn write_deps_by_kind(
     doc: &mut toml_edit::DocumentMut,
     crates: &BTreeMap<String, bphelper_manifest::CrateSpec>,
@@ -120,7 +116,6 @@ pub(crate) fn write_deps_by_kind(
 ///
 /// When `if_missing` is true, only inserts references for crates that don't
 /// already exist in the target section. Returns the number of refs written.
-// [impl cli.add.dep-kind]
 pub(crate) fn write_workspace_refs_by_kind(
     doc: &mut toml_edit::DocumentMut,
     crates: &BTreeMap<String, bphelper_manifest::CrateSpec>,
@@ -146,10 +141,6 @@ pub(crate) fn write_workspace_refs_by_kind(
 }
 
 /// Add a dependency to a toml_edit table (non-workspace mode).
-// [impl manifest.deps.add]
-// [impl manifest.deps.version-features]
-// [impl manifest.toml.style]
-// [impl cli.add.idempotent]
 pub(crate) fn add_dep_to_table(
     table: &mut toml_edit::Table,
     name: &str,
@@ -186,7 +177,6 @@ pub(crate) fn should_upgrade_version(current: &str, recommended: &str) -> bool {
             .or_else(|_| semver::Version::parse(&format!("{}.0", recommended)))
             .or_else(|_| semver::Version::parse(&format!("{}.0.0", recommended))),
     ) {
-        // [impl manifest.sync.version-bump]
         (Ok(cur), Ok(rec)) => rec > cur,
         // Non-parsable: fall back to "update if different"
         _ => current != recommended,
@@ -195,8 +185,6 @@ pub(crate) fn should_upgrade_version(current: &str, recommended: &str) -> bool {
 
 /// Sync a dependency in-place: update version if behind, add missing features.
 /// Returns true if changes were made.
-// [impl manifest.deps.existing]
-// [impl manifest.toml.style]
 pub(crate) fn sync_dep_in_table(
     table: &mut toml_edit::Table,
     name: &str,
@@ -213,12 +201,10 @@ pub(crate) fn sync_dep_in_table(
     match existing {
         toml_edit::Item::Value(toml_edit::Value::String(version_str)) => {
             let current = version_str.value().to_string();
-            // [impl manifest.sync.version-bump]
             if !spec.version.is_empty() && should_upgrade_version(&current, &spec.version) {
                 *version_str = toml_edit::Formatted::new(spec.version.clone());
                 changed = true;
             }
-            // [impl manifest.sync.feature-add]
             if !spec.features.is_empty() {
                 let keep_version = if !spec.version.is_empty()
                     && should_upgrade_version(&current, &spec.version)
@@ -238,7 +224,6 @@ pub(crate) fn sync_dep_in_table(
             }
         }
         toml_edit::Item::Value(toml_edit::Value::InlineTable(inline)) => {
-            // [impl manifest.sync.version-bump]
             if let Some(toml_edit::Value::String(v)) = inline.get_mut("version")
                 && !spec.version.is_empty()
                 && should_upgrade_version(v.value(), &spec.version)
@@ -246,7 +231,6 @@ pub(crate) fn sync_dep_in_table(
                 *v = toml_edit::Formatted::new(spec.version.clone());
                 changed = true;
             }
-            // [impl manifest.sync.feature-add]
             if !spec.features.is_empty() {
                 let existing_features: Vec<String> = inline
                     .get("features")
@@ -280,7 +264,6 @@ pub(crate) fn sync_dep_in_table(
             }
         }
         toml_edit::Item::Table(tbl) => {
-            // [impl manifest.sync.version-bump]
             if let Some(toml_edit::Item::Value(toml_edit::Value::String(v))) =
                 tbl.get_mut("version")
                 && !spec.version.is_empty()
@@ -289,7 +272,6 @@ pub(crate) fn sync_dep_in_table(
                 *v = toml_edit::Formatted::new(spec.version.clone());
                 changed = true;
             }
-            // [impl manifest.sync.feature-add]
             if !spec.features.is_empty() {
                 let existing_features: Vec<String> = tbl
                     .get("features")
@@ -340,7 +322,6 @@ pub(crate) fn sync_dep_in_table(
 ///
 /// `prefix` is `&["package", "metadata"]` for package metadata or
 /// `&["workspace", "metadata"]` for workspace metadata.
-// [impl manifest.features.storage]
 pub(crate) fn read_features_at(
     raw: &toml::Value,
     prefix: &[&str],

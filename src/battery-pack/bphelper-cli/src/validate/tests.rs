@@ -14,8 +14,6 @@ fn fixtures_dir() -> PathBuf {
         .join("tests/fixtures")
 }
 
-// [verify cli.validate.clean]
-// [verify cli.validate.checks]
 #[test]
 fn validate_basic_fixture_is_clean() {
     let fixture = fixtures_dir().join("basic-battery-pack");
@@ -23,8 +21,6 @@ fn validate_basic_fixture_is_clean() {
     assert!(result.is_ok(), "basic-battery-pack should validate cleanly");
 }
 
-// [verify cli.validate.clean]
-// [verify cli.validate.checks]
 #[test]
 fn validate_fancy_fixture_is_clean() {
     let fixture = fixtures_dir().join("fancy-battery-pack");
@@ -32,9 +28,6 @@ fn validate_fancy_fixture_is_clean() {
     assert!(result.is_ok(), "fancy-battery-pack should validate cleanly");
 }
 
-// [verify cli.validate.errors]
-// [verify cli.validate.severity]
-// [verify cli.validate.rule-id]
 #[test]
 fn validate_broken_fixture_fails() {
     let fixture = fixtures_dir().join("broken-battery-pack");
@@ -50,7 +43,6 @@ fn validate_broken_fixture_fails() {
     );
 }
 
-// [verify cli.validate.workspace-error]
 #[test]
 fn validate_workspace_manifest_fails() {
     let fixture = fixtures_dir();
@@ -64,14 +56,12 @@ fn validate_workspace_manifest_fails() {
     );
 }
 
-// [verify cli.validate.no-package]
 #[test]
 fn validate_nonexistent_path_fails() {
     let result = super::validate_battery_pack_cmd(Some("/nonexistent/path"));
     assert!(result.is_err(), "nonexistent path should fail");
 }
 
-// [verify cli.validate.default-path]
 #[test]
 fn validate_uses_path_argument() {
     // Verify --path correctly targets a specific directory rather than cwd
@@ -83,7 +73,6 @@ fn validate_uses_path_argument() {
     );
 }
 
-// [verify cli.validate.default-path]
 #[test]
 #[ignore = "causes race conditions, refactor to not rely on setting env::current_dir()"]
 fn validate_defaults_to_current_directory() {
@@ -99,7 +88,6 @@ fn validate_defaults_to_current_directory() {
     );
 }
 
-// [verify format.crate.repository]
 #[test]
 fn validate_fixture_without_repository_warns_but_passes() {
     let fixture = fixtures_dir().join("basic-battery-pack");
@@ -111,7 +99,6 @@ fn validate_fixture_without_repository_warns_but_passes() {
     );
 }
 
-// [verify format.crate.repository]
 #[test]
 fn validate_fixture_with_repository_no_warning() {
     let fixture = fixtures_dir().join("fancy-battery-pack");

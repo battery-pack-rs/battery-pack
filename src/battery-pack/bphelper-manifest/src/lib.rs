@@ -104,7 +104,6 @@ impl ValidationReport {
 
 /// The dependency kind, determined by which section of the battery pack's
 /// Cargo.toml the crate appears in.
-// [impl format.deps.kind-mapping]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum DepKind {
     /// `[dependencies]` — becomes a regular dependency for the user.
@@ -126,7 +125,6 @@ impl std::fmt::Display for DepKind {
 }
 
 /// A curated crate within a battery pack.
-// [impl format.deps.version-features]
 #[derive(Debug, Clone)]
 pub struct CrateSpec {
     /// Recommended version.
@@ -136,7 +134,6 @@ pub struct CrateSpec {
     /// Which dependency section this crate comes from.
     pub dep_kind: DepKind,
     /// Whether this crate is marked `optional = true`.
-    // [impl format.features.optional]
     pub optional: bool,
 }
 
@@ -164,13 +161,10 @@ pub struct BatteryPackSpec {
     /// Package keywords.
     pub keywords: Vec<String>,
     /// All curated crates, keyed by crate name.
-    // [impl format.deps.source-of-truth]
     pub crates: BTreeMap<String, CrateSpec>,
     /// Named features from `[features]`, mapping feature name to crate names.
-    // [impl format.features.grouping]
     pub features: BTreeMap<String, BTreeSet<String>>,
     /// Hidden dependency patterns (may include globs).
-    // [impl format.hidden.metadata]
     pub hidden: BTreeSet<String>,
     /// Templates registered in metadata.
     pub templates: BTreeMap<String, TemplateSpec>,
@@ -178,7 +172,6 @@ pub struct BatteryPackSpec {
 
 impl BatteryPackSpec {
     /// Validate that this looks like a valid battery pack.
-    // [impl format.crate.name]
     pub fn validate(&self) -> Result<(), Error> {
         if !self.name.ends_with("-battery-pack") {
             return Err(Error::InvalidName {
@@ -209,7 +202,6 @@ impl BatteryPackSpec {
     pub fn validate_spec(&self) -> ValidationReport {
         let mut report = ValidationReport::default();
 
-        // [impl format.crate.name]
         if self.name != "battery-pack" && !self.name.ends_with("-battery-pack") {
             report.error(
                 "format.crate.name",
@@ -217,7 +209,6 @@ impl BatteryPackSpec {
             );
         }
 
-        // [impl format.crate.keyword]
         if !self.keywords.iter().any(|k| k == "battery-pack") {
             report.error(
                 "format.crate.keyword",
@@ -225,7 +216,6 @@ impl BatteryPackSpec {
             );
         }
 
-        // [impl format.crate.repository]
         if self.repository.is_none() {
             report.warning(
                 "format.crate.repository",
@@ -233,7 +223,6 @@ impl BatteryPackSpec {
             );
         }
 
-        // [impl format.features.grouping]
         for (feature_name, crate_names) in &self.features {
             for crate_name in crate_names {
                 if !self.crates.contains_key(crate_name) {
@@ -258,7 +247,6 @@ impl BatteryPackSpec {
     /// no `default` feature exists.
     ///
     /// Features are additive — each named feature adds its crates on top.
-    // [impl format.features.additive]
     pub fn resolve_crates(&self, active_features: &[&str]) -> BTreeMap<String, CrateSpec> {
         let mut result: BTreeMap<String, CrateSpec> = BTreeMap::new();
 
@@ -275,7 +263,6 @@ impl BatteryPackSpec {
             }
         }
 
-        // [impl format.features.dev-build-always]
         // Dev/build deps are never gated by Cargo features, so always include them.
         for (name, spec) in &self.crates {
             if spec.dep_kind != DepKind::Normal && !self.is_hidden(name) {
@@ -287,7 +274,6 @@ impl BatteryPackSpec {
     }
 
     /// Add the default set of crates to the result map.
-    // [impl format.features.default]
     fn add_default_crates(&self, result: &mut BTreeMap<String, CrateSpec>) {
         if let Some(default_crate_names) = self.features.get("default") {
             // Explicit default feature exists — use it
@@ -305,7 +291,6 @@ impl BatteryPackSpec {
     /// Add crates from a feature's crate list to the result map.
     ///
     /// If a crate is already present, its Cargo features are merged additively.
-    // [impl format.features.augment]
     fn add_feature_crates(
         &self,
         crate_names: &BTreeSet<String>,
@@ -329,7 +314,6 @@ impl BatteryPackSpec {
     }
 
     /// Resolve all visible (non-hidden) crates regardless of features or optional status.
-    // [impl format.hidden.effect]
     pub fn resolve_all_visible(&self) -> BTreeMap<String, CrateSpec> {
         self.crates
             .iter()
@@ -342,7 +326,6 @@ impl BatteryPackSpec {
     ///
     /// If `active_features` contains `"all"`, returns all visible crates.
     /// Otherwise delegates to `resolve_crates`.
-    // [impl format.hidden.effect]
     pub fn resolve_for_features(
         &self,
         active_features: &BTreeSet<String>,
@@ -356,7 +339,6 @@ impl BatteryPackSpec {
     }
 
     /// Check whether a crate name matches the hidden patterns.
-    // [impl format.hidden.effect]
     pub fn is_hidden(&self, crate_name: &str) -> bool {
         self.hidden
             .iter()
@@ -377,9 +359,6 @@ impl BatteryPackSpec {
     ///
     /// Returns `Vec<(group_name, crate_name, &CrateSpec, is_default)>`.
     /// Crates not in any feature are grouped under `"default"`.
-    // [impl format.hidden.effect]
-    // [impl tui.installed.hidden]
-    // [impl tui.browse.hidden]
     pub fn all_crates_with_grouping(&self) -> Vec<(String, String, &CrateSpec, bool)> {
         let default_crates = self.resolve_crates(&[]);
         let mut result = Vec::new();
@@ -436,8 +415,6 @@ impl BatteryPackSpec {
 /// - `*` matches any sequence of characters
 /// - `?` matches any single character
 /// - Literal characters match exactly
-// [impl format.hidden.glob]
-// [impl format.hidden.wildcard]
 fn glob_match(pattern: &str, name: &str) -> bool {
     let pat: Vec<char> = pattern.chars().collect();
     let txt: Vec<char> = name.chars().collect();
@@ -489,9 +466,6 @@ pub struct MergedCrateSpec {
 /// - Features: union all (`manifest.merge.features`)
 /// - Dep kind: Normal wins (widest scope); if dev vs build conflict,
 ///   adds to both sections (`manifest.merge.dep-kind`)
-// [impl manifest.merge.version]
-// [impl manifest.merge.features]
-// [impl manifest.merge.dep-kind]
 pub fn merge_crate_specs(
     specs: &[BTreeMap<String, CrateSpec>],
 ) -> BTreeMap<String, MergedCrateSpec> {
@@ -699,7 +673,6 @@ pub fn parse_battery_pack(manifest_str: &str) -> Result<BatteryPackSpec, Error> 
         .map(|bp| bp.hidden.iter().cloned().collect())
         .unwrap_or_default();
 
-    // [impl format.templates.metadata]
     // Parse templates from package.metadata.battery.templates
     let templates = package
         .metadata
@@ -801,7 +774,6 @@ fn parse_single_dep(value: &toml::Value) -> RawDep {
 
 /// Discover battery packs in a workspace by scanning members for
 /// crates whose names end in `-battery-pack`.
-// [impl cli.source.discover]
 pub fn discover_battery_packs(workspace_path: &Path) -> Result<Vec<BatteryPackSpec>, Error> {
     let workspace_toml = workspace_path.join("Cargo.toml");
     let content = std::fs::read_to_string(&workspace_toml).map_err(|e| Error::Io {
@@ -832,7 +804,6 @@ pub fn discover_battery_packs(workspace_path: &Path) -> Result<Vec<BatteryPackSp
         })?;
 
         // Parse once, check name, keep if it's a battery pack
-        // [impl format.crate.name]
         let spec = parse_battery_pack(&member_content)?;
         if spec.name.ends_with("-battery-pack") {
             packs.push(spec);
@@ -848,7 +819,6 @@ pub fn discover_battery_packs(workspace_path: &Path) -> Result<Vec<BatteryPackSp
 /// battery packs within it. Falls back to parsing `crate_root` itself
 /// as a standalone battery pack if no workspace is found.
 // TODO: Replace with `cargo_metadata` when available (#13).
-// [impl cli.source.discover]
 pub fn discover_from_crate_root(crate_root: &Path) -> Result<Vec<BatteryPackSpec>, Error> {
     // Try the crate root itself (it may be a workspace root).
     if let Ok(specs) = discover_battery_packs(crate_root) {
@@ -904,7 +874,6 @@ pub fn validate_on_disk(spec: &BatteryPackSpec, crate_root: &Path) -> Validation
 
 /// Check that `src/lib.rs` contains only doc-comments, whitespace, and
 /// include directives — no functional code.
-// [impl format.crate.lib]
 fn validate_lib_rs(crate_root: &Path, report: &mut ValidationReport) {
     let lib_rs = crate_root.join("src/lib.rs");
     let content = match std::fs::read_to_string(&lib_rs) {
@@ -934,7 +903,6 @@ fn validate_lib_rs(crate_root: &Path, report: &mut ValidationReport) {
 }
 
 /// Check that `src/` contains no `.rs` files beyond `lib.rs`.
-// [impl format.crate.no-code]
 fn validate_no_extra_code(crate_root: &Path, report: &mut ValidationReport) {
     let src_dir = crate_root.join("src");
     let entries = match std::fs::read_dir(&src_dir) {
@@ -961,7 +929,6 @@ fn validate_no_extra_code(crate_root: &Path, report: &mut ValidationReport) {
 }
 
 /// Check that each template declared in metadata exists on disk.
-// [impl format.templates.directory]
 fn validate_templates_on_disk(
     spec: &BatteryPackSpec,
     crate_root: &Path,
@@ -992,8 +959,6 @@ mod tests {
     // -- Parsing tests --
 
     #[test]
-    // [verify format.deps.source-of-truth]
-    // [verify format.deps.kind-mapping]
     fn parse_deps_from_all_sections() {
         let manifest = r#"
             [package]
@@ -1028,7 +993,6 @@ mod tests {
     }
 
     #[test]
-    // [verify format.deps.version-features]
     fn parse_version_and_features() {
         let manifest = r#"
             [package]
@@ -1055,7 +1019,6 @@ mod tests {
     }
 
     #[test]
-    // [verify format.features.optional]
     fn parse_optional_deps() {
         let manifest = r#"
             [package]
@@ -1073,7 +1036,6 @@ mod tests {
     }
 
     #[test]
-    // [verify format.features.grouping]
     fn parse_cargo_features() {
         let manifest = r#"
             [package]
@@ -1104,7 +1066,6 @@ mod tests {
     }
 
     #[test]
-    // [verify format.hidden.metadata]
     fn parse_hidden_deps() {
         let manifest = r#"
             [package]
@@ -1167,7 +1128,6 @@ mod tests {
     // -- Validation tests --
 
     #[test]
-    // [verify format.crate.name]
     fn validate_name() {
         let manifest = r#"
             [package]
@@ -1224,7 +1184,6 @@ mod tests {
     // -- Resolution tests --
 
     #[test]
-    // [verify format.features.default]
     fn resolve_default_feature() {
         let manifest = r#"
             [package]
@@ -1251,7 +1210,6 @@ mod tests {
     }
 
     #[test]
-    // [verify format.features.default]
     fn resolve_no_default_feature() {
         let manifest = r#"
             [package]
@@ -1276,7 +1234,6 @@ mod tests {
     }
 
     #[test]
-    // [verify format.features.additive]
     fn resolve_additive_features() {
         let manifest = r#"
             [package]
@@ -1331,7 +1288,6 @@ mod tests {
     }
 
     #[test]
-    // [verify format.features.augment]
     fn resolve_feature_augmentation() {
         let manifest = r#"
             [package]
@@ -1387,7 +1343,6 @@ mod tests {
     // -- Hidden dep tests --
 
     #[test]
-    // [verify format.hidden.effect]
     fn hidden_exact_match() {
         let manifest = r#"
             [package]
@@ -1408,7 +1363,6 @@ mod tests {
     }
 
     #[test]
-    // [verify format.hidden.glob]
     fn hidden_glob_pattern() {
         let manifest = r#"
             [package]
@@ -1433,7 +1387,6 @@ mod tests {
     }
 
     #[test]
-    // [verify format.hidden.wildcard]
     fn hidden_wildcard_all() {
         let manifest = r#"
             [package]
@@ -1481,8 +1434,6 @@ mod tests {
         assert!(!visible.contains_key("serde_json"));
     }
 
-    // [verify tui.installed.hidden]
-    // [verify tui.browse.hidden]
     #[test]
     fn all_crates_with_grouping_filters_hidden() {
         let manifest = r#"
@@ -1640,7 +1591,6 @@ mod tests {
     // -- Discovery tests --
 
     #[test]
-    // [verify cli.source.discover]
     fn discover_battery_packs_in_fixture_workspace() {
         // Find the fixtures directory relative to the workspace root
         let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -1719,7 +1669,6 @@ mod tests {
     }
 
     #[test]
-    // [verify cli.source.discover] workspace case — member crate discovers siblings
     fn discover_from_crate_root_finds_workspace() {
         let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         let workspace_root = manifest_dir
@@ -1739,7 +1688,6 @@ mod tests {
     }
 
     #[test]
-    // [verify cli.source.discover] standalone case — no workspace, parses crate directly
     fn discover_from_crate_root_standalone() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(
@@ -1767,7 +1715,6 @@ tokio = { version = "1", optional = true }
     // -- validate_spec tests --
 
     #[test]
-    // [verify format.crate.name]
     fn validate_spec_name() {
         let good = parse_battery_pack(
             r#"
@@ -1813,7 +1760,6 @@ tokio = { version = "1", optional = true }
     }
 
     #[test]
-    // [verify format.crate.keyword]
     fn validate_spec_keyword() {
         let good = parse_battery_pack(
             r#"
@@ -1864,7 +1810,6 @@ tokio = { version = "1", optional = true }
     }
 
     #[test]
-    // [verify format.features.grouping]
     fn validate_spec_features() {
         let good = parse_battery_pack(
             r#"
@@ -1912,7 +1857,6 @@ tokio = { version = "1", optional = true }
     // -- validate_on_disk tests --
 
     #[test]
-    // [verify format.crate.lib]
     fn validate_lib_rs_clean() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("src");
@@ -1938,7 +1882,6 @@ tokio = { version = "1", optional = true }
     }
 
     #[test]
-    // [verify format.crate.lib]
     fn validate_lib_rs_with_code() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("src");
@@ -1967,7 +1910,6 @@ tokio = { version = "1", optional = true }
     }
 
     #[test]
-    // [verify format.crate.no-code]
     fn validate_no_extra_rs_files() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("src");
@@ -2001,7 +1943,6 @@ tokio = { version = "1", optional = true }
     }
 
     #[test]
-    // [verify format.templates.directory]
     fn validate_templates_exist() {
         let dir = tempfile::tempdir().unwrap();
         let src = dir.path().join("src");
@@ -2046,7 +1987,6 @@ tokio = { version = "1", optional = true }
     // -- Repository warning tests --
 
     #[test]
-    // [verify format.crate.repository]
     fn validate_warns_on_missing_repository() {
         let spec = parse_battery_pack(
             r#"
@@ -2072,7 +2012,6 @@ tokio = { version = "1", optional = true }
     }
 
     #[test]
-    // [verify format.crate.repository]
     fn validate_no_warning_when_repository_present() {
         let spec = parse_battery_pack(
             r#"
@@ -2237,7 +2176,6 @@ tokio = { version = "1", optional = true }
     }
 
     #[test]
-    // [verify manifest.merge.version]
     fn merge_version_newest_wins() {
         let pack_a = BTreeMap::from([(
             "serde".to_string(),
@@ -2253,7 +2191,6 @@ tokio = { version = "1", optional = true }
     }
 
     #[test]
-    // [verify manifest.merge.version]
     fn merge_version_across_major() {
         let pack_a = BTreeMap::from([(
             "clap".to_string(),
@@ -2269,7 +2206,6 @@ tokio = { version = "1", optional = true }
     }
 
     #[test]
-    // [verify manifest.merge.version]
     fn merge_version_same_version_no_conflict() {
         let pack_a = BTreeMap::from([(
             "anyhow".to_string(),
@@ -2285,7 +2221,6 @@ tokio = { version = "1", optional = true }
     }
 
     #[test]
-    // [verify manifest.merge.features]
     fn merge_features_union() {
         let pack_a = BTreeMap::from([(
             "tokio".to_string(),
@@ -2307,7 +2242,6 @@ tokio = { version = "1", optional = true }
     }
 
     #[test]
-    // [verify manifest.merge.dep-kind]
     fn merge_dep_kind_normal_wins_over_dev() {
         let pack_a = BTreeMap::from([("serde".to_string(), crate_spec("1", &[], DepKind::Normal))]);
         let pack_b = BTreeMap::from([("serde".to_string(), crate_spec("1", &[], DepKind::Dev))]);
@@ -2317,7 +2251,6 @@ tokio = { version = "1", optional = true }
     }
 
     #[test]
-    // [verify manifest.merge.dep-kind]
     fn merge_dep_kind_normal_wins_over_build() {
         let pack_a = BTreeMap::from([("cc".to_string(), crate_spec("1", &[], DepKind::Build))]);
         let pack_b = BTreeMap::from([("cc".to_string(), crate_spec("1", &[], DepKind::Normal))]);
@@ -2327,7 +2260,6 @@ tokio = { version = "1", optional = true }
     }
 
     #[test]
-    // [verify manifest.merge.dep-kind]
     fn merge_dep_kind_dev_and_build_yields_both() {
         let pack_a = BTreeMap::from([("serde".to_string(), crate_spec("1", &[], DepKind::Dev))]);
         let pack_b = BTreeMap::from([("serde".to_string(), crate_spec("1", &[], DepKind::Build))]);
@@ -2340,9 +2272,6 @@ tokio = { version = "1", optional = true }
     }
 
     #[test]
-    // [verify manifest.merge.version]
-    // [verify manifest.merge.features]
-    // [verify manifest.merge.dep-kind]
     fn merge_three_packs_all_rules() {
         let pack_a = BTreeMap::from([
             (
@@ -2401,8 +2330,6 @@ tokio = { version = "1", optional = true }
     }
 
     #[test]
-    // [verify manifest.merge.version]
-    // [verify manifest.merge.features]
     fn merge_non_overlapping_crates() {
         let pack_a = BTreeMap::from([(
             "serde".to_string(),

@@ -1,6 +1,0 @@
-spec {
-    name "battery-pack"
-    rules_glob "md/spec/**/*.md"
-    include "src/**/*.rs"
-    exclude "target/**"
-}

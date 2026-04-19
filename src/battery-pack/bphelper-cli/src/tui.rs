@@ -93,7 +93,6 @@ enum Screen {
     /// Never rendered or handled — immediately overwritten.
     Empty,
     Loading(LoadingState),
-    /// [impl tui.network.error]
     Error(ErrorScreen),
     List(ListScreen),
     Detail(DetailScreen),
@@ -401,7 +400,6 @@ impl CrateEntry {
     }
 
     fn version_info(&self) -> String {
-        // [impl tui.installed.show-state]
         let kind_label = match self.dep_kind {
             DepKind::Normal => None,
             DepKind::Dev => Some("dev"),
@@ -457,7 +455,6 @@ impl InstalledState {
 
     /// Toggle the currently selected crate's enabled state.
     /// Refuses to disable a crate that is required by another enabled feature.
-    // [impl tui.installed.toggle-crate]
     fn toggle_selected(&mut self) {
         // Find which pack and entry index the selected_index points to.
         let mut flat = 0;
@@ -488,7 +485,6 @@ impl InstalledState {
     }
 
     /// Cycle the currently selected crate's dep_kind: Normal → Dev → Build → Normal.
-    // [impl tui.installed.dep-kind]
     fn cycle_dep_kind(&mut self) {
         let mut idx = 0;
         for pack in &mut self.packs {
@@ -592,7 +588,6 @@ fn build_installed_state(packs: Vec<InstalledPack>) -> InstalledState {
         .into_iter()
         .map(|pack| {
             let grouped = pack.spec.all_crates_with_grouping();
-            // [impl format.hidden.effect]
             let resolved = pack.spec.resolve_for_features(&pack.active_features);
 
             let entries = grouped
@@ -768,7 +763,6 @@ impl App {
         Ok(())
     }
 
-    /// [impl tui.network.error]
     fn process_loading(&mut self) {
         // Take ownership of the screen so we can move data out of LoadingTarget variants.
         let screen = std::mem::replace(&mut self.screen, Screen::Empty);
@@ -1436,7 +1430,6 @@ impl App {
         });
     }
 
-    /// [impl tui.network.error]
     fn handle_error_key(&mut self, key: KeyCode) {
         match key {
             KeyCode::Enter | KeyCode::Char('r') => {
@@ -1642,7 +1635,6 @@ fn render_loading(frame: &mut Frame, state: &LoadingState) {
     frame.render_widget(text, center);
 }
 
-/// [impl tui.network.error]
 fn render_error(frame: &mut Frame, state: &ErrorScreen) {
     let area = frame.area();
 
@@ -2229,7 +2221,6 @@ fn render_pack_entries<'a>(
         }
 
         let is_selected = (entry_offset + i) == selected_index;
-        // [impl tui.installed.show-state]
         let checkbox = if entry.enabled { "[x]" } else { "[ ]" };
 
         let changed = show_changes && entry.enabled != entry.originally_enabled;

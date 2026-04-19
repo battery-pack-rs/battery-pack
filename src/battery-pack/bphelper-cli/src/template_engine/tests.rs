@@ -3,7 +3,6 @@ use snapbox::{ToDebug, assert_data_eq, str};
 use super::*;
 
 // -- Config parsing --
-// [verify format.templates.engine]
 
 #[test]
 fn parse_config_full() {
@@ -91,7 +90,6 @@ fn ignore_bp_template_toml() {
 }
 
 // -- resolve_placeholders --
-// [verify format.templates.placeholder-defaults]
 
 #[test]
 fn resolve_uses_define_over_default() {

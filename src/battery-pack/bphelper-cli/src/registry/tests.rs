@@ -39,8 +39,6 @@ fn format_summaries(packs: &[super::BatteryPackSummary]) -> String {
         .join("\n")
 }
 
-// [verify cli.source.discover]
-// [verify cli.list.query]
 #[test]
 fn list_discovers_local_battery_packs() {
     let source = CrateSource::Local(fixtures_dir());
@@ -64,7 +62,6 @@ fn list_discovers_local_battery_packs() {
     );
 }
 
-// [verify cli.list.filter]
 #[test]
 fn list_filter_narrows_results() {
     let source = CrateSource::Local(fixtures_dir());
@@ -77,7 +74,6 @@ fn list_filter_narrows_results() {
     );
 }
 
-// [verify cli.list.filter]
 #[test]
 fn list_filter_no_match_returns_empty() {
     let source = CrateSource::Local(fixtures_dir());
@@ -85,7 +81,6 @@ fn list_filter_no_match_returns_empty() {
     assert!(packs.is_empty());
 }
 
-// [verify cli.source.flag]
 #[test]
 fn list_invalid_workspace_path_errors() {
     let source = CrateSource::Local(PathBuf::from("/nonexistent/path"));
@@ -93,7 +88,6 @@ fn list_invalid_workspace_path_errors() {
     assert!(result.is_err());
 }
 
-// [verify cli.source.discover]
 #[test]
 fn list_short_names_are_correct() {
     let source = CrateSource::Local(fixtures_dir());
@@ -110,7 +104,6 @@ fn list_short_names_are_correct() {
 
 // Integration tests for `cargo bp show`.
 
-// [verify cli.show.hidden]
 #[test]
 fn show_detail_excludes_hidden_crates() {
     let fancy_path = fixtures_dir().join("fancy-battery-pack");
@@ -133,7 +126,6 @@ fn show_detail_excludes_hidden_crates() {
     assert!(detail.crates.contains(&"predicates".to_string()));
 }
 
-// [verify cli.show.hidden]
 #[test]
 fn show_detail_no_hidden_returns_all_crates() {
     let basic_path = fixtures_dir().join("basic-battery-pack");

@@ -30,7 +30,6 @@ fn unwrap_bp_command(cli: super::Cli) -> Option<super::BpCommands> {
 // cli.bare.tui — bare `cargo bp` produces command: None (→ TUI or bail)
 // ============================================================================
 
-// [verify cli.bare.tui]
 #[test]
 fn bare_cargo_bp_produces_none_command() {
     // `cargo bp` with no subcommand should parse successfully with command = None.
@@ -46,7 +45,6 @@ fn bare_cargo_bp_produces_none_command() {
 // cli.new.name-flag — --name flag is accepted by the `new` subcommand
 // ============================================================================
 
-// [verify cli.new.name-flag]
 #[test]
 fn new_name_flag_is_parsed() {
     // `cargo bp new cli --name my-project` should parse successfully
@@ -63,7 +61,6 @@ fn new_name_flag_is_parsed() {
     }
 }
 
-// [verify cli.new.name-flag]
 #[test]
 fn new_name_short_flag_is_parsed() {
     // `-n` is the short form of `--name`
@@ -83,7 +80,6 @@ fn new_name_short_flag_is_parsed() {
 // cli.new.name-prompt — omitting --name is valid (the template engine will prompt)
 // ============================================================================
 
-// [verify cli.new.name-prompt]
 #[test]
 fn new_without_name_parses_as_none() {
     // `cargo bp new cli` without --name should parse successfully with name = None.
@@ -104,7 +100,6 @@ fn new_without_name_parses_as_none() {
 // cli.new.template-select — multiple templates without default triggers prompt
 // ============================================================================
 
-// [verify cli.new.template-select]
 #[test]
 fn resolve_template_single_template_uses_it() {
     // With a single template, resolve_template picks it without prompting.
@@ -121,7 +116,6 @@ fn resolve_template_single_template_uses_it() {
     assert_eq!(result, "templates/simple");
 }
 
-// [verify cli.new.template-select]
 #[test]
 fn resolve_template_picks_default_when_present() {
     // With multiple templates including "default", resolve_template picks "default".
@@ -145,7 +139,6 @@ fn resolve_template_picks_default_when_present() {
     assert_eq!(result, "templates/default");
 }
 
-// [verify cli.new.template-select]
 #[test]
 fn resolve_template_unknown_name_errors() {
     // When --template specifies a name that doesn't exist, resolve_template
@@ -179,7 +172,6 @@ fn resolve_template_unknown_name_errors() {
     );
 }
 
-// [verify cli.new.template-select]
 #[test]
 fn resolve_template_explicit_flag_overrides() {
     // --template <name> selects the named template directly.
@@ -207,7 +199,6 @@ fn resolve_template_explicit_flag_overrides() {
 // cli.add.idempotent — re-adding same dep doesn't create duplicates
 // ============================================================================
 
-// [verify cli.add.idempotent]
 #[test]
 fn add_dep_twice_no_duplicate() {
     // Adding the same crate to a table twice should result in exactly one entry,
@@ -240,7 +231,6 @@ fn add_dep_twice_no_duplicate() {
     );
 }
 
-// [verify cli.add.idempotent]
 #[test]
 fn add_dep_twice_with_features_no_duplicate() {
     // Same test but with features — the inline table should be replaced, not appended.
@@ -271,7 +261,6 @@ fn add_dep_twice_with_features_no_duplicate() {
     assert_eq!(features.len(), 2);
 }
 
-// [verify cli.add.idempotent]
 #[test]
 fn metadata_registration_idempotent() {
     // Simulating the metadata upsert: writing to
@@ -321,7 +310,6 @@ cli-battery-pack = { features = ["default"] }
 // cli.show.non-interactive / cli.list.non-interactive
 // ============================================================================
 
-// [verify cli.show.non-interactive]
 #[test]
 fn show_non_interactive_flag_is_parsed() {
     let cli = super::Cli::try_parse_from(["cargo", "bp", "show", "cli", "--non-interactive"])
@@ -338,7 +326,6 @@ fn show_non_interactive_flag_is_parsed() {
     }
 }
 
-// [verify cli.show.non-interactive]
 #[test]
 fn show_defaults_to_interactive() {
     let cli = super::Cli::try_parse_from(["cargo", "bp", "show", "cli"])
@@ -355,7 +342,6 @@ fn show_defaults_to_interactive() {
     }
 }
 
-// [verify cli.list.non-interactive]
 #[test]
 fn list_non_interactive_flag_is_parsed() {
     let cli = super::Cli::try_parse_from(["cargo", "bp", "list", "--non-interactive"])
@@ -372,7 +358,6 @@ fn list_non_interactive_flag_is_parsed() {
     }
 }
 
-// [verify cli.list.non-interactive]
 #[test]
 fn list_defaults_to_interactive() {
     let cli = super::Cli::try_parse_from(["cargo", "bp", "list"])
@@ -484,21 +469,18 @@ fn parse_add_command(args: &[&str]) -> ParsedAdd {
 // cli.add.features — -F/--features flag parsing
 // ============================================================================
 
-// [verify cli.add.features]
 #[test]
 fn features_long_flag_parsed() {
     let add = parse_add_command(&["cargo", "bp", "add", "cli", "--features", "indicators"]);
     assert_eq!(add.features, vec!["indicators"]);
 }
 
-// [verify cli.add.features]
 #[test]
 fn features_short_flag_parsed() {
     let add = parse_add_command(&["cargo", "bp", "add", "cli", "-F", "indicators"]);
     assert_eq!(add.features, vec!["indicators"]);
 }
 
-// [verify cli.add.features]
 #[test]
 fn features_old_with_flag_rejected() {
     let result = super::Cli::try_parse_from(["cargo", "bp", "add", "cli", "--with", "indicators"]);
@@ -509,14 +491,12 @@ fn features_old_with_flag_rejected() {
 // cli.add.features-multiple — comma-separated and repeated -F
 // ============================================================================
 
-// [verify cli.add.features-multiple]
 #[test]
 fn features_comma_separated() {
     let add = parse_add_command(&["cargo", "bp", "add", "cli", "-F", "indicators,fancy"]);
     assert_eq!(add.features, vec!["indicators", "fancy"]);
 }
 
-// [verify cli.add.features-multiple]
 #[test]
 fn features_repeated_flag() {
     let add = parse_add_command(&[
@@ -536,7 +516,6 @@ fn features_repeated_flag() {
 // cli.add.default-crates — resolve_add_crates with no flags
 // ============================================================================
 
-// [verify cli.add.default-crates]
 #[test]
 fn resolve_default_crates_returns_interactive_when_choices_exist() {
     // When no flags are given and the pack has meaningful choices,
@@ -550,7 +529,6 @@ fn resolve_default_crates_returns_interactive_when_choices_exist() {
     );
 }
 
-// [verify cli.add.default-crates]
 #[test]
 fn resolve_default_crates_basic_via_explicit_feature() {
     // Explicitly requesting "default" feature bypasses the interactive path
@@ -569,7 +547,6 @@ fn resolve_default_crates_basic_via_explicit_feature() {
     );
 }
 
-// [verify cli.add.default-crates]
 #[test]
 fn resolve_default_crates_fancy_via_named_feature() {
     // Passing -F indicators forces the non-interactive path and includes
@@ -603,7 +580,6 @@ fn resolve_default_crates_fancy_via_named_feature() {
 // cli.add.features — resolution with named features
 // ============================================================================
 
-// [verify cli.add.features]
 #[test]
 fn resolve_with_named_feature_adds_to_defaults() {
     // -F indicators → default + indicators crates.
@@ -632,7 +608,6 @@ fn resolve_with_named_feature_adds_to_defaults() {
     assert!(crate_names.contains("console"));
 }
 
-// [verify cli.add.features]
 #[test]
 fn resolve_with_all_errors_feature() {
     // basic-battery-pack: all-errors = [anyhow, thiserror, eyre]
@@ -662,7 +637,6 @@ fn resolve_with_all_errors_feature() {
 // cli.add.no-default-features — skips defaults
 // ============================================================================
 
-// [verify cli.add.no-default-features]
 #[test]
 fn resolve_no_default_features_alone_yields_nothing() {
     // --no-default-features with no -F → empty feature list → no crates
@@ -674,7 +648,6 @@ fn resolve_no_default_features_alone_yields_nothing() {
     assert!(crate_names.is_empty(), "no crates resolved");
 }
 
-// [verify cli.add.no-default-features]
 #[test]
 fn resolve_no_default_features_with_named_feature() {
     // --no-default-features -F indicators → only indicators crates
@@ -701,7 +674,6 @@ fn resolve_no_default_features_with_named_feature() {
 // cli.add.all-features — resolves every crate
 // ============================================================================
 
-// [verify cli.add.all-features]
 #[test]
 fn resolve_all_features_fancy() {
     // --all-features on fancy-battery-pack → all visible crates (hidden filtered out)
@@ -719,13 +691,11 @@ fn resolve_all_features_fancy() {
     assert!(crate_names.contains("assert_cmd"));
     assert!(crate_names.contains("predicates"));
     // Hidden crates filtered out
-    // [verify format.hidden.effect]
     assert!(!crate_names.contains("serde"), "serde is hidden");
     assert!(!crate_names.contains("serde_json"), "serde_json is hidden");
     assert!(!crate_names.contains("cc"), "cc is hidden");
 }
 
-// [verify cli.add.all-features]
 #[test]
 fn resolve_all_features_basic() {
     // --all-features on basic-battery-pack → anyhow, thiserror, eyre
@@ -746,14 +716,12 @@ fn resolve_all_features_basic() {
 // cli.add.specific-crates — positional args select exact crates
 // ============================================================================
 
-// [verify cli.add.specific-crates]
 #[test]
 fn specific_crates_parsed() {
     let add = parse_add_command(&["cargo", "bp", "add", "cli", "clap", "dialoguer"]);
     assert_eq!(add.crates, vec!["clap", "dialoguer"]);
 }
 
-// [verify cli.add.specific-crates]
 #[test]
 fn resolve_specific_crates_selects_only_named() {
     // Selecting "clap" from fancy-battery-pack should return only clap,
@@ -772,7 +740,6 @@ fn resolve_specific_crates_selects_only_named() {
     assert!(crate_names.contains("clap"));
 }
 
-// [verify cli.add.specific-crates]
 #[test]
 fn resolve_specific_crates_multiple() {
     // Selecting "anyhow" and "eyre" from basic-battery-pack
@@ -788,7 +755,6 @@ fn resolve_specific_crates_multiple() {
     assert!(!crate_names.contains("thiserror"), "not requested");
 }
 
-// [verify cli.add.specific-crates]
 #[test]
 fn resolve_specific_crates_ignores_features_flag() {
     // When specific crates are given, -F flags are irrelevant — only the
@@ -819,7 +785,6 @@ fn resolve_specific_crates_ignores_features_flag() {
 // cli.add.unknown-crate — errors for unknown, valid ones proceed
 // ============================================================================
 
-// [verify cli.add.unknown-crate]
 #[test]
 fn resolve_unknown_crate_skipped_valid_proceeds() {
     // "nonexistent" is unknown, "clap" is valid → only clap returned
@@ -834,7 +799,6 @@ fn resolve_unknown_crate_skipped_valid_proceeds() {
     assert!(!crate_names.contains("nonexistent"));
 }
 
-// [verify cli.add.unknown-crate]
 #[test]
 fn resolve_all_unknown_crates_yields_empty() {
     let spec = load_fancy_spec();
@@ -850,7 +814,6 @@ fn resolve_all_unknown_crates_yields_empty() {
 // cli.add.target — flag parsing
 // ============================================================================
 
-// [verify cli.add.target]
 #[test]
 fn target_values_parsed() {
     for (arg, expected) in [
@@ -863,14 +826,12 @@ fn target_values_parsed() {
     }
 }
 
-// [verify cli.add.target]
 #[test]
 fn target_omitted_is_none() {
     let add = parse_add_command(&["cargo", "bp", "add", "cli"]);
     assert!(add.target.is_none());
 }
 
-// [verify cli.add.target]
 #[test]
 fn target_invalid_value_rejected() {
     let result = super::Cli::try_parse_from(["cargo", "bp", "add", "cli", "--target", "invalid"]);
@@ -1010,7 +971,6 @@ fn add(
 // cli.add.register — battery pack appears in [build-dependencies]
 // ============================================================================
 
-// [verify cli.add.register]
 #[test]
 fn add_registers_build_dep() {
     let tmp = make_temp_project();
@@ -1042,7 +1002,6 @@ fn add_registers_build_dep() {
 // cli.add.default-crates — default crates written to Cargo.toml
 // ============================================================================
 
-// [verify cli.add.default-crates]
 #[test]
 fn add_default_crates_basic() {
     let tmp = make_temp_project();
@@ -1093,7 +1052,6 @@ fn add_default_includes_dev_and_build_deps() {
 // cli.add.features — named feature crates written
 // ============================================================================
 
-// [verify cli.add.features]
 #[test]
 fn add_with_named_feature_writes_deps() {
     let tmp = make_temp_project();
@@ -1116,7 +1074,6 @@ fn add_with_named_feature_writes_deps() {
     assert!(deps.contains("indicatif"), "Expected indicatif");
 }
 
-// [verify cli.add.features]
 #[test]
 fn add_with_named_feature_records_metadata() {
     let tmp = make_temp_project();
@@ -1140,7 +1097,6 @@ fn add_with_named_feature_records_metadata() {
 // cli.add.no-default-features — only named feature crates, no defaults
 // ============================================================================
 
-// [verify cli.add.no-default-features]
 #[test]
 fn add_no_default_features_with_feature() {
     let tmp = make_temp_project();
@@ -1161,7 +1117,6 @@ fn add_no_default_features_with_feature() {
     assert!(deps.contains("indicatif"), "Expected indicatif dependency");
 }
 
-// [verify cli.add.no-default-features]
 #[test]
 fn add_no_default_features_alone_writes_no_deps() {
     let tmp = make_temp_project();
@@ -1185,7 +1140,6 @@ fn add_no_default_features_alone_writes_no_deps() {
 // cli.add.all-features — all crates written
 // ============================================================================
 
-// [verify cli.add.all-features]
 #[test]
 fn add_all_features_basic() {
     let tmp = make_temp_project();
@@ -1207,7 +1161,6 @@ fn add_all_features_basic() {
     assert!(deps.contains("thiserror"), "Expected thiserror dependency");
 }
 
-// [verify cli.add.all-features]
 #[test]
 fn add_all_features_records_metadata() {
     let tmp = make_temp_project();
@@ -1232,7 +1185,6 @@ fn add_all_features_records_metadata() {
     assert!(meta.contains("all"), "Expected all feature");
 }
 
-// [verify cli.add.all-features]
 #[test]
 fn add_all_features_fancy() {
     let tmp = make_temp_project();
@@ -1252,14 +1204,12 @@ fn add_all_features_fancy() {
     let build_deps = extract_section(&content, "[build-dependencies]");
 
     // Normal deps in [dependencies] — hidden crates (serde*, cc) filtered out
-    // [verify format.hidden.effect]
     assert!(deps.contains("clap"), "Expected clap dependency");
     assert!(deps.contains("console"), "Expected console dependency");
     assert!(deps.contains("dialoguer"), "Expected dialoguer dependency");
     assert!(deps.contains("indicatif"), "Expected indicatif dependency");
 
     // Dev-deps land in [dev-dependencies]
-    // [verify cli.add.dep-kind]
     assert!(
         dev_deps.contains("assert_cmd"),
         "Expected assert_cmd in dev-dependencies"
@@ -1270,7 +1220,6 @@ fn add_all_features_fancy() {
     );
 
     // Build-deps: only the battery pack itself (cc is hidden)
-    // [verify format.hidden.effect]
     assert!(
         !build_deps.contains("cc = \"1.0\""),
         "cc is hidden and should not appear in [build-dependencies]: {build_deps}"
@@ -1281,7 +1230,6 @@ fn add_all_features_fancy() {
 // cli.add.specific-crates — only named crates written
 // ============================================================================
 
-// [verify cli.add.specific-crates]
 #[test]
 fn add_specific_crates_writes_only_named() {
     let tmp = make_temp_project();
@@ -1309,7 +1257,6 @@ fn add_specific_crates_writes_only_named() {
 // cli.add.unknown-crate — unknown skipped, valid written
 // ============================================================================
 
-// [verify cli.add.unknown-crate]
 #[test]
 fn add_unknown_crate_writes_valid_ones() {
     let tmp = make_temp_project();
@@ -1337,7 +1284,6 @@ fn add_unknown_crate_writes_valid_ones() {
 // cli.add.target — metadata location
 // ============================================================================
 
-// [verify cli.add.target]
 #[test]
 fn add_target_package_writes_metadata() {
     let tmp = make_temp_project();
@@ -1366,7 +1312,6 @@ fn add_target_package_writes_metadata() {
 // build.rs creation
 // ============================================================================
 
-// [verify cli.add.register]
 #[test]
 fn add_creates_build_rs() {
     let tmp = make_temp_project();
@@ -1393,7 +1338,6 @@ fn add_creates_build_rs() {
 // Idempotency
 // ============================================================================
 
-// [verify cli.add.idempotent]
 #[test]
 fn add_twice_is_idempotent() {
     let tmp = make_temp_project();
@@ -1438,7 +1382,6 @@ fn add_twice_is_idempotent() {
 // cli.bare.help — --help prints help and exits (clap behaviour)
 // ============================================================================
 
-// [verify cli.bare.help]
 #[test]
 fn cli_bare_help_prints_help() {
     // Parsing `cargo bp --help` should result in a DisplayHelp error from
@@ -1482,7 +1425,6 @@ fn collect_versions(toml_content: &str) -> BTreeMap<String, String> {
     super::collect_user_dep_versions(&manifest_path, toml_content).unwrap()
 }
 
-// [verify cli.status.version-warn]
 #[test]
 fn collects_simple_string_versions() {
     let versions = collect_versions(
@@ -1500,7 +1442,6 @@ anyhow = "1.0.86"
     assert_eq!(versions.get("anyhow").unwrap(), "1.0.86");
 }
 
-// [verify cli.status.version-warn]
 #[test]
 fn collects_inline_table_versions() {
     let versions = collect_versions(
@@ -1518,7 +1459,6 @@ serde = { version = "1.0", features = ["derive"] }
     assert_eq!(versions.get("serde").unwrap(), "1.0");
 }
 
-// [verify cli.status.version-warn]
 #[test]
 fn collects_from_all_dep_sections() {
     let versions = collect_versions(
@@ -1542,7 +1482,6 @@ cc = "1.0"
     assert_eq!(versions.get("cc").unwrap(), "1.0");
 }
 
-// [verify cli.status.version-warn]
 #[test]
 fn skips_deps_without_version() {
     let versions = collect_versions(
@@ -1563,7 +1502,6 @@ serde = "1.0"
     assert_eq!(versions.get("serde").unwrap(), "1.0");
 }
 
-// [verify cli.status.version-warn]
 #[test]
 fn should_upgrade_detects_older_version() {
     // This tests the version comparison logic that status relies on.

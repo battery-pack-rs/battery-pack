@@ -12,14 +12,6 @@
 - [Documentation and Examples](./docs-and-examples.md)
 - [Publishing](./publishing.md)
 
-# Specification
-
-- [Battery Pack Format](./spec/format.md)
-- [CLI Behavior](./spec/cli.md)
-- [TUI Behavior](./spec/tui.md)
-- [Manifest Manipulation](./spec/manifest.md)
-- [Documentation Generation](./spec/docgen.md)
-
 # Agent guide
 
 - [Ratatui testing guide](./ratatui-testing-guide.md)

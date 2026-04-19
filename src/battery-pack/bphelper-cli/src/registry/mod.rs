@@ -29,8 +29,6 @@ fn http_client() -> &'static reqwest::blocking::Client {
     })
 }
 
-// [impl cli.source.flag]
-// [impl cli.source.replace]
 #[derive(Debug, Clone)]
 pub(crate) enum CrateSource {
     Registry,
@@ -614,7 +612,6 @@ pub(crate) fn fetch_bp_spec(
 }
 
 /// Fetch detailed battery pack info, dispatching based on source.
-// [impl cli.source.replace]
 pub(crate) fn fetch_battery_pack_detail_from_source(
     source: &CrateSource,
     name: &str,
@@ -637,8 +634,6 @@ pub(crate) fn short_name(crate_name: &str) -> &str {
 
 /// Convert "cli" to "cli-battery-pack" (adds suffix if not already present)
 /// Special case: "battery-pack" stays as "battery-pack" (not "battery-pack-battery-pack")
-// [impl cli.name.resolve]
-// [impl cli.name.exact]
 pub(crate) fn resolve_crate_name(name: &str) -> String {
     if name == "battery-pack" || name.ends_with("-battery-pack") {
         name.to_string()
@@ -701,7 +696,6 @@ pub(crate) fn build_battery_pack_detail(
     owners: Vec<Owner>,
 ) -> Result<BatteryPackDetail> {
     // Split visible (non-hidden) crate keys into battery packs (extends) and regular crates
-    // [impl format.hidden.effect]
     let (extends_raw, crates_raw): (Vec<_>, Vec<_>) = spec
         .visible_crates()
         .into_keys()

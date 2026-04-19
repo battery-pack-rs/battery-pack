@@ -64,8 +64,6 @@ fn mock_descriptions() -> BTreeMap<String, String> {
 // ================================================================
 
 #[test]
-// [verify docgen.vars.crates]
-// [verify docgen.vars.package]
 fn test_context_basic() {
     let spec = parse_fixture("basic-battery-pack");
     let descriptions = mock_descriptions();
@@ -92,7 +90,6 @@ fn test_context_basic() {
 }
 
 #[test]
-// [verify docgen.hidden.excluded]
 fn test_context_hidden_excluded() {
     let spec = parse_fixture("fancy-battery-pack");
     let descriptions = mock_descriptions();
@@ -114,7 +111,6 @@ fn test_context_hidden_excluded() {
 }
 
 #[test]
-// [verify docgen.vars.features]
 fn test_context_features() {
     let spec = parse_fixture("fancy-battery-pack");
     let descriptions = mock_descriptions();
@@ -134,7 +130,6 @@ fn test_context_features() {
 }
 
 #[test]
-// [verify docgen.vars.readme]
 fn test_context_readme() {
     let spec = parse_fixture("basic-battery-pack");
     let descriptions = mock_descriptions();
@@ -145,7 +140,6 @@ fn test_context_readme() {
 }
 
 #[test]
-// [verify docgen.vars.crates]
 fn test_context_dep_kinds() {
     let spec = parse_fixture("fancy-battery-pack");
     let descriptions = mock_descriptions();
@@ -202,7 +196,6 @@ fn simple_context() -> DocsContext {
 }
 
 #[test]
-// [verify docgen.helper.readme]
 fn test_render_readme_helper() {
     let ctx = simple_context();
     let output = render_docs("{{readme}}", &ctx).unwrap();
@@ -217,7 +210,6 @@ A great battery pack.
 }
 
 #[test]
-// [verify docgen.helper.crate-table]
 fn test_render_crate_table() {
     let ctx = simple_context();
     let output = render_docs("{{crate-table}}", &ctx).unwrap();
@@ -225,7 +217,6 @@ fn test_render_crate_table() {
 }
 
 #[test]
-// [verify docgen.template.default]
 fn test_render_default_template() {
     let ctx = simple_context();
     let output = render_docs("{{readme}}\n\n{{crate-table}}", &ctx).unwrap();
@@ -233,7 +224,6 @@ fn test_render_default_template() {
 }
 
 #[test]
-// [verify docgen.template.custom]
 fn test_render_custom_template() {
     let ctx = simple_context();
     let template = r#"# {{package.name}} v{{package.version}}
@@ -268,7 +258,6 @@ fn test_render_crate_table_empty() {
 }
 
 #[test]
-// [verify docgen.helper.crate-table]
 fn test_render_crate_table_links() {
     let ctx = simple_context();
     let output = render_docs("{{crate-table}}", &ctx).unwrap();
@@ -296,7 +285,6 @@ fn test_render_no_html_escaping() {
 // ================================================================
 
 #[test]
-// [verify docgen.template.handlebars]
 fn test_full_pipeline_basic() {
     let spec = parse_fixture("basic-battery-pack");
     let descriptions = mock_descriptions();
@@ -312,7 +300,6 @@ fn test_full_pipeline_basic() {
 // ================================================================
 
 #[test]
-// [verify docgen.build.lib-include]
 fn test_template_lib_rs_includes_generated_docs() {
     // True by construction: the `cargo bp new` template emits a lib.rs
     // containing `#![doc = include_str!(concat!(env!("OUT_DIR"), "/docs.md"))]`.
@@ -329,7 +316,6 @@ fn test_template_lib_rs_includes_generated_docs() {
 }
 
 #[test]
-// [verify docgen.helper.crate-table-update]
 fn test_crate_table_update_is_automatic() {
     // Documentation-only test. The spec says updating bphelper must
     // automatically update table rendering for all battery packs.
@@ -354,8 +340,6 @@ fn test_crate_table_update_is_automatic() {
 // ================================================================
 
 #[test]
-// [verify docgen.template.handlebars]
-// [verify docgen.hidden.excluded]
 fn test_full_pipeline_fancy() {
     let spec = parse_fixture("fancy-battery-pack");
     let descriptions = mock_descriptions();
@@ -392,7 +376,6 @@ fn setup_docgen_dir(manifest: &str, template: &str, readme: Option<&str>) -> tem
 }
 
 #[test]
-// [verify docgen.build.trigger]
 fn test_generate_docs_writes_output_file() {
     let fixture = fixtures_dir().join("basic-battery-pack/Cargo.toml");
     let manifest = std::fs::read_to_string(&fixture).unwrap();
@@ -423,7 +406,6 @@ fn test_generate_docs_writes_output_file() {
 }
 
 #[test]
-// [verify docgen.build.template]
 fn test_generate_docs_reads_template_from_manifest_dir() {
     let fixture = fixtures_dir().join("basic-battery-pack/Cargo.toml");
     let manifest = std::fs::read_to_string(&fixture).unwrap();
@@ -501,7 +483,6 @@ fn test_generate_docs_readme_optional() {
 }
 
 #[test]
-// [verify docgen.helper.crate-table-metadata]
 fn test_fetch_crate_descriptions_returns_workspace_packages() {
     // This test calls the real cargo metadata against our workspace.
     // It verifies that fetch_crate_descriptions() returns descriptions

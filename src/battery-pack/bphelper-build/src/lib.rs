@@ -38,11 +38,6 @@ pub enum Error {
 // ============================================================================
 
 /// Context for Handlebars template rendering.
-// [impl docgen.vars.crates]
-// [impl docgen.vars.features]
-// [impl docgen.vars.readme]
-// [impl docgen.vars.package]
-// [impl docgen.template.custom]
 #[derive(Debug, Serialize)]
 pub struct DocsContext {
     /// Non-hidden curated crates.
@@ -89,7 +84,6 @@ pub struct PackageInfo {
 ///
 /// This is a pure function with no I/O — all inputs are passed in.
 /// Hidden crates are excluded from the context.
-// [impl docgen.hidden.excluded]
 pub fn build_context(
     spec: &BatteryPackSpec,
     descriptions: &BTreeMap<String, String>,
@@ -134,9 +128,6 @@ pub fn build_context(
 ///
 /// Registers the `{{readme}}` and `{{crate-table}}` helpers.
 /// HTML escaping is disabled since we generate markdown.
-// [impl docgen.template.handlebars]
-// [impl docgen.helper.readme]
-// [impl docgen.helper.crate-table]
 pub fn render_docs(template: &str, context: &DocsContext) -> Result<String, Error> {
     let mut hbs = handlebars::Handlebars::new();
     hbs.set_strict_mode(false);
@@ -176,7 +167,6 @@ impl handlebars::HelperDef for ReadmeHelper {
 }
 
 /// Helper that expands `{{crate-table}}` to a markdown table of curated crates.
-// [impl docgen.helper.crate-table]
 struct CrateTableHelper;
 
 impl handlebars::HelperDef for CrateTableHelper {
@@ -237,8 +227,6 @@ impl handlebars::HelperDef for CrateTableHelper {
 /// Reads the battery pack's Cargo.toml, `docs.handlebars.md` template,
 /// and `README.md`, then renders the template and writes `docs.md`
 /// to `OUT_DIR`.
-// [impl docgen.build.trigger]
-// [impl docgen.build.template]
 pub fn generate_docs() -> Result<(), Error> {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").map_err(|_| {
         Error::Metadata("CARGO_MANIFEST_DIR not set — must be called from build.rs".into())
@@ -247,7 +235,6 @@ pub fn generate_docs() -> Result<(), Error> {
         .map_err(|_| Error::Metadata("OUT_DIR not set — must be called from build.rs".into()))?;
 
     // Fetch crate descriptions via cargo metadata.
-    // [impl docgen.helper.crate-table-metadata]
     let descriptions = fetch_crate_descriptions()?;
 
     generate_docs_from_dir(&manifest_dir, &out_dir, &descriptions)?;
@@ -264,8 +251,6 @@ pub fn generate_docs() -> Result<(), Error> {
 ///
 /// Reads Cargo.toml, `docs.handlebars.md`, and `README.md` from `manifest_dir`,
 /// then writes `docs.md` to `out_dir`.
-// [impl docgen.build.trigger]
-// [impl docgen.build.template]
 pub fn generate_docs_from_dir(
     manifest_dir: &str,
     out_dir: &str,
@@ -307,7 +292,6 @@ pub fn generate_docs_from_dir(
 }
 
 /// Fetch crate descriptions from cargo metadata.
-// [impl docgen.helper.crate-table-metadata]
 fn fetch_crate_descriptions() -> Result<BTreeMap<String, String>, Error> {
     let metadata = cargo_metadata::MetadataCommand::new()
         .exec()

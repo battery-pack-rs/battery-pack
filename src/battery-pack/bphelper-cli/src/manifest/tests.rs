@@ -31,7 +31,6 @@ fn fixtures_dir() -> PathBuf {
 // manifest.register.location — registrations in [*.metadata.battery-pack]
 // ============================================================================
 
-// [verify manifest.register.location]
 #[test]
 fn register_location_package_metadata() {
     // Battery pack registrations must be stored in package.metadata.battery-pack
@@ -51,7 +50,6 @@ basic-battery-pack = "0.1.0"
     assert_eq!(names, vec!["basic-battery-pack"]);
 }
 
-// [verify manifest.register.location]
 #[test]
 fn register_location_finds_battery_packs_in_build_deps() {
     // find_installed_bp_names scans [build-dependencies] for battery packs
@@ -76,7 +74,6 @@ serde = "1"
 // manifest.register.format — key-value pair with name and version string
 // ============================================================================
 
-// [verify manifest.register.format]
 #[test]
 fn register_format_key_value_pair() {
     // Each registration is a key-value pair: name = "version"
@@ -98,7 +95,6 @@ basic-battery-pack = { version = "0.1.0", features = ["default"] }
 // manifest.features.storage — without features key, default is active
 // ============================================================================
 
-// [verify manifest.features.storage]
 #[test]
 fn features_default_implicit_when_no_features_key() {
     // When there is no features key at all, default is implicitly active
@@ -115,7 +111,6 @@ basic-battery-pack = "0.1.0"
     assert_eq!(features, BTreeSet::from(["default".to_string()]));
 }
 
-// [verify manifest.features.storage]
 #[test]
 fn features_default_implicit_when_no_metadata() {
     // When there is no metadata at all, default is implicitly active
@@ -129,7 +124,6 @@ version = "0.1.0"
     assert_eq!(features, BTreeSet::from(["default".to_string()]));
 }
 
-// [verify manifest.features.storage]
 #[test]
 fn features_default_implicit_when_bp_not_registered() {
     // When the battery pack is not in metadata, default is implicitly active
@@ -150,7 +144,6 @@ other-battery-pack = "0.2.0"
 // manifest.features.storage — only default feature may use short form
 // ============================================================================
 
-// [verify manifest.features.storage]
 #[test]
 fn features_short_form_is_version_string() {
     // Short form: just a version string means only default feature is active
@@ -172,7 +165,6 @@ basic-battery-pack = "0.1.0"
 // manifest.features.storage — active features stored alongside registration
 // ============================================================================
 
-// [verify manifest.features.storage]
 #[test]
 fn features_storage_reads_explicit_features() {
     // Features are stored as a features array in the registration table
@@ -192,7 +184,6 @@ features = ["default", "indicators"]
     );
 }
 
-// [verify manifest.features.storage]
 #[test]
 fn features_storage_reads_single_feature() {
     let manifest = r#"
@@ -212,7 +203,6 @@ features = ["all-errors"]
 // manifest.deps.add — add to correct dependency section
 // ============================================================================
 
-// [verify manifest.deps.add]
 #[test]
 fn deps_add_simple_version() {
     // When a crate has no features, add as simple version string
@@ -230,7 +220,6 @@ fn deps_add_simple_version() {
     assert_eq!(value.as_str().unwrap(), "1.0");
 }
 
-// [verify manifest.deps.add]
 #[test]
 fn deps_add_does_not_add_to_wrong_key() {
     // add_dep_to_table only adds to the given table; the caller
@@ -253,7 +242,6 @@ fn deps_add_does_not_add_to_wrong_key() {
 // manifest.deps.version-features — entry must include version and features
 // ============================================================================
 
-// [verify manifest.deps.version-features]
 #[test]
 fn deps_version_features_included() {
     // When a crate has features, the entry must include both version and features
@@ -276,7 +264,6 @@ fn deps_version_features_included() {
     assert_eq!(feat_strs, vec!["derive", "env"]);
 }
 
-// [verify manifest.deps.version-features]
 #[test]
 fn deps_version_features_empty_features_uses_simple_string() {
     // When features is empty, use simple version string format
@@ -303,7 +290,6 @@ fn deps_version_features_empty_features_uses_simple_string() {
 // manifest.deps.workspace — add to workspace.dependencies and reference
 // ============================================================================
 
-// [verify manifest.deps.workspace]
 #[test]
 fn deps_workspace_adds_to_workspace_deps_table() {
     // In workspace mode, deps are added to a workspace.dependencies table,
@@ -343,7 +329,6 @@ fn deps_workspace_adds_to_workspace_deps_table() {
 // manifest.deps.no-workspace — non-workspace adds directly with full spec
 // ============================================================================
 
-// [verify manifest.deps.no-workspace]
 #[test]
 fn deps_no_workspace_adds_directly() {
     // In non-workspace mode, deps are added directly with version and features
@@ -360,7 +345,6 @@ fn deps_no_workspace_adds_directly() {
     assert_eq!(table.get("thiserror").unwrap().as_str().unwrap(), "2");
 }
 
-// [verify manifest.deps.no-workspace]
 #[test]
 fn deps_no_workspace_adds_with_features() {
     let mut table = toml_edit::Table::new();
@@ -383,7 +367,6 @@ fn deps_no_workspace_adds_with_features() {
 // manifest.deps.existing — must not overwrite, only add missing features
 // ============================================================================
 
-// [verify manifest.deps.existing]
 #[test]
 fn deps_existing_does_not_overwrite_version() {
     // sync_dep_in_table updates version when behind but the key point is
@@ -407,7 +390,6 @@ fn deps_existing_does_not_overwrite_version() {
     assert_eq!(table.get("anyhow").unwrap().as_str().unwrap(), "1.0.80");
 }
 
-// [verify manifest.deps.existing]
 #[test]
 fn deps_existing_adds_missing_features() {
     // sync_dep_in_table must add missing features without removing existing ones
@@ -432,7 +414,6 @@ fn deps_existing_adds_missing_features() {
     assert!(feat_strs.contains(&"env"), "new feature added");
 }
 
-// [verify manifest.deps.existing]
 #[test]
 fn deps_existing_preserves_user_features() {
     // User has extra features that the battery pack doesn't specify;
@@ -464,7 +445,6 @@ fn deps_existing_preserves_user_features() {
     );
 }
 
-// [verify manifest.deps.existing]
 #[test]
 fn deps_existing_no_change_when_up_to_date() {
     let toml_str = r#"anyhow = "1""#;
@@ -486,7 +466,6 @@ fn deps_existing_no_change_when_up_to_date() {
 // manifest.deps.add — dep_kind determines correct section
 // ============================================================================
 
-// [verify manifest.deps.add]
 #[test]
 fn deps_add_respects_dep_kind_in_spec() {
     // add_dep_to_table doesn't choose the section — the caller does.
@@ -518,8 +497,6 @@ fn deps_add_respects_dep_kind_in_spec() {
 // Integration: parse fixture + add deps to a fresh Cargo.toml
 // ============================================================================
 
-// [verify manifest.deps.add]
-// [verify manifest.deps.version-features]
 #[test]
 fn integration_add_basic_fixture_deps_to_table() {
     // Parse the basic-battery-pack fixture and add its default crates
@@ -546,8 +523,6 @@ fn integration_add_basic_fixture_deps_to_table() {
     assert_eq!(table.get("thiserror").unwrap().as_str().unwrap(), "2");
 }
 
-// [verify manifest.deps.add]
-// [verify manifest.deps.version-features]
 #[test]
 fn integration_add_fancy_fixture_deps_to_table() {
     // Parse the fancy-battery-pack fixture and add its default crates
@@ -576,8 +551,6 @@ fn integration_add_fancy_fixture_deps_to_table() {
     assert_eq!(table.get("dialoguer").unwrap().as_str().unwrap(), "0.11");
 }
 
-// [verify manifest.deps.add]
-// [verify manifest.deps.version-features]
 #[test]
 fn integration_add_fancy_fixture_with_indicators_feature() {
     // Parse the fancy-battery-pack and resolve with indicators feature
@@ -604,8 +577,6 @@ fn integration_add_fancy_fixture_with_indicators_feature() {
 // manifest.register.format — round-trip: write metadata then read it back
 // ============================================================================
 
-// [verify manifest.register.format]
-// [verify manifest.features.storage]
 #[test]
 fn register_format_roundtrip_with_features() {
     // Verify that a Cargo.toml with inline-table features can be read back correctly.
@@ -624,7 +595,6 @@ basic-battery-pack = { features = ["default", "all-errors"] }
     );
 }
 
-// [verify manifest.features.storage]
 #[test]
 fn register_format_roundtrip_with_dotted_subtable() {
     // The old dotted sub-table format must still be readable.
@@ -643,7 +613,6 @@ features = ["default", "all-errors"]
     );
 }
 
-// [verify manifest.register.format]
 #[test]
 fn register_format_multiple_battery_packs() {
     // Multiple battery packs can be registered simultaneously
@@ -680,7 +649,6 @@ error-battery-pack = "0.4.0"
 // Sync: adding a dep that doesn't exist yet
 // ============================================================================
 
-// [verify manifest.deps.existing]
 #[test]
 fn sync_adds_missing_dep() {
     let mut table = toml_edit::Table::new();
@@ -698,7 +666,6 @@ fn sync_adds_missing_dep() {
     assert_eq!(table.get("anyhow").unwrap().as_str().unwrap(), "1");
 }
 
-// [verify manifest.deps.existing]
 #[test]
 fn sync_converts_simple_string_to_table_when_adding_features() {
     // If user has `anyhow = "1"` and we need to add features,
@@ -732,7 +699,6 @@ fn sync_converts_simple_string_to_table_when_adding_features() {
 // Workspace metadata reading — read_active_features_ws
 // ============================================================================
 
-// [verify manifest.register.workspace-default]
 #[test]
 fn read_active_features_from_workspace_metadata() {
     // When battery-pack metadata lives in workspace.metadata, read_active_features_ws
@@ -752,7 +718,6 @@ features = ["default", "indicators"]
     );
 }
 
-// [verify manifest.register.workspace-default]
 #[test]
 fn read_active_features_ws_fallback_to_default() {
     // When workspace.metadata.battery-pack exists but the specific battery pack
@@ -769,7 +734,6 @@ features = ["default"]
     assert_eq!(features, BTreeSet::from(["default".to_string()]));
 }
 
-// [verify manifest.register.workspace-default]
 #[test]
 fn read_active_features_ws_no_metadata_at_all() {
     // When workspace Cargo.toml has no metadata section at all, default is returned.
@@ -782,7 +746,6 @@ members = ["my-app"]
     assert_eq!(features, BTreeSet::from(["default".to_string()]));
 }
 
-// [verify manifest.register.both-levels]
 #[test]
 fn read_active_features_ws_multiple_battery_packs() {
     // Multiple battery packs can be registered in workspace metadata.
@@ -888,7 +851,6 @@ fn read_features(doc: &DocumentMut, dep_name: &str) -> Vec<String> {
 // manifest.sync.version-bump
 // ---------------------------------------------------------------------------
 
-// [verify manifest.sync.version-bump]
 #[test]
 fn version_bump_simple_string() {
     let mut doc = parse_deps(
@@ -903,7 +865,6 @@ serde = "1.0"
     assert_eq!(read_version(&doc, "serde"), "1.2");
 }
 
-// [verify manifest.sync.version-bump]
 #[test]
 fn version_bump_inline_table() {
     let mut doc = parse_deps(
@@ -918,7 +879,6 @@ serde = { version = "1.0", features = ["derive"] }
     assert_eq!(read_version(&doc, "serde"), "1.2");
 }
 
-// [verify manifest.sync.version-bump]
 #[test]
 fn version_bump_full_semver() {
     let mut doc = parse_deps(
@@ -937,7 +897,6 @@ tokio = { version = "1.0.0", features = ["full"] }
 // manifest.sync.feature-add
 // ---------------------------------------------------------------------------
 
-// [verify manifest.sync.feature-add]
 #[test]
 fn feature_add_to_existing_inline_table() {
     let mut doc = parse_deps(
@@ -960,7 +919,6 @@ serde = { version = "1.0", features = ["derive"] }
     );
 }
 
-// [verify manifest.sync.feature-add]
 #[test]
 fn feature_add_converts_simple_string_to_table() {
     let mut doc = parse_deps(
@@ -984,7 +942,6 @@ serde = "1.0"
     );
 }
 
-// [verify manifest.sync.feature-add]
 #[test]
 fn no_change_when_features_already_present() {
     let mut doc = parse_deps(
@@ -1005,7 +962,6 @@ serde = { version = "1.0", features = ["derive"] }
 // manifest.sync.version-bump — must not downgrade
 // ---------------------------------------------------------------------------
 
-// [verify manifest.sync.version-bump]
 #[test]
 fn no_downgrade_simple_string() {
     let mut doc = parse_deps(
@@ -1024,7 +980,6 @@ serde = "2.0"
     );
 }
 
-// [verify manifest.sync.version-bump]
 #[test]
 fn no_downgrade_inline_table() {
     let mut doc = parse_deps(
@@ -1043,7 +998,6 @@ serde = { version = "2.0", features = ["derive"] }
     );
 }
 
-// [verify manifest.sync.version-bump]
 #[test]
 fn no_downgrade_full_semver() {
     let mut doc = parse_deps(
@@ -1062,7 +1016,6 @@ tokio = { version = "1.40.0", features = ["full"] }
     );
 }
 
-// [verify manifest.sync.version-bump]
 #[test]
 fn no_downgrade_when_adding_features() {
     // User has a newer version but battery pack recommends an older one with
@@ -1093,7 +1046,6 @@ serde = "2.0"
 // manifest.sync.feature-add — must not remove features
 // ---------------------------------------------------------------------------
 
-// [verify manifest.sync.feature-add]
 #[test]
 fn no_feature_remove_preserves_user_features() {
     let mut doc = parse_deps(
@@ -1120,7 +1072,6 @@ serde = { version = "1.0", features = ["derive", "custom-user-feature"] }
     );
 }
 
-// [verify manifest.sync.feature-add]
 #[test]
 fn no_feature_remove_when_adding_new_features() {
     let mut doc = parse_deps(
@@ -1153,8 +1104,6 @@ serde = { version = "1.0", features = ["derive", "custom-user-feature"] }
 // Combined scenarios
 // ---------------------------------------------------------------------------
 
-// [verify manifest.sync.version-bump]
-// [verify manifest.sync.feature-add]
 #[test]
 fn version_bump_and_feature_add_preserves_user_features() {
     let mut doc = parse_deps(
@@ -1180,7 +1129,6 @@ serde = { version = "1.0", features = ["derive", "my-extra"] }
 // Multi-line `dependencies.name` table format
 // ---------------------------------------------------------------------------
 
-// [verify manifest.sync.version-bump]
 #[test]
 fn version_bump_full_table() {
     let mut doc = parse_deps(
@@ -1196,7 +1144,6 @@ features = ["derive"]
     assert_eq!(read_version(&doc, "serde"), "1.5");
 }
 
-// [verify manifest.sync.version-bump]
 #[test]
 fn no_downgrade_full_table() {
     let mut doc = parse_deps(
@@ -1212,7 +1159,6 @@ features = ["derive"]
     assert_eq!(read_version(&doc, "serde"), "2.0");
 }
 
-// [verify manifest.sync.feature-add]
 #[test]
 fn feature_add_full_table() {
     let mut doc = parse_deps(
@@ -1230,7 +1176,6 @@ features = ["derive"]
     assert!(features.contains(&"rc".to_string()));
 }
 
-// [verify manifest.sync.feature-add]
 #[test]
 fn no_feature_remove_full_table() {
     let mut doc = parse_deps(
@@ -1286,7 +1231,6 @@ fn spec_with_features(version: &str, features: &[&str]) -> CrateSpec {
 // manifest.toml.preserve — comments survive mutations
 // ============================================================================
 
-// [verify manifest.toml.preserve]
 #[test]
 fn comments_survive_add_dep() {
     let input = "\
@@ -1335,7 +1279,6 @@ serde = { version = \"1\", features = [\"derive\"] }
     );
 }
 
-// [verify manifest.toml.preserve]
 #[test]
 fn comments_survive_sync_dep() {
     let input = "\
@@ -1367,7 +1310,6 @@ anyhow = \"1.0.0\"  # pinned for reasons
 // manifest.toml.preserve — ordering preserved after sync
 // ============================================================================
 
-// [verify manifest.toml.preserve]
 #[test]
 fn ordering_preserved_after_sync() {
     let input = "\
@@ -1400,7 +1342,6 @@ middle = \"3.0\"
     );
 }
 
-// [verify manifest.toml.preserve]
 #[test]
 fn ordering_preserved_after_add() {
     let input = "\
@@ -1429,7 +1370,6 @@ alpha = \"2.0\"
 // manifest.toml.preserve — blank lines and sections preserved
 // ============================================================================
 
-// [verify manifest.toml.preserve]
 #[test]
 fn blank_lines_and_sections_preserved() {
     let input = "\
@@ -1487,7 +1427,6 @@ assert_cmd = \"2\"
     );
 }
 
-// [verify manifest.toml.preserve]
 #[test]
 fn full_document_round_trip_with_multiple_sections() {
     let input = "\
@@ -1536,7 +1475,6 @@ pretty_assertions = \"1\"
 // manifest.toml.style — new entries use inline tables when features present
 // ============================================================================
 
-// [verify manifest.toml.style]
 #[test]
 fn add_dep_uses_plain_string_for_version_only() {
     let input = "\
@@ -1558,7 +1496,6 @@ existing = \"1.0\"
     );
 }
 
-// [verify manifest.toml.style]
 #[test]
 fn add_dep_uses_inline_table_for_features() {
     let input = "\
@@ -1590,8 +1527,6 @@ existing = { version = \"1.0\", features = [\"foo\"] }
 // manifest.toml.preserve + style — sync preserves inline table structure
 // ============================================================================
 
-// [verify manifest.toml.preserve]
-// [verify manifest.toml.style]
 #[test]
 fn sync_preserves_inline_table_format() {
     let input = "\
@@ -1623,8 +1558,6 @@ serde = { version = \"1.0.0\", features = [\"derive\"] }
     );
 }
 
-// [verify manifest.toml.preserve]
-// [verify manifest.toml.style]
 #[test]
 fn sync_adds_features_without_losing_existing() {
     let input = "\
@@ -1652,7 +1585,6 @@ serde = { version = \"1.0.0\", features = [\"derive\"] }
     );
 }
 
-// [verify manifest.toml.preserve]
 #[test]
 fn sync_no_change_when_already_current() {
     let input = "\

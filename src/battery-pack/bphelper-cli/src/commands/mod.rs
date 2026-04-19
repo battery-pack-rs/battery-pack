@@ -22,7 +22,6 @@ use crate::registry::{
     lookup_crate, resolve_crate_name, short_name,
 };
 
-// [impl cli.bare.help]
 #[derive(Parser)]
 #[command(name = "cargo-bp")]
 #[command(bin_name = "cargo")]
@@ -36,7 +35,6 @@ pub(crate) struct Cli {
 pub(crate) enum Commands {
     /// Battery pack commands
     Bp {
-        // [impl cli.source.subcommands]
         /// Use a local workspace as the battery pack source (replaces crates.io)
         #[arg(long)]
         crate_source: Option<PathBuf>,
@@ -58,7 +56,6 @@ pub(crate) enum BpCommands {
         name: Option<String>,
 
         /// Which template to use (defaults to first available, or prompts if multiple)
-        // [impl cli.new.template-flag]
         #[arg(long, short = 't')]
         template: Option<String>,
 
@@ -84,23 +81,18 @@ pub(crate) enum BpCommands {
         /// Specific crates to add from the battery pack (ignores defaults/features)
         crates: Vec<String>,
 
-        // [impl cli.add.features]
-        // [impl cli.add.features-multiple]
         /// Named features to enable (comma-separated or repeated)
         #[arg(long = "features", short = 'F', value_delimiter = ',')]
         features: Vec<String>,
 
-        // [impl cli.add.no-default-features]
         /// Skip the default crates; only add crates from named features
         #[arg(long)]
         no_default_features: bool,
 
-        // [impl cli.add.all-features]
         /// Add every crate the battery pack offers
         #[arg(long)]
         all_features: bool,
 
-        // [impl cli.add.target]
         /// Where to store the battery pack registration
         /// (workspace, package, or default)
         #[arg(long)]
@@ -113,7 +105,6 @@ pub(crate) enum BpCommands {
 
     /// Update dependencies from installed battery packs
     Sync {
-        // [impl cli.path.subcommands]
         /// Use a local path instead of downloading from crates.io
         #[arg(long)]
         path: Option<String>,
@@ -158,7 +149,6 @@ pub(crate) enum BpCommands {
     /// Show status of installed battery packs and version warnings
     #[command(visible_alias = "stat")]
     Status {
-        // [impl cli.path.subcommands]
         /// Use a local path instead of downloading from crates.io
         #[arg(long)]
         path: Option<String>,
@@ -172,7 +162,6 @@ pub(crate) enum BpCommands {
     },
 }
 
-// [impl cli.add.target]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub(crate) enum AddTarget {
     /// Register in `workspace.metadata.battery-pack`.
@@ -197,7 +186,6 @@ pub fn main() -> Result<()> {
                 Some(path) => CrateSource::Local(path),
                 None => CrateSource::Registry,
             };
-            // [impl cli.bare.tui]
             let Some(command) = command else {
                 if interactive {
                     return crate::tui::run_add(source);
@@ -253,13 +241,9 @@ pub fn main() -> Result<()> {
                     filter,
                     non_interactive,
                 } => {
-                    // [impl cli.list.interactive]
-                    // [impl cli.list.non-interactive]
                     if !non_interactive && interactive {
                         crate::tui::run_list(source, filter)
                     } else {
-                        // [impl cli.list.query]
-                        // [impl cli.list.filter]
                         print_battery_pack_list(&source, filter.as_deref())
                     }
                 }
@@ -268,8 +252,6 @@ pub fn main() -> Result<()> {
                     path,
                     non_interactive,
                 } => {
-                    // [impl cli.show.interactive]
-                    // [impl cli.show.non-interactive]
                     if !non_interactive && interactive {
                         crate::tui::run_show(&battery_pack, path.as_deref(), source)
                     } else {
@@ -291,11 +273,6 @@ pub fn main() -> Result<()> {
 // Implementation
 // ============================================================================
 
-// [impl cli.new.template]
-// [impl cli.new.name-flag]
-// [impl cli.new.name-prompt]
-// [impl cli.path.flag]
-// [impl cli.source.replace]
 fn new_from_battery_pack(
     battery_pack: &str,
     name: Option<String>,
@@ -363,12 +340,6 @@ pub(crate) enum ResolvedAdd {
 ///
 /// When `specific_crates` is non-empty, unknown crate names are reported
 /// to stderr and skipped; valid ones proceed.
-// [impl cli.add.specific-crates]
-// [impl cli.add.unknown-crate]
-// [impl cli.add.default-crates]
-// [impl cli.add.features]
-// [impl cli.add.no-default-features]
-// [impl cli.add.all-features]
 pub(crate) fn resolve_add_crates(
     bp_spec: &bphelper_manifest::BatteryPackSpec,
     bp_name: &str,
@@ -397,7 +368,6 @@ pub(crate) fn resolve_add_crates(
     }
 
     if all_features {
-        // [impl format.hidden.effect]
         return ResolvedAdd::Crates {
             active_features: BTreeSet::from(["all".to_string()]),
             crates: bp_spec.resolve_all_visible(),
@@ -436,15 +406,6 @@ pub(crate) fn resolve_add_crates(
     }
 }
 
-// [impl cli.add.register]
-// [impl cli.add.dep-kind]
-// [impl cli.add.specific-crates]
-// [impl cli.add.unknown-crate]
-// [impl manifest.register.location]
-// [impl manifest.register.format]
-// [impl manifest.features.storage]
-// [impl manifest.deps.add]
-// [impl manifest.deps.version-features]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn add_battery_pack(
     name: &str,
@@ -461,9 +422,6 @@ pub(crate) fn add_battery_pack(
 
     // Step 1: Read the battery pack spec WITHOUT modifying any manifests.
     // --path takes precedence over --crate-source.
-    // [impl cli.path.flag]
-    // [impl cli.path.no-resolve]
-    // [impl cli.source.replace]
     let (bp_version, bp_spec) = if let Some(local_path) = path {
         let manifest_path = Path::new(local_path).join("Cargo.toml");
         let manifest_content = std::fs::read_to_string(&manifest_path)
@@ -515,12 +473,10 @@ pub(crate) fn add_battery_pack(
     let user_manifest_path = find_user_manifest(project_dir)?;
     let user_manifest_content =
         std::fs::read_to_string(&user_manifest_path).context("Failed to read Cargo.toml")?;
-    // [impl manifest.toml.preserve]
     let mut user_doc: toml_edit::DocumentMut = user_manifest_content
         .parse()
         .context("Failed to parse Cargo.toml")?;
 
-    // [impl manifest.register.workspace-default]
     let workspace_manifest = find_workspace_manifest(&user_manifest_path)?;
 
     // Add battery pack to [build-dependencies]
@@ -549,7 +505,6 @@ pub(crate) fn add_battery_pack(
         }
     }
 
-    // [impl manifest.deps.workspace]
     // Add crate dependencies + workspace deps (including the battery pack itself).
     // Load workspace doc once; both deps and metadata are written to it before a
     // single flush at the end (avoids a double read-modify-write).
@@ -589,18 +544,11 @@ pub(crate) fn add_battery_pack(
             }
         }
 
-        // [impl cli.add.dep-kind]
         write_workspace_refs_by_kind(&mut user_doc, &crates_to_sync, false);
     } else {
-        // [impl manifest.deps.no-workspace]
-        // [impl cli.add.dep-kind]
         write_deps_by_kind(&mut user_doc, &crates_to_sync, false);
     }
 
-    // [impl manifest.register.location]
-    // [impl manifest.register.format]
-    // [impl manifest.features.storage]
-    // [impl cli.add.target]
     // Record active features — location depends on --target flag
     let use_workspace_metadata = match target {
         Some(AddTarget::Workspace) => true,
@@ -630,12 +578,10 @@ pub(crate) fn add_battery_pack(
 
     // Write workspace Cargo.toml once (deps + metadata combined)
     if let (Some(ws_path), Some(doc)) = (&workspace_manifest, &ws_doc) {
-        // [impl manifest.toml.preserve]
         std::fs::write(ws_path, doc.to_string()).context("Failed to write workspace Cargo.toml")?;
     }
 
     // Write the final Cargo.toml
-    // [impl manifest.toml.preserve]
     std::fs::write(&user_manifest_path, user_doc.to_string())
         .context("Failed to write Cargo.toml")?;
 
@@ -658,10 +604,6 @@ pub(crate) fn add_battery_pack(
     Ok(())
 }
 
-// [impl cli.sync.update-versions]
-// [impl cli.sync.add-features]
-// [impl cli.sync.add-crates]
-// [impl cli.source.subcommands]
 
 fn sync_battery_packs(project_dir: &Path, path: Option<&str>, source: &CrateSource) -> Result<()> {
     let user_manifest_path = find_user_manifest(project_dir)?;
@@ -675,7 +617,6 @@ fn sync_battery_packs(project_dir: &Path, path: Option<&str>, source: &CrateSour
         return Ok(());
     }
 
-    // [impl manifest.toml.preserve]
     let mut user_doc: toml_edit::DocumentMut = user_manifest_content
         .parse()
         .context("Failed to parse Cargo.toml")?;
@@ -692,15 +633,12 @@ fn sync_battery_packs(project_dir: &Path, path: Option<&str>, source: &CrateSour
         let active_features =
             read_active_features_from(&metadata_location, &user_manifest_content, bp_name);
 
-        // [impl format.hidden.effect]
         let expected = bp_spec.resolve_for_features(&active_features);
 
-        // [impl manifest.deps.workspace]
         // Sync each crate
         if let Some(ref ws_path) = workspace_manifest {
             let ws_content =
                 std::fs::read_to_string(ws_path).context("Failed to read workspace Cargo.toml")?;
-            // [impl manifest.toml.preserve]
             let mut ws_doc: toml_edit::DocumentMut = ws_content
                 .parse()
                 .context("Failed to parse workspace Cargo.toml")?;
@@ -715,17 +653,13 @@ fn sync_battery_packs(project_dir: &Path, path: Option<&str>, source: &CrateSour
                     }
                 }
             }
-            // [impl manifest.toml.preserve]
             std::fs::write(ws_path, ws_doc.to_string())
                 .context("Failed to write workspace Cargo.toml")?;
 
             // Ensure crate-level references exist in the correct sections
-            // [impl cli.add.dep-kind]
             let refs_added = write_workspace_refs_by_kind(&mut user_doc, &expected, true);
             total_changes += refs_added;
         } else {
-            // [impl manifest.deps.no-workspace]
-            // [impl cli.add.dep-kind]
             for (dep_name, dep_spec) in &expected {
                 let section = dep_kind_section(dep_spec.dep_kind);
                 let table =
@@ -744,7 +678,6 @@ fn sync_battery_packs(project_dir: &Path, path: Option<&str>, source: &CrateSour
         }
     }
 
-    // [impl manifest.toml.preserve]
     std::fs::write(&user_manifest_path, user_doc.to_string())
         .context("Failed to write Cargo.toml")?;
 
@@ -854,10 +787,8 @@ fn enable_feature(
         std::fs::write(ws_path, ws_doc.to_string())
             .context("Failed to write workspace Cargo.toml")?;
 
-        // [impl cli.add.dep-kind]
         write_workspace_refs_by_kind(&mut user_doc, &crates_to_sync, true);
     } else {
-        // [impl cli.add.dep-kind]
         write_deps_by_kind(&mut user_doc, &crates_to_sync, true);
     }
 
@@ -1167,8 +1098,6 @@ fn parse_template_metadata(
     Ok(spec.templates)
 }
 
-// [impl format.templates.selection]
-// [impl cli.new.template-select]
 pub(crate) fn resolve_template(
     templates: &BTreeMap<String, TemplateConfig>,
     requested: Option<&str>,
@@ -1365,7 +1294,6 @@ fn print_battery_pack_detail(name: &str, path: Option<&str>, source: &CrateSourc
         }
     }
 
-    // [impl format.examples.browsable]
     // Examples
     if !detail.examples.is_empty() {
         println!();
@@ -1400,11 +1328,6 @@ fn print_battery_pack_detail(name: &str, path: Option<&str>, source: &CrateSourc
 // Status command
 // ============================================================================
 
-// [impl cli.status.list]
-// [impl cli.status.version-warn]
-// [impl cli.status.no-project]
-// [impl cli.source.subcommands]
-// [impl cli.path.subcommands]
 fn status_battery_packs(
     project_dir: &Path,
     path: Option<&str>,
@@ -1412,7 +1335,6 @@ fn status_battery_packs(
 ) -> Result<()> {
     use console::style;
 
-    // [impl cli.status.no-project]
     let user_manifest_path =
         find_user_manifest(project_dir).context("are you inside a Rust project?")?;
     let user_manifest_content =
@@ -1448,7 +1370,6 @@ fn status_battery_packs(
     let mut any_warnings = false;
 
     for pack in &packs {
-        // [impl cli.status.list]
         println!(
             "{} ({})",
             style(&pack.short_name).bold(),
@@ -1464,7 +1385,6 @@ fn status_battery_packs(
                 continue;
             }
             if let Some(user_version) = user_versions.get(dep_name.as_str()) {
-                // [impl cli.status.version-warn]
                 if should_upgrade_version(user_version, &dep_spec.version) {
                     pack_warnings.push((
                         dep_name.as_str(),

@@ -123,7 +123,6 @@ fn make_detail(crates: &[&str], templates: &[&str], examples: &[&str]) -> Batter
 
 // --- CrateEntry ---
 
-/// [verify tui.installed.show-state]
 #[test]
 fn version_info_no_features() {
     let entry = CrateEntry {
@@ -139,7 +138,6 @@ fn version_info_no_features() {
     assert_eq!(entry.version_info(), "(1.0.0)");
 }
 
-/// [verify tui.installed.show-state]
 #[test]
 fn version_info_with_features() {
     let entry = CrateEntry {
@@ -155,8 +153,6 @@ fn version_info_with_features() {
     assert_eq!(entry.version_info(), "(1.0.0, features: derive, std)");
 }
 
-/// [verify tui.installed.dep-kind]
-/// [verify tui.installed.show-state]
 #[test]
 fn version_info_dev_dep() {
     let entry = CrateEntry {
@@ -172,8 +168,6 @@ fn version_info_dev_dep() {
     assert_eq!(entry.version_info(), "(1.0.0, dev)");
 }
 
-/// [verify tui.installed.dep-kind]
-/// [verify tui.installed.show-state]
 #[test]
 fn version_info_build_dep_with_features() {
     let entry = CrateEntry {
@@ -191,7 +185,6 @@ fn version_info_build_dep_with_features() {
 
 // --- InstalledState::toggle_selected ---
 
-/// [verify tui.installed.toggle-crate]
 #[test]
 fn toggle_selected_flips_entry() {
     let mut state = make_installed(vec![make_installed_pack(
@@ -213,7 +206,6 @@ fn toggle_selected_flips_entry() {
     assert!(state.packs[0].entries[0].enabled);
 }
 
-/// [verify tui.installed.toggle-crate]
 #[test]
 fn toggle_selected_targets_correct_entry_across_packs() {
     let mut state = make_installed(vec![
@@ -241,7 +233,6 @@ fn toggle_selected_targets_correct_entry_across_packs() {
     assert!(state.packs[0].entries[1].enabled); // tower unchanged
 }
 
-/// [verify tui.installed.features] (partial: verifies group isolation, not group-level toggling)
 #[test]
 fn toggle_only_affects_target_not_other_groups() {
     let mut state = make_installed(vec![make_installed_pack(
@@ -279,7 +270,6 @@ fn toggle_only_affects_target_not_other_groups() {
 
 // --- toggle constraint: feature dependencies ---
 
-/// [verify tui.installed.toggle-crate]
 #[test]
 fn toggle_off_prevented_when_required_by_other_feature() {
     // "axum" is in group "server" but also listed in the "networking" feature.
@@ -330,7 +320,6 @@ fn toggle_off_prevented_when_required_by_other_feature() {
     assert!(state.packs[0].entries[1].enabled); // still enabled
 }
 
-/// [verify tui.installed.toggle-crate]
 #[test]
 fn toggle_off_allowed_when_no_cross_feature_dependency() {
     // Crate in its own group with no cross-feature memberships.
@@ -343,7 +332,6 @@ fn toggle_off_allowed_when_no_cross_feature_dependency() {
     assert!(!state.packs[0].entries[0].enabled); // toggled off successfully
 }
 
-/// [verify tui.installed.toggle-crate]
 #[test]
 fn toggle_on_always_allowed_even_with_features() {
     // Enabling a crate is always allowed, regardless of feature constraints.
@@ -387,7 +375,6 @@ fn toggle_on_always_allowed_even_with_features() {
 
 // --- dep_kind cycling ---
 
-/// [verify tui.installed.dep-kind]
 #[test]
 fn cycle_dep_kind_cycles_through_all_variants() {
     let mut state = make_installed(vec![make_installed_pack(
@@ -407,7 +394,6 @@ fn cycle_dep_kind_cycles_through_all_variants() {
     assert_eq!(state.packs[0].entries[0].dep_kind, DepKind::Normal);
 }
 
-/// [verify tui.installed.dep-kind]
 #[test]
 fn cycle_dep_kind_targets_selected_entry() {
     let mut state = make_installed(vec![make_installed_pack(
@@ -425,7 +411,6 @@ fn cycle_dep_kind_targets_selected_entry() {
     assert_eq!(state.packs[0].entries[1].dep_kind, DepKind::Dev); // tower cycled
 }
 
-/// [verify tui.installed.dep-kind]
 #[test]
 fn dep_kind_change_detected_by_has_changes() {
     let mut state = make_installed(vec![make_installed_pack(
@@ -465,7 +450,6 @@ fn installed_navigation_wraps() {
 
 // --- InstalledState::has_changes / has_new_packs ---
 
-/// [verify tui.nav.exit]
 #[test]
 fn has_changes_detects_toggled_entries() {
     let state = make_installed(vec![make_installed_pack(
@@ -490,7 +474,6 @@ fn has_changes_false_when_unchanged() {
     assert!(!state.has_changes());
 }
 
-/// [verify tui.browse.add]
 #[test]
 fn has_new_packs_detects_added_from_browse() {
     let state = make_installed(vec![make_installed_pack(
@@ -518,7 +501,6 @@ fn has_new_packs_false_when_none_enabled() {
 
 // --- InstalledState::collect_changes ---
 
-/// [verify tui.nav.exit]
 #[test]
 fn collect_changes_new_pack() {
     let state = make_installed(vec![make_installed_pack(
@@ -535,7 +517,6 @@ fn collect_changes_new_pack() {
     assert_data_eq!(actual, snapbox::file![_]);
 }
 
-/// [verify tui.nav.exit]
 #[test]
 fn collect_changes_update_existing_pack() {
     let state = make_installed(vec![make_installed_pack(
@@ -552,7 +533,6 @@ fn collect_changes_update_existing_pack() {
     assert_data_eq!(actual, snapbox::file![_]);
 }
 
-/// [verify tui.nav.exit]
 #[test]
 fn collect_changes_skips_unchanged_packs() {
     let state = make_installed(vec![
@@ -578,7 +558,6 @@ fn collect_changes_skips_unchanged_packs() {
 
 // --- DetailScreen ---
 
-/// [verify tui.browse.detail]
 #[test]
 fn detail_selectable_items_includes_all_sections() {
     let detail = make_detail(
@@ -599,7 +578,6 @@ fn detail_selectable_items_includes_all_sections() {
     assert_data_eq!(actual, snapbox::file![_]);
 }
 
-/// [verify tui.browse.detail]
 #[test]
 fn detail_navigation_wraps() {
     let detail = make_detail(&["serde"], &[], &[]);
@@ -636,7 +614,6 @@ fn detail_selected_item_returns_correct_item() {
 
 // --- ExpandedPack ---
 
-/// [verify tui.browse.add]
 #[test]
 fn expanded_pack_toggle_and_navigate() {
     let mut expanded = ExpandedPack {
@@ -671,7 +648,6 @@ fn expanded_pack_toggle_and_navigate() {
 
 // --- build_installed_state (integration with BatteryPackSpec) ---
 
-/// [verify tui.installed.show-state]
 #[test]
 fn build_installed_state_from_spec() {
     let spec = make_spec(
@@ -706,7 +682,6 @@ fn build_installed_state_from_spec() {
     assert_eq!(tokio_entry.features, vec!["full"]);
 }
 
-/// [verify tui.browse.add]
 #[test]
 fn build_expanded_pack_defaults_prechecked() {
     let spec = make_spec(
@@ -818,7 +793,6 @@ fn unwrap_detail_screen(app: &App) -> &DetailScreen {
     }
 }
 
-/// [verify tui.installed.show-state]
 #[test]
 fn build_installed_state_partial_features() {
     let spec = make_spec(
@@ -865,7 +839,6 @@ fn build_installed_state_partial_features() {
 
 // --- List screen navigation ---
 
-/// [verify tui.nav.keyboard]
 #[test]
 fn list_j_k_navigation() {
     let mut list_state = ListState::default();
@@ -886,7 +859,6 @@ fn list_j_k_navigation() {
     assert_eq!(unwrap_list_screen(&app).list_state.selected(), Some(0));
 }
 
-/// [verify tui.nav.keyboard]
 #[test]
 fn list_q_quits() {
     let mut list_state = ListState::default();
@@ -901,7 +873,6 @@ fn list_q_quits() {
     assert!(app.should_quit);
 }
 
-/// [verify tui.nav.keyboard]
 #[test]
 fn list_esc_quits() {
     let mut list_state = ListState::default();
@@ -918,7 +889,6 @@ fn list_esc_quits() {
 
 // --- Detail screen key handling ---
 
-/// [verify tui.nav.keyboard]
 #[test]
 fn detail_tab_and_arrows_navigate() {
     let detail = make_detail(&["serde", "tokio"], &[], &[]);
@@ -941,7 +911,6 @@ fn detail_tab_and_arrows_navigate() {
     assert_eq!(unwrap_detail_screen(&app).selected_index, 1);
 }
 
-/// [verify tui.nav.keyboard]
 #[test]
 fn detail_esc_when_came_from_list_goes_back() {
     let detail = make_detail(&["serde"], &[], &[]);
@@ -957,7 +926,6 @@ fn detail_esc_when_came_from_list_goes_back() {
     assert!(!app.should_quit);
 }
 
-/// [verify tui.nav.keyboard]
 #[test]
 fn detail_esc_when_not_from_list_quits() {
     let detail = make_detail(&["serde"], &[], &[]);
@@ -971,7 +939,6 @@ fn detail_esc_when_not_from_list_quits() {
     assert!(app.should_quit);
 }
 
-/// [verify tui.nav.keyboard]
 #[test]
 fn detail_q_quits() {
     let detail = make_detail(&["serde"], &[], &[]);
@@ -987,7 +954,6 @@ fn detail_q_quits() {
 
 // --- Add screen: Installed tab ---
 
-/// [verify tui.nav.keyboard]
 #[test]
 fn add_installed_space_toggles() {
     let mut app = make_app(Screen::Add(make_add_screen(vec![make_installed_pack(
@@ -1002,7 +968,6 @@ fn add_installed_space_toggles() {
     assert!(!unwrap_add_screen(&app).installed.packs[0].entries[0].enabled);
 }
 
-/// [verify tui.nav.keyboard]
 #[test]
 fn add_installed_j_k_navigates() {
     let mut app = make_app(Screen::Add(make_add_screen(vec![make_installed_pack(
@@ -1021,7 +986,6 @@ fn add_installed_j_k_navigates() {
     assert_eq!(unwrap_add_screen(&app).installed.selected_index, 0);
 }
 
-/// [verify tui.nav.cancel]
 #[test]
 fn add_installed_esc_quits_without_changes() {
     let mut app = make_app(Screen::Add(make_add_screen(vec![make_installed_pack(
@@ -1041,7 +1005,6 @@ fn add_installed_esc_quits_without_changes() {
     );
 }
 
-/// [verify tui.nav.exit]
 #[test]
 fn add_installed_enter_applies_when_changes_exist() {
     let mut app = make_app(Screen::Add(make_add_screen(vec![make_installed_pack(
@@ -1059,7 +1022,6 @@ fn add_installed_enter_applies_when_changes_exist() {
     assert_eq!(state.changes.as_ref().unwrap().len(), 1);
 }
 
-/// [verify tui.nav.exit]
 #[test]
 fn add_installed_enter_does_nothing_when_no_changes() {
     let mut app = make_app(Screen::Add(make_add_screen(vec![make_installed_pack(
@@ -1073,7 +1035,6 @@ fn add_installed_enter_does_nothing_when_no_changes() {
 
 // --- Add screen: Browse tab ---
 
-/// [verify tui.browse.search]
 #[test]
 fn add_browse_search_mode() {
     let mut add_screen = make_add_screen(vec![]);
@@ -1100,7 +1061,6 @@ fn add_browse_search_mode() {
     assert!(!unwrap_add_screen(&app).browse.searching);
 }
 
-/// [verify tui.nav.keyboard]
 #[test]
 fn add_browse_tab_switches_to_installed() {
     let mut add_screen = make_add_screen(vec![make_installed_pack(
@@ -1117,7 +1077,6 @@ fn add_browse_tab_switches_to_installed() {
 
 // --- Add screen: Browse expanded pack ---
 
-/// [verify tui.browse.add]
 #[test]
 fn add_browse_expanded_confirm_moves_to_installed() {
     let mut add_screen = make_add_screen(vec![]);
@@ -1144,7 +1103,6 @@ fn add_browse_expanded_confirm_moves_to_installed() {
     assert_eq!(state.installed.packs[0].short_name, "web");
 }
 
-/// [verify tui.browse.add]
 #[test]
 fn add_browse_expanded_esc_cancels() {
     let mut add_screen = make_add_screen(vec![]);
@@ -1161,7 +1119,6 @@ fn add_browse_expanded_esc_cancels() {
     assert!(state.installed.packs.is_empty()); // not added
 }
 
-/// [verify tui.browse.add]
 #[test]
 fn add_browse_expanded_no_selection_discards() {
     let mut add_screen = make_add_screen(vec![]);
@@ -1209,7 +1166,6 @@ fn render_list_to_string(state: &mut ListScreen, width: u16, height: u16) -> Str
     render_to_string(width, height, |frame| render_list(frame, state))
 }
 
-/// [verify tui.main.no-project] (partial: tests empty-state message, not greyed-out styling)
 /// When no packs are installed, the installed tab shows a message.
 #[test]
 fn render_no_packs_installed_message() {
@@ -1223,7 +1179,6 @@ fn render_no_packs_installed_message() {
     );
 }
 
-/// [verify tui.installed.list-packs]
 /// Pack headers show name and version.
 #[test]
 fn render_installed_pack_headers() {
@@ -1241,8 +1196,6 @@ fn render_installed_pack_headers() {
     assert!(output.contains("db"), "Expected 'db' in:\n{}", output);
 }
 
-/// [verify tui.installed.list-crates]
-/// [verify tui.installed.show-state]
 /// Crate entries show checkbox ([x]/[ ]), name, and version info.
 #[test]
 fn render_installed_crate_entries_with_checkboxes() {
@@ -1273,7 +1226,6 @@ fn render_installed_crate_entries_with_checkboxes() {
     );
 }
 
-/// [verify tui.browse.list]
 /// Browse list shows name, version, and description.
 #[test]
 fn render_browse_list_shows_name_version_description() {
@@ -1306,7 +1258,6 @@ fn render_browse_list_shows_name_version_description() {
     );
 }
 
-/// [verify tui.nav.keyboard]
 #[test]
 fn add_browse_expanded_space_toggles() {
     let mut add_screen = make_add_screen(vec![]);
@@ -1336,7 +1287,6 @@ fn render_app_to_string(app: &mut App, width: u16, height: u16) -> String {
     render_to_string(width, height, |frame| app.render(frame))
 }
 
-/// [verify tui.main.sections]
 /// The Add screen tab bar renders both "Installed" and "Browse" sections.
 /// Note: the spec lists three sections (Installed, Browse, New project),
 /// but New project is accessed from the Browse detail view rather than
@@ -1360,7 +1310,6 @@ fn render_add_screen_shows_section_tabs() {
     );
 }
 
-/// [verify tui.main.always-available]
 /// The App can be constructed and rendered without any I/O. The
 /// constructors create a Loading screen (pure state), and rendering
 /// that screen produces a loading message — no filesystem or network
@@ -1379,7 +1328,6 @@ fn app_renders_loading_screen_without_io() {
     );
 }
 
-/// [verify tui.main.context-detection]
 /// Context detection (finding Cargo.toml, walking up to workspace root)
 /// is delegated to cargo_metadata inside process_loading(). The TUI does
 /// not implement its own project discovery — it calls load_installed_packs()
@@ -1390,7 +1338,6 @@ fn context_detection_delegated_to_cargo_metadata() {
     // Intentionally empty — see doc comment.
 }
 
-/// [verify tui.network.non-blocking]
 /// Non-blocking network behavior is an architectural property of the
 /// event loop: process_loading() runs at the top of each iteration,
 /// and event::poll() uses a 100ms timeout so the UI stays responsive.
@@ -1400,7 +1347,6 @@ fn network_non_blocking_is_architectural() {
     // Intentionally empty — see doc comment.
 }
 
-/// [verify tui.network.error]
 /// Error screen renders with error message and key hints.
 #[test]
 fn error_screen_renders_message() {
@@ -1420,7 +1366,6 @@ fn error_screen_renders_message() {
     );
 }
 
-/// [verify tui.network.error]
 /// Enter key retries by transitioning back to Loading screen with
 /// the original target (including filter) preserved.
 #[test]
@@ -1444,7 +1389,6 @@ fn error_screen_enter_retries() {
     assert_eq!(filter.as_deref(), Some("test"));
 }
 
-/// [verify tui.network.error]
 /// 'r' key also retries.
 #[test]
 fn error_screen_r_retries() {
@@ -1457,7 +1401,6 @@ fn error_screen_r_retries() {
     assert!(matches!(app.screen, Screen::Loading(_)));
 }
 
-/// [verify tui.network.error]
 /// Esc quits from error screen.
 #[test]
 fn error_screen_esc_quits() {
@@ -1470,7 +1413,6 @@ fn error_screen_esc_quits() {
     assert!(app.should_quit);
 }
 
-/// [verify tui.network.error]
 /// 'q' quits from error screen.
 #[test]
 fn error_screen_q_quits() {
@@ -1483,7 +1425,6 @@ fn error_screen_q_quits() {
     assert!(app.should_quit);
 }
 
-/// [verify tui.new.template-list]
 /// Template listing is shown in the DetailScreen's selectable items
 /// (already tested by detail_selectable_items_includes_all_sections).
 /// The "from crates.io" aspect requires a network fetch in
@@ -1494,7 +1435,6 @@ fn template_list_covered_by_detail_screen_tests() {
     // Real coverage: detail_selectable_items_includes_all_sections.
 }
 
-/// [verify tui.new.create]
 /// Project creation shells out to `cargo bp new` via
 /// PendingAction::NewProject in execute_action(). This spawns an
 /// external process (`cargo bp new`), which is not unit-testable.
