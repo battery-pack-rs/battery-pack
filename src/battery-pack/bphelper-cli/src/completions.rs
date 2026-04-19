@@ -34,34 +34,31 @@ fn find_context_battery_pack() -> Option<String> {
 }
 
 pub fn installed_packs(_current: &OsStr) -> Vec<CompletionCandidate> {
-    let mut names = vec![];
     let Ok(dir) = std::env::current_dir() else {
-        return names;
+        return vec![];
     };
 
-    if let Some(manifest_path) = crate::manifest::find_user_manifest(&dir).ok() {
-        if let Ok(content) = fs::read_to_string(manifest_path) {
-            if let Ok(installed) = crate::manifest::find_installed_bp_names(&content) {
-                for name in installed {
-                    names.push(CompletionCandidate::new(name));
-                }
-            }
-        }
-    }
-    names
+    crate::manifest::find_user_manifest(&dir)
+        .and_then(|path| fs::read_to_string(path).map_err(anyhow::Error::from))
+        .and_then(|content| crate::manifest::find_installed_bp_names(&content))
+        .map(|installed| {
+            installed
+                .into_iter()
+                .map(CompletionCandidate::new)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 pub fn registry_and_local_packs(_current: &OsStr) -> Vec<CompletionCandidate> {
     let mut names = BTreeSet::new();
 
     if let Ok(dir) = std::env::current_dir() {
-        if let Some(manifest_path) = crate::manifest::find_user_manifest(&dir).ok() {
-            if let Ok(content) = fs::read_to_string(manifest_path) {
-                if let Ok(installed) = crate::manifest::find_installed_bp_names(&content) {
-                    names.extend(installed);
-                }
-            }
-        }
+        let installed = crate::manifest::find_user_manifest(&dir)
+            .and_then(|path| fs::read_to_string(path).map_err(anyhow::Error::from))
+            .and_then(|content| crate::manifest::find_installed_bp_names(&content))
+            .unwrap_or_default();
+        names.extend(installed);
     }
 
     let cache_file = get_cache_dir().join("registry_packs.json");
