@@ -58,7 +58,7 @@ pub mod build {
 /// ```
 #[cfg(feature = "cli")]
 pub mod testing {
-    pub use bphelper_cli::validate_templates;
+    pub use bphelper_cli::{PreviewBuilder, PreviewFile, validate_templates};
 }
 
 #[cfg(test)]
