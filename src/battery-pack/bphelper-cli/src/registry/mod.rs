@@ -505,7 +505,7 @@ pub(crate) fn update_cache() -> Result<()> {
 
     let cache_dir = crate::completions::get_cache_dir();
     std::fs::create_dir_all(&cache_dir)?;
-    
+
     let cache_file = cache_dir.join("registry_packs.json");
     let content = serde_json::to_string(&pack_names)?;
     std::fs::write(&cache_file, content)?;

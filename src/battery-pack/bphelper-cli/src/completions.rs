@@ -1,5 +1,7 @@
 use clap_complete::CompletionCandidate;
+use std::collections::BTreeSet;
 use std::ffi::OsStr;
+use std::fs;
 use std::path::PathBuf;
 
 pub(crate) fn get_cache_dir() -> PathBuf {
@@ -33,13 +35,15 @@ fn find_context_battery_pack() -> Option<String> {
 
 pub fn installed_packs(_current: &OsStr) -> Vec<CompletionCandidate> {
     let mut names = vec![];
-    if let Ok(dir) = std::env::current_dir() {
-        if let Ok(manifest_path) = crate::manifest::find_user_manifest(&dir) {
-            if let Ok(content) = std::fs::read_to_string(&manifest_path) {
-                if let Ok(installed) = crate::manifest::find_installed_bp_names(&content) {
-                    for name in installed {
-                        names.push(CompletionCandidate::new(name));
-                    }
+    let Ok(dir) = std::env::current_dir() else {
+        return names;
+    };
+
+    if let Some(manifest_path) = crate::manifest::find_user_manifest(&dir).ok() {
+        if let Ok(content) = fs::read_to_string(manifest_path) {
+            if let Ok(installed) = crate::manifest::find_installed_bp_names(&content) {
+                for name in installed {
+                    names.push(CompletionCandidate::new(name));
                 }
             }
         }
@@ -48,22 +52,20 @@ pub fn installed_packs(_current: &OsStr) -> Vec<CompletionCandidate> {
 }
 
 pub fn registry_and_local_packs(_current: &OsStr) -> Vec<CompletionCandidate> {
-    let mut names = std::collections::BTreeSet::new();
+    let mut names = BTreeSet::new();
 
     if let Ok(dir) = std::env::current_dir() {
-        if let Ok(manifest_path) = crate::manifest::find_user_manifest(&dir) {
-            if let Ok(content) = std::fs::read_to_string(&manifest_path) {
+        if let Some(manifest_path) = crate::manifest::find_user_manifest(&dir).ok() {
+            if let Ok(content) = fs::read_to_string(manifest_path) {
                 if let Ok(installed) = crate::manifest::find_installed_bp_names(&content) {
-                    for name in installed {
-                        names.insert(name);
-                    }
+                    names.extend(installed);
                 }
             }
         }
     }
 
     let cache_file = get_cache_dir().join("registry_packs.json");
-    if let Ok(content) = std::fs::read_to_string(&cache_file) {
+    if let Ok(content) = fs::read_to_string(&cache_file) {
         if let Ok(packs) = serde_json::from_str::<Vec<String>>(&content) {
             for pack in packs {
                 if let Some(short) = pack.strip_suffix("-battery-pack") {
@@ -87,45 +89,42 @@ pub fn registry_and_local_packs(_current: &OsStr) -> Vec<CompletionCandidate> {
 
 fn get_cached_spec(pack_name: &str) -> Option<bphelper_manifest::BatteryPackSpec> {
     let spec_file = get_cache_dir().join(format!("{}_spec.toml", pack_name));
-    if let Ok(content) = std::fs::read_to_string(&spec_file) {
-        bphelper_manifest::parse_battery_pack(&content).ok()
-    } else {
-        None
-    }
+    let content = fs::read_to_string(spec_file).ok()?;
+    bphelper_manifest::parse_battery_pack(&content).ok()
 }
 
 pub fn templates(_current: &OsStr) -> Vec<CompletionCandidate> {
-    let mut names = vec![];
-    if let Some(pack) = find_context_battery_pack() {
-        if let Some(spec) = get_cached_spec(&pack) {
-            for (name, _) in spec.templates {
-                names.push(CompletionCandidate::new(name));
-            }
-        }
-    }
-    names
+    find_context_battery_pack()
+        .and_then(|pack| get_cached_spec(&pack))
+        .map(|spec| {
+            spec.templates
+                .into_keys()
+                .map(CompletionCandidate::new)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 pub fn pack_features(_current: &OsStr) -> Vec<CompletionCandidate> {
-    let mut names = vec![];
-    if let Some(pack) = find_context_battery_pack() {
-        if let Some(spec) = get_cached_spec(&pack) {
-            for name in spec.features.keys() {
-                names.push(CompletionCandidate::new(name));
-            }
-        }
-    }
-    names
+    find_context_battery_pack()
+        .and_then(|pack| get_cached_spec(&pack))
+        .map(|spec| {
+            spec.features
+                .into_keys()
+                .map(CompletionCandidate::new)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 pub fn pack_crates(_current: &OsStr) -> Vec<CompletionCandidate> {
-    let mut names = vec![];
-    if let Some(pack) = find_context_battery_pack() {
-        if let Some(spec) = get_cached_spec(&pack) {
-            for name in spec.crates.keys() {
-                names.push(CompletionCandidate::new(name));
-            }
-        }
-    }
-    names
+    find_context_battery_pack()
+        .and_then(|pack| get_cached_spec(&pack))
+        .map(|spec| {
+            spec.crates
+                .into_keys()
+                .map(CompletionCandidate::new)
+                .collect()
+        })
+        .unwrap_or_default()
 }
