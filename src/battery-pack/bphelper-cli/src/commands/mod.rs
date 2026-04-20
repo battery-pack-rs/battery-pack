@@ -172,6 +172,13 @@ pub(crate) enum BpCommands {
         path: Option<String>,
     },
 
+    /// Check that installed battery packs match project dependencies
+    Check {
+        /// Use a local path instead of downloading from crates.io
+        #[arg(long)]
+        path: Option<String>,
+    },
+
     /// Validate that the current battery pack is well-formed
     Validate {
         /// Path to the battery pack crate (defaults to current directory)
@@ -296,6 +303,9 @@ pub fn main() -> Result<()> {
                 }
                 BpCommands::Status { path } => {
                     status_battery_packs(&project_dir, path.as_deref(), &source)
+                }
+                BpCommands::Check { path } => {
+                    check_battery_packs(&project_dir, path.as_deref(), &source)
                 }
                 BpCommands::Validate { path } => {
                     crate::validate::validate_battery_pack_cmd(path.as_deref())
@@ -570,32 +580,6 @@ pub(crate) fn add_battery_pack(
     // [impl manifest.register.workspace-default]
     let workspace_manifest = find_workspace_manifest(&user_manifest_path)?;
 
-    // Add battery pack to [build-dependencies]
-    let build_deps =
-        user_doc["build-dependencies"].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
-    if let Some(table) = build_deps.as_table_mut() {
-        if let Some(local_path) = path {
-            let mut dep = toml_edit::InlineTable::new();
-            dep.insert("path", toml_edit::Value::from(local_path));
-            table.insert(
-                &crate_name,
-                toml_edit::Item::Value(toml_edit::Value::InlineTable(dep)),
-            );
-        } else if workspace_manifest.is_some() {
-            let mut dep = toml_edit::InlineTable::new();
-            dep.insert("workspace", toml_edit::Value::from(true));
-            table.insert(
-                &crate_name,
-                toml_edit::Item::Value(toml_edit::Value::InlineTable(dep)),
-            );
-        } else {
-            let version = bp_version
-                .as_ref()
-                .context("battery pack version not available (--path without workspace)")?;
-            table.insert(&crate_name, toml_edit::value(version));
-        }
-    }
-
     // [impl manifest.deps.workspace]
     // Add crate dependencies + workspace deps (including the battery pack itself).
     // Load workspace doc once; both deps and metadata are written to it before a
@@ -722,13 +706,6 @@ pub(crate) fn add_battery_pack(
     // [impl manifest.toml.preserve]
     std::fs::write(&user_manifest_path, user_doc.to_string())
         .context("Failed to write Cargo.toml")?;
-
-    // Create/modify build.rs
-    let build_rs_path = user_manifest_path
-        .parent()
-        .unwrap_or(Path::new("."))
-        .join("build.rs");
-    update_build_rs(&build_rs_path, &crate_name)?;
 
     println!(
         "Added {} with {} crate(s)",
@@ -1352,79 +1329,6 @@ fn pick_crates_interactive(
 // build.rs manipulation
 // ============================================================================
 
-/// Update or create build.rs to include a validate() call.
-fn update_build_rs(build_rs_path: &Path, crate_name: &str) -> Result<()> {
-    let crate_ident = crate_name.replace('-', "_");
-    let validate_call = format!("{}::validate();", crate_ident);
-
-    if build_rs_path.exists() {
-        let content = std::fs::read_to_string(build_rs_path).context("Failed to read build.rs")?;
-
-        // Check if validate call is already present
-        if content.contains(&validate_call) {
-            return Ok(());
-        }
-
-        // Verify the file parses as valid Rust with syn
-        let file: syn::File = syn::parse_str(&content).context("Failed to parse build.rs")?;
-
-        // Check that a main function exists
-        let has_main = file
-            .items
-            .iter()
-            .any(|item| matches!(item, syn::Item::Fn(func) if func.sig.ident == "main"));
-
-        if has_main {
-            // Find the closing brace of main using string manipulation
-            let lines: Vec<&str> = content.lines().collect();
-            let mut insert_line = None;
-            let mut brace_depth: i32 = 0;
-            let mut in_main = false;
-
-            for (i, line) in lines.iter().enumerate() {
-                if line.contains("fn main") {
-                    in_main = true;
-                    brace_depth = 0;
-                }
-                if in_main {
-                    for ch in line.chars() {
-                        if ch == '{' {
-                            brace_depth += 1;
-                        } else if ch == '}' {
-                            brace_depth -= 1;
-                            if brace_depth == 0 {
-                                insert_line = Some(i);
-                                in_main = false;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if let Some(line_idx) = insert_line {
-                let mut new_lines: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
-                new_lines.insert(line_idx, format!("    {}", validate_call));
-                std::fs::write(build_rs_path, new_lines.join("\n") + "\n")
-                    .context("Failed to write build.rs")?;
-                return Ok(());
-            }
-        }
-
-        // Fallback: no main function found or couldn't locate closing brace
-        bail!(
-            "Could not find fn main() in build.rs. Please add `{}` manually.",
-            validate_call
-        );
-    } else {
-        // Create new build.rs
-        let content = format!("fn main() {{\n    {}\n}}\n", validate_call);
-        std::fs::write(build_rs_path, content).context("Failed to create build.rs")?;
-    }
-
-    Ok(())
-}
-
 /// Shared options for `cargo bp new` generation.
 struct NewOpts {
     battery_pack: String,
@@ -1909,6 +1813,87 @@ fn status_battery_packs(
     }
 
     Ok(())
+}
+
+fn check_battery_packs(
+    project_dir: &Path,
+    _path: Option<&str>,
+    source: &CrateSource,
+) -> Result<()> {
+    let user_manifest_path = find_user_manifest(project_dir)?;
+    let user_manifest_content =
+        std::fs::read_to_string(&user_manifest_path).context("Failed to read Cargo.toml")?;
+
+    // For now, use build-dependencies to find battery packs (this will be updated when metadata reading is improved)
+    let bp_names = find_installed_bp_names(&user_manifest_content)?;
+
+    if bp_names.is_empty() {
+        println!("No battery packs installed.");
+        return Ok(());
+    }
+
+    println!("Checking {} installed battery pack(s)...", bp_names.len());
+
+    // Get user's current dependency versions
+    let user_versions = collect_user_dep_versions(&user_manifest_path, &user_manifest_content)?;
+
+    let mut all_valid = true;
+
+    for bp_name in &bp_names {
+        print!("  {} ... ", bp_name);
+
+        // Get the battery pack spec
+        let (_version, spec) = match crate::registry::fetch_bp_spec(source, bp_name) {
+            Ok(result) => result,
+            Err(e) => {
+                println!("❌ Failed to load spec: {}", e);
+                all_valid = false;
+                continue;
+            }
+        };
+
+        // Check for version drift
+        let mut warnings = Vec::new();
+        for (crate_name, crate_spec) in &spec.crates {
+            if let Some(user_version) = user_versions.get(crate_name)
+                && is_older_version(user_version, &crate_spec.version)
+            {
+                warnings.push(format!(
+                    "{}: {} → {}",
+                    crate_name, user_version, crate_spec.version
+                ));
+            }
+        }
+
+        if warnings.is_empty() {
+            println!("✅ OK");
+        } else {
+            println!("⚠️  Outdated versions:");
+            for warning in warnings {
+                println!("    {}", warning);
+            }
+            all_valid = false;
+        }
+    }
+
+    if all_valid {
+        println!("\nAll battery packs are up to date! ✅");
+    } else {
+        println!("\nSome dependencies are outdated. Run `cargo bp sync` to update. ⚠️");
+    }
+
+    Ok(())
+}
+
+fn is_older_version(user_version: &str, recommended_version: &str) -> bool {
+    // Simple version comparison - parse as semver if possible
+    match (
+        semver::Version::parse(user_version),
+        semver::Version::parse(recommended_version),
+    ) {
+        (Ok(user), Ok(recommended)) => user < recommended,
+        _ => false, // If we can't parse, assume it's fine
+    }
 }
 
 /// Collect the user's actual dependency versions from Cargo.toml (and workspace deps if applicable).

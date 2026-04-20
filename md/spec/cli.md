@@ -43,7 +43,7 @@ directly.
 r[cli.path.subcommands]
 The `--path` flag MUST be accepted by all subcommands that
 operate on a specific battery pack: `add`, `new`, `show`,
-`validate`, `status`, and `sync`.
+`check`, `validate`, `status`, and `sync`.
 
 r[cli.path.no-resolve]
 When `--path` is provided, name resolution is not needed.
@@ -233,6 +233,25 @@ in the interactive TUI.
 r[cli.list.non-interactive]
 In non-interactive mode, `cargo bp list` MUST print results as
 plain text.
+
+## `cargo bp check`
+
+r[cli.check.purpose]
+`cargo bp check` MUST validate that installed battery packs match
+the project's current dependencies and warn about version drift.
+
+r[cli.check.version-drift]
+`cargo bp check` MUST compare the user's current dependency versions
+against the versions recommended by installed battery packs and warn
+when user versions are older than recommended versions.
+
+r[cli.check.output]
+`cargo bp check` MUST display the status of each installed battery pack
+with clear indicators (✅ for up-to-date, ⚠️ for outdated versions).
+
+r[cli.check.no-packs]
+If no battery packs are installed, `cargo bp check` MUST display
+"No battery packs installed." and exit successfully.
 
 ## `cargo bp validate`
 
