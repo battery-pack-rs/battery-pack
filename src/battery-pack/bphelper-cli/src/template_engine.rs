@@ -78,6 +78,7 @@ pub(crate) struct RenderOpts {
 }
 
 /// A rendered file from a template preview.
+#[derive(Debug)]
 pub(crate) struct RenderedFile {
     /// Relative path within the generated project.
     pub(crate) path: String,
@@ -194,12 +195,15 @@ fn render(
     files.sort_by(|a, b| a.path.cmp(&b.path));
 
     // Resolve bp-managed dependencies in all rendered Cargo.toml files.
-    // Resolution is best-effort: nested template Cargo.toml files (e.g. in a
-    // battery-pack-of-battery-packs) may reference battery packs that don't
-    // exist yet, so we silently skip files that fail to resolve.
+    // Resolution can fail for nested templates (e.g. battery-pack-of-battery-packs)
+    // that reference battery packs not yet published, so we warn instead of failing.
     for file in files.iter_mut().filter(|f| f.path.ends_with("Cargo.toml")) {
-        if let Ok(resolved) = crate::resolve_bp_managed_content(&file.content, crate_root) {
-            file.content = resolved;
+        match crate::resolve_bp_managed_content(&file.content, crate_root) {
+            Ok(resolved) => file.content = resolved,
+            Err(e) => eprintln!(
+                "warning: failed to resolve bp-managed deps in {}: {e:#}",
+                file.path
+            ),
         }
     }
 
@@ -362,6 +366,47 @@ fn git_init(project_dir: &Path) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Options for previewing a battery pack template.
+pub(crate) struct PreviewOpts<'a> {
+    pub battery_pack: &'a str,
+    pub template: &'a str,
+    pub path: Option<&'a str>,
+    pub source: &'a crate::registry::CrateSource,
+}
+
+/// Resolve a battery pack template and render a preview.
+///
+/// Handles crate-dir resolution, manifest parsing, template lookup, and
+/// rendering. Returns the rendered files and the resolved crate name.
+pub(crate) fn preview_template(opts: &PreviewOpts<'_>) -> Result<(String, Vec<RenderedFile>)> {
+    let crate_name = crate::registry::resolve_crate_name(opts.battery_pack);
+    let resolved = crate::registry::resolve_crate_dir(opts.battery_pack, opts.path, opts.source)?;
+
+    let manifest_path = resolved.dir.join("Cargo.toml");
+    let manifest_content = std::fs::read_to_string(&manifest_path)
+        .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
+    let spec = bphelper_manifest::parse_battery_pack(&manifest_content)
+        .map_err(|e| anyhow::anyhow!("Failed to parse battery pack: {e}"))?;
+    let tmpl = spec.templates.get(opts.template).ok_or_else(|| {
+        let available: Vec<_> = spec.templates.keys().map(|s| s.as_str()).collect();
+        anyhow::anyhow!(
+            "Template '{}' not found. Available: {}",
+            opts.template,
+            available.join(", ")
+        )
+    })?;
+
+    let opts = RenderOpts {
+        crate_root: resolved.dir,
+        template_path: tmpl.path.clone(),
+        project_name: "my-project".to_string(),
+        defines: BTreeMap::new(),
+        interactive_override: Some(false),
+    };
+    let files = preview(opts)?;
+    Ok((crate_name, files))
 }
 
 #[cfg(test)]

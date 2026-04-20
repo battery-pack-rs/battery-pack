@@ -24,15 +24,61 @@ use std::time::Duration;
 // Public entry points
 // ============================================================================
 
+/// Options for launching the TUI detail or preview screen.
+pub(crate) struct ShowOpts<'a> {
+    pub battery_pack: &'a str,
+    pub template: Option<&'a str>,
+    pub path: Option<&'a str>,
+    pub source: CrateSource,
+}
+
 /// Run the TUI starting from the list view
-pub fn run_list(source: CrateSource, filter: Option<String>) -> Result<()> {
+pub(crate) fn run_list(source: CrateSource, filter: Option<String>) -> Result<()> {
     let app = App::new_list(source, filter);
     app.run()
 }
 
-/// Run the TUI starting from the detail view
-pub fn run_show(name: &str, path: Option<&str>, source: CrateSource) -> Result<()> {
-    let app = App::new_show(name, path, source);
+/// Run the TUI for a battery pack. Without `template`, shows the detail
+/// screen. With `template`, jumps directly to the template preview.
+pub(crate) fn run_show(opts: ShowOpts<'_>) -> Result<()> {
+    if opts.template.is_some() {
+        run_preview(opts)
+    } else {
+        let app = App::new_show(opts.battery_pack, opts.path, opts.source);
+        app.run()
+    }
+}
+
+/// Run the TUI starting directly in the template preview screen.
+fn run_preview(opts: ShowOpts<'_>) -> Result<()> {
+    let template = opts.template.expect("run_preview requires template");
+    let (crate_name, files) =
+        crate::template_engine::preview_template(&crate::template_engine::PreviewOpts {
+            battery_pack: opts.battery_pack,
+            template,
+            path: opts.path,
+            source: &opts.source,
+        })?;
+    let content = highlight_preview(&files);
+
+    let line_count = content.lines.len() as u16;
+    let app = App {
+        source: opts.source,
+        screen: Screen::Preview(PreviewScreen {
+            content,
+            battery_pack_name: crate_name,
+            template_name: template.to_string(),
+            scroll: 0,
+            line_count,
+            detail: None,
+            selected_index: 0,
+            came_from_list: false,
+        }),
+        should_quit: false,
+        pending_action: None,
+        in_project: false,
+        installed_bp_names: Vec::new(),
+    };
     app.run()
 }
 
@@ -246,14 +292,16 @@ impl FormScreen {
 struct PreviewScreen {
     /// Syntax-highlighted content to display.
     content: Text<'static>,
+    /// Battery pack name for the header.
+    battery_pack_name: String,
     /// Template name for the header.
     template_name: String,
     /// Vertical scroll offset.
     scroll: u16,
     /// Total number of lines in content (for scroll bounds).
     line_count: u16,
-    /// The detail screen to return to on Esc.
-    detail: Rc<BatteryPackDetail>,
+    /// The detail screen to return to on Esc. None = standalone (Esc quits).
+    detail: Option<Rc<BatteryPackDetail>>,
     /// Selected index to restore when returning to detail.
     selected_index: usize,
     came_from_list: bool,
@@ -551,7 +599,7 @@ impl App {
             FormEnd,
             PreviewTemplate(Rc<BatteryPackDetail>, String, usize, bool),
             PreviewScroll(i16),
-            PreviewBack(Rc<BatteryPackDetail>, usize, bool),
+            PreviewBack(Option<Rc<BatteryPackDetail>>, usize, bool),
         }
 
         let action = match &self.screen {
@@ -700,7 +748,7 @@ impl App {
             },
             Screen::Preview(state) => match key {
                 KeyCode::Esc | KeyCode::Char('q') => Action::PreviewBack(
-                    Rc::clone(&state.detail),
+                    state.detail.clone(),
                     state.selected_index,
                     state.came_from_list,
                 ),
@@ -945,10 +993,11 @@ impl App {
                 let line_count = content.lines.len() as u16;
                 self.screen = Screen::Preview(PreviewScreen {
                     content,
+                    battery_pack_name: detail.name.clone(),
                     template_name,
                     scroll: 0,
                     line_count,
-                    detail,
+                    detail: Some(detail),
                     selected_index,
                     came_from_list,
                 });
@@ -961,13 +1010,17 @@ impl App {
                 }
             }
             Action::PreviewBack(detail, selected_index, came_from_list) => {
-                self.screen = Screen::Detail(DetailScreen {
-                    detail: detail.clone(),
-                    selected_index,
-                    came_from_list,
-                    in_project: self.in_project,
-                    is_installed: self.installed_bp_names.contains(&detail.name),
-                });
+                if let Some(detail) = detail {
+                    self.screen = Screen::Detail(DetailScreen {
+                        detail: detail.clone(),
+                        selected_index,
+                        came_from_list,
+                        in_project: self.in_project,
+                        is_installed: self.installed_bp_names.contains(&detail.name),
+                    });
+                } else {
+                    self.should_quit = true;
+                }
             }
         }
     }
@@ -1485,7 +1538,10 @@ fn render_preview(frame: &mut Frame, state: &PreviewScreen) {
 
     frame.render_widget(
         Paragraph::new(Line::from(vec![
-            Span::styled(&state.detail.name, Style::default().fg(Color::Green).bold()),
+            Span::styled(
+                &state.battery_pack_name,
+                Style::default().fg(Color::Green).bold(),
+            ),
             Span::raw(" / "),
             Span::styled(
                 &state.template_name,

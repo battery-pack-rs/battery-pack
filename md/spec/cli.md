@@ -172,13 +172,6 @@ r[cli.new.define-flag]
 named placeholder to the given value, skipping the prompt for that
 placeholder. Multiple `-d` flags MAY be provided.
 
-r[cli.new.preview]
-`cargo bp new <pack> --preview` MUST render the template and print
-the resulting files to stdout without writing anything to disk.
-Placeholders without a default MUST fall back to `<name>` so the
-preview always succeeds. If `--name` is not provided, the preview
-MUST use `my-project` as the project name.
-
 r[cli.new.non-interactive]
 In non-interactive mode, `cargo bp new` MUST fail with an error
 if `--name` is not provided. Template placeholders without a
@@ -336,3 +329,12 @@ in the interactive TUI.
 r[cli.show.non-interactive]
 In non-interactive mode, `cargo bp show` MUST print results as
 plain text.
+
+r[cli.show.template-preview]
+`cargo bp show <pack> --template <name>` MUST render the named
+template and display the resulting files. In a TTY, the output
+SHOULD be shown in the interactive TUI preview screen. With
+`--non-interactive`, the rendered files MUST be printed to stdout.
+Placeholders without a default MUST fall back to `<name>` so the
+preview always succeeds. The project name MUST default to
+`my-project`.

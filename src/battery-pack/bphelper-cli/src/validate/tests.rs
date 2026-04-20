@@ -1,5 +1,6 @@
 //! Tests for battery pack validation.
 
+use indoc::indoc;
 use snapbox::{assert_data_eq, str};
 use std::path::PathBuf;
 
@@ -121,5 +122,91 @@ fn validate_fixture_with_repository_no_warning() {
         result.is_ok(),
         "fancy-battery-pack should validate cleanly: {:?}",
         result.unwrap_err()
+    );
+}
+
+#[test]
+fn validate_template_test_failure_includes_stdout() {
+    // Regression test for https://github.com/battery-pack-rs/battery-pack/issues/73
+    let tmp = tempfile::tempdir().unwrap();
+    let bp = tmp.path().join("test-bp");
+
+    std::fs::create_dir_all(bp.join("src")).unwrap();
+    std::fs::create_dir_all(bp.join("templates/default/src")).unwrap();
+    std::fs::create_dir_all(bp.join("templates/default/tests")).unwrap();
+
+    std::fs::write(
+        bp.join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            edition = "2021"
+            description = "test"
+            keywords = ["battery-pack"]
+
+            [package.metadata.battery.templates]
+            default = { path = "templates/default", description = "test" }
+        "#},
+    )
+    .unwrap();
+    std::fs::write(bp.join("src/lib.rs"), "").unwrap();
+
+    std::fs::write(
+        bp.join("templates/default/Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "{{ project_name }}"
+            version = "0.1.0"
+            edition = "2021"
+        "#},
+    )
+    .unwrap();
+    std::fs::write(bp.join("templates/default/src/main.rs"), "fn main() {}\n").unwrap();
+    std::fs::write(
+        bp.join("templates/default/tests/broken.rs"),
+        indoc! {r#"
+            #[test]
+            fn this_test_fails() {
+                assert_eq!("expected", "actual", "THIS DETAIL SHOULD BE VISIBLE");
+            }
+        "#},
+    )
+    .unwrap();
+
+    let err = super::validate_templates(bp.to_str().unwrap()).unwrap_err();
+    let msg = format!("{err:#}");
+
+    snapbox::assert_data_eq!(
+        msg,
+        snapbox::str![[r#"
+cargo test failed for template 'default':
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in [..]s
+
+
+running 1 test
+test this_test_fails ... FAILED
+
+failures:
+
+---- this_test_fails stdout ----
+
+thread 'this_test_fails' ([..]) panicked at tests/broken.rs:3:5:
+assertion `left == right` failed: THIS DETAIL SHOULD BE VISIBLE
+  left: "expected"
+ right: "actual"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    this_test_fails
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in [..]s
+
+...
+"#]]
     );
 }
