@@ -1403,10 +1403,6 @@ fn add_target_package_writes_metadata() {
     assert_data_eq!(meta, file![_]);
 }
 
-// ============================================================================
-// build.rs is no longer created (validate() was removed)
-// ============================================================================
-
 // [verify cli.add.register]
 #[test]
 fn add_creates_build_rs() {
@@ -1423,13 +1419,11 @@ fn add_creates_build_rs() {
 
     assert!(
         !tmp.path().join("build.rs").exists(),
-        "build.rs should not be created (validate() was removed)"
+        "build.rs should not be created"
     );
 }
 
-// ============================================================================
 // Idempotency
-// ============================================================================
 
 // [verify cli.add.idempotent]
 #[test]
