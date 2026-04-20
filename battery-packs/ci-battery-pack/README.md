@@ -1,18 +1,18 @@
 # ci-battery-pack
 
-A [battery pack](https://crates.io/crates/battery-pack) for CI/CD workflows in Rust projects.
+A [battery pack](https://crates.io/crates/battery-pack) for CI/CD workflows in Rust projects — the kind of thing you'd copy from tokio or hyper, but generated fresh with pinned SHAs and your project's MSRV.
 
 Currently supports GitHub Actions. Someday there will be more supported platforms.
 
 ## Quick Start
 
-Minimalist (core CI only):
+The `full` template generates a complete project with CI. Use it to bootstrap a new project:
 
 ```sh
 cargo bp new ci --name my-project
 ```
 
-Maximalist (everything enabled):
+Everything enabled:
 
 ```sh
 cargo bp new ci --name my-project -d all
@@ -24,35 +24,31 @@ Pick individual features:
 cargo bp new ci --name my-project -d ci_platform=github -d benchmarks -d fuzzing -d spellcheck
 ```
 
-Config files only (no CI workflows):
+Config files only (no CI workflows, no stub project):
 
 ```sh
 cargo bp new ci --name my-project -d ci_platform=none
 ```
 
-Generates config files only (deny.toml, release-plz.toml) without CI workflows. Useful if you use a different CI system.
-
 Or run `cargo bp new ci` interactively and answer the prompts.
 
-Each optional feature is also available as a standalone template:
+Each optional feature is also available as a standalone template for adding to an existing project:
 
 ```sh
 cargo bp new ci --template fuzzing --name my-project
+cargo bp new ci --template trusted-publishing --name my-project
 ```
 
-## What You Get
+## What the `full` template generates
 
-### Always included
+The `full` template generates a stub Rust project (Cargo.toml, src/lib.rs, README with badges) along with CI configuration. If you're adding CI to an existing project, use the standalone templates instead.
 
-- [cargo-deny](https://github.com/EmbarkStudios/cargo-deny) config (`deny.toml`)
-- README with CI, crates.io, and docs.rs badges
-- Stub Cargo.toml, src/lib.rs with test
+### Core CI (GitHub Actions)
 
-### GitHub Actions (`ci_platform=github`, the default)
-
-- CI workflow: fmt, clippy, build matrix (MSRV x stable x nightly), feature powerset, semver-checks, gate job
+- CI workflow: fmt, clippy, warnings check, docsrs check, build matrix (stable × nightly), feature powerset, MSRV, semver-checks, gate job
 - Security audit workflow (cargo-deny, daily + on Cargo.toml changes)
 - Dependabot config for Cargo and GitHub Actions updates
+- cargo-deny config (`deny.toml`)
 
 ### Optional features (`-d flag`)
 
