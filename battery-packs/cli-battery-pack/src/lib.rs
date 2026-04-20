@@ -9,7 +9,7 @@
 /// }
 /// ```
 pub fn validate() {
-    battery_pack::validate(include_str!("../Cargo.toml"));
+    ::battery_pack::validate(include_str!("../Cargo.toml"));
 }
 
 #[cfg(test)]
