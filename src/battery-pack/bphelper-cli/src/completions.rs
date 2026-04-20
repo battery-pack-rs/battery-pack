@@ -97,28 +97,23 @@ fn get_cached_spec(pack_name: &str) -> Option<BatteryPackSpec> {
 
 fn collect_keys<F, I>(f: F) -> Vec<CompletionCandidate>
 where
-    F: FnOnce(&BatteryPackSpec) -> I,
+    F: FnOnce(BatteryPackSpec) -> I,
     I: IntoIterator<Item = String>,
 {
     find_context_battery_pack()
         .and_then(|pack| get_cached_spec(&pack))
-        .map(|spec| {
-            spec.features
-                .into_keys()
-                .map(CompletionCandidate::new)
-                .collect()
-        })
+        .map(|spec| f(spec).into_iter().map(CompletionCandidate::new).collect())
         .unwrap_or_default()
 }
 
 pub fn templates(_current: &OsStr) -> Vec<CompletionCandidate> {
-    collect_keys(|spec| spec.templates.clone().into_keys())
+    collect_keys(|spec| spec.templates.into_keys())
 }
 
 pub fn pack_features(_current: &OsStr) -> Vec<CompletionCandidate> {
-    collect_keys(|spec| spec.features.keys().cloned().collect::<Vec<_>>())
+    collect_keys(|spec| spec.features.into_keys())
 }
 
 pub fn pack_crates(_current: &OsStr) -> Vec<CompletionCandidate> {
-    collect_keys(|spec| spec.crates.keys().cloned().collect::<Vec<_>>())
+    collect_keys(|spec| spec.crates.into_keys())
 }
