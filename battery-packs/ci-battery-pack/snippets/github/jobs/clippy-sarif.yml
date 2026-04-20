@@ -11,6 +11,8 @@
         with:
           components: clippy
       - uses: {{ pin_github_action("Swatinem/rust-cache", "v2") }}
+        with:
+          save-if: {% raw %}${{ github.ref == 'refs/heads/main' }}{% endraw %}
       - run: cargo install clippy-sarif --locked
       - run: cargo install sarif-fmt --locked
       - name: Run clippy with SARIF output

@@ -19,6 +19,8 @@ runs:
         toolchain: {% raw %}${{ inputs.toolchain }}{% endraw %}
 
     - uses: {{ pin_github_action("Swatinem/rust-cache", "v2") }}
+      with:
+        save-if: {% raw %}${{ github.ref == 'refs/heads/main' }}{% endraw %}
 
     - name: Build
       shell: bash

@@ -24,6 +24,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
       - uses: {{ pin_github_action("Swatinem/rust-cache", "v2") }}
         with:
+          save-if: {% raw %}${{ github.ref == 'refs/heads/main' }}{% endraw %}
           workspaces: fuzz -> target
       - uses: dtolnay/install@cargo-fuzz
       - name: Extended fuzz run

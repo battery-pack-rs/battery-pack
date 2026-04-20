@@ -10,6 +10,8 @@
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: {{ pin_github_action("Swatinem/rust-cache", "v2") }}
+        with:
+          save-if: {% raw %}${{ github.ref == 'refs/heads/main' }}{% endraw %}
       - uses: {{ pin_github_action("bencherdev/bencher", "v0") }}
       - run: |
           bencher run \
@@ -29,6 +31,8 @@
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: {{ pin_github_action("Swatinem/rust-cache", "v2") }}
+        with:
+          save-if: {% raw %}${{ github.ref == 'refs/heads/main' }}{% endraw %}
       - uses: {{ pin_github_action("bencherdev/bencher", "v0") }}
       - run: |
           bencher run \

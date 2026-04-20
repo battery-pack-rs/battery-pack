@@ -7,6 +7,8 @@
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: {{ pin_github_action("Swatinem/rust-cache", "v2") }}
+        with:
+          save-if: {% raw %}${{ github.ref == 'refs/heads/main' }}{% endraw %}
       - uses: {{ pin_github_action("taiki-e/install-action", "v2") }}
         with:
           tool: cargo-hack

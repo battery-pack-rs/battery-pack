@@ -88,6 +88,8 @@ If you enabled `binary_release`, you also need a PAT so the release event trigge
 
 Without `binary_release`, `GITHUB_TOKEN` works fine and no PAT is needed.
 
+Alternatively, you can avoid the PAT by moving the binary build steps into the release workflow itself.
+
 See [release-plz docs](https://release-plz.dev/docs) for more.
 
 ### Bencher (if benchmarks enabled)

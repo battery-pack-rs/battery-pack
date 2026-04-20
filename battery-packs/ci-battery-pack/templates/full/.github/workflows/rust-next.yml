@@ -23,6 +23,8 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: {{ pin_github_action("Swatinem/rust-cache", "v2") }}
+        with:
+          save-if: {% raw %}${{ github.ref == 'refs/heads/main' }}{% endraw %}
       - run: cargo update
       - run: cargo test --workspace --all-features
 
@@ -36,5 +38,7 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@beta
       - uses: {{ pin_github_action("Swatinem/rust-cache", "v2") }}
+        with:
+          save-if: {% raw %}${{ github.ref == 'refs/heads/main' }}{% endraw %}
       - run: cargo test --workspace --all-features
 {%- endif %}

@@ -9,4 +9,6 @@
         with:
           components: clippy
       - uses: {{ pin_github_action("Swatinem/rust-cache", "v2") }}
+        with:
+          save-if: {% raw %}${{ github.ref == 'refs/heads/main' }}{% endraw %}
       - run: cargo clippy --workspace --all-targets --all-features --keep-going -- -D warnings
