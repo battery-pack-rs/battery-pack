@@ -2,18 +2,11 @@
 # Builds cross-platform binaries and uploads to GitHub Releases.
 # Binaries are discoverable by cargo-binstall (https://github.com/cargo-bins/cargo-binstall).
 # Triggered automatically when release-plz publishes a release.
-# workflow_dispatch lets you build binaries manually without a release.
 name: Build Binaries
 
 on:
   release:
     types: [published]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Release tag (e.g., v0.1.0)"
-        required: true
-        type: string
 
 permissions:
   contents: write
@@ -56,11 +49,7 @@ jobs:
         id: version
         shell: bash
         run: |
-          if [ "{% raw %}${{ github.event_name }}{% endraw %}" = "workflow_dispatch" ]; then
-            TAG="{% raw %}${{ inputs.tag }}{% endraw %}"
-          else
-            TAG="{% raw %}${{ github.event.release.tag_name }}{% endraw %}"
-          fi
+          TAG="{% raw %}${{ github.event.release.tag_name }}{% endraw %}"
           # Strip package name prefix (e.g. "my-crate-v0.1.0" -> "v0.1.0")
           VERSION="${TAG##*-v}"
           echo "version=v${VERSION}" >> "$GITHUB_OUTPUT"
@@ -80,15 +69,7 @@ jobs:
           Compress-Archive -Path {{ project_name }}.exe -DestinationPath ../../../{{ project_name }}-{% raw %}${{ matrix.target }}{% endraw %}-{% raw %}${{ steps.version.outputs.version }}{% endraw %}.zip
 
       - name: Upload release asset
-        if: {% raw %}${{ github.event_name == 'release' }}{% endraw %}
         uses: {{ pin_github_action("softprops/action-gh-release", "v2") }}
         with:
           files: {{ project_name }}-{% raw %}${{ matrix.target }}{% endraw %}-{% raw %}${{ steps.version.outputs.version }}{% endraw %}.{% raw %}${{ matrix.archive }}{% endraw %}
-
-      - name: Upload artifact
-        if: {% raw %}${{ github.event_name == 'workflow_dispatch' }}{% endraw %}
-        uses: {{ pin_github_action("actions/upload-artifact", "v4") }}
-        with:
-          name: {{ project_name }}-{% raw %}${{ matrix.target }}{% endraw %}
-          path: {{ project_name }}-{% raw %}${{ matrix.target }}{% endraw %}-{% raw %}${{ steps.version.outputs.version }}{% endraw %}.{% raw %}${{ matrix.archive }}{% endraw %}
 {%- endif %}
