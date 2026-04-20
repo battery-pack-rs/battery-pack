@@ -9,4 +9,4 @@
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: {{ pin_github_action("Swatinem/rust-cache", "v2") }}
-      - run: cargo check --all-targets --all-features
+      - run: cargo check --all-targets --all-features --keep-going
