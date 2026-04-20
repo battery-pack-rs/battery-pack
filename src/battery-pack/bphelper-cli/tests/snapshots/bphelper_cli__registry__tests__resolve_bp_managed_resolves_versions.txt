@@ -1,0 +1,13 @@
+[package]
+name = "my-app"
+version = "0.1.0"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+
+[build-dependencies]
+managed-battery-pack = "0.2.0"
+
+[package.metadata.battery-pack]
+managed-battery-pack = { features = ["default"] }

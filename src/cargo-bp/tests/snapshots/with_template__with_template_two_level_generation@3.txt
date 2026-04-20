@@ -1,0 +1,15 @@
+[package]
+name = "{{ project_name }}"
+version = "0.1.0"
+edition = "2024"
+description = "{{ project_description }}"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# Add the curated dependencies your battery pack provides
+
+[build-dependencies]
+http-battery-pack.bp-managed = true
+
+[package.metadata.battery-pack]
+http-battery-pack = { features = ["default"] }

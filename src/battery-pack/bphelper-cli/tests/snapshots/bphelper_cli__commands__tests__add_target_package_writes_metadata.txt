@@ -1,0 +1,6 @@
+[package.metadata.battery-pack.basic-battery-pack]
+features = ["default"]
+managed-deps = [
+    "anyhow",
+    "thiserror",
+]

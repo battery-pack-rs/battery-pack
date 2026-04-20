@@ -16,7 +16,7 @@
 //   - cli.add.idempotent     — re-adding same dep doesn't create duplicates
 
 use clap::Parser;
-use snapbox::{assert_data_eq, file};
+use snapbox::{assert_data_eq, file, str};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Unwrap `Commands::Bp { command }` → `BpCommands`.
@@ -174,13 +174,9 @@ fn resolve_template_unknown_name_errors() {
     let result = super::resolve_template(&templates, Some("nonexistent"), true);
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
-    assert!(
-        err.contains("not found"),
-        "error should say template not found: {err}"
-    );
-    assert!(
-        err.contains("simple") && err.contains("advanced"),
-        "error should list available templates: {err}"
+    assert_data_eq!(
+        err,
+        str!["Template 'nonexistent' not found. Available templates: advanced, simple"]
     );
 }
 
@@ -423,10 +419,9 @@ fn new_non_interactive_requires_name() {
         interactive: false,
     });
     let err = result.unwrap_err();
-    assert!(
-        err.to_string().contains("--name is required"),
-        "expected --name error, got: {}",
-        err
+    assert_data_eq!(
+        err.to_string(),
+        str!["--name is required in non-interactive mode"]
     );
 }
 
@@ -1067,14 +1062,14 @@ fn add_registers_build_dep() {
     let content = read_cargo_toml(&tmp);
     let build_deps = extract_section(&content, "[build-dependencies]");
 
-    // The path will differ per run, so we check structure not exact path
-    assert!(
-        build_deps.contains("basic-battery-pack"),
-        "battery pack should appear in [build-dependencies]: {build_deps}"
-    );
-    assert!(
-        build_deps.contains("path ="),
-        "should be a path dependency: {build_deps}"
+    assert_data_eq!(
+        build_deps,
+        str![[r#"
+[build-dependencies]
+basic-battery-pack = { path = "[..]" }
+
+
+"#]]
     );
 }
 
@@ -1119,13 +1114,23 @@ fn add_default_includes_dev_and_build_deps() {
     let dev_deps = extract_section(&content, "[dev-dependencies]");
     let build_deps = extract_section(&content, "[build-dependencies]");
 
-    assert!(
-        dev_deps.contains("insta"),
-        "dev-dep should be included with default features: {dev_deps}"
+    assert_data_eq!(
+        dev_deps,
+        str![[r#"
+[dev-dependencies]
+insta = "1.34"
+
+"#]]
     );
-    assert!(
-        build_deps.contains("cc"),
-        "build-dep should be included with default features: {build_deps}"
+    assert_data_eq!(
+        build_deps,
+        str![[r#"
+[build-dependencies]
+managed-battery-pack = { path = "[..]" }
+cc = "1.0"
+
+
+"#]]
     );
 }
 
@@ -1150,10 +1155,7 @@ fn add_with_named_feature_writes_deps() {
     let content = read_cargo_toml(&tmp);
     let deps = extract_section(&content, "[dependencies]");
 
-    assert!(deps.contains("clap"), "Expected clap");
-    assert!(deps.contains("console"), "Expected console");
-    assert!(deps.contains("dialoguer"), "Expected dialoguer");
-    assert!(deps.contains("indicatif"), "Expected indicatif");
+    assert_data_eq!(deps, file![_]);
 }
 
 // [verify cli.add.features]
@@ -1197,8 +1199,7 @@ fn add_no_default_features_with_feature() {
     let content = read_cargo_toml(&tmp);
     let deps = extract_section(&content, "[dependencies]");
 
-    assert!(deps.contains("console"), "Expected console dependency");
-    assert!(deps.contains("indicatif"), "Expected indicatif dependency");
+    assert_data_eq!(deps, file![_]);
 }
 
 // [verify cli.add.no-default-features]
@@ -1242,9 +1243,7 @@ fn add_all_features_basic() {
     let content = read_cargo_toml(&tmp);
     let deps = extract_section(&content, "[dependencies]");
 
-    assert!(deps.contains("anyhow"), "Expected anyhow dependency");
-    assert!(deps.contains("eyre"), "Expected eyre dependency");
-    assert!(deps.contains("thiserror"), "Expected thiserror dependency");
+    assert_data_eq!(deps, file![_]);
 }
 
 // [verify cli.add.all-features]
@@ -1264,12 +1263,7 @@ fn add_all_features_records_metadata() {
     let content = read_cargo_toml(&tmp);
     let meta = extract_metadata(&content, "basic-battery-pack");
 
-    assert!(
-        meta.contains("basic-battery-pack"),
-        "Expected basic-battery-pack metadata"
-    );
-    assert!(meta.contains("features"), "Expected features");
-    assert!(meta.contains("all"), "Expected all feature");
+    assert_data_eq!(meta, file![_]);
 }
 
 // [verify cli.add.all-features]
@@ -1293,27 +1287,22 @@ fn add_all_features_fancy() {
 
     // Normal deps in [dependencies] — hidden crates (serde*, cc) filtered out
     // [verify format.hidden.effect]
-    assert!(deps.contains("clap"), "Expected clap dependency");
-    assert!(deps.contains("console"), "Expected console dependency");
-    assert!(deps.contains("dialoguer"), "Expected dialoguer dependency");
-    assert!(deps.contains("indicatif"), "Expected indicatif dependency");
+    assert_data_eq!(deps, file![_]);
 
     // Dev-deps land in [dev-dependencies]
     // [verify cli.add.dep-kind]
-    assert!(
-        dev_deps.contains("assert_cmd"),
-        "Expected assert_cmd in dev-dependencies"
-    );
-    assert!(
-        dev_deps.contains("predicates"),
-        "Expected predicates in dev-dependencies"
-    );
+    assert_data_eq!(dev_deps, file![_]);
 
     // Build-deps: only the battery pack itself (cc is hidden)
     // [verify format.hidden.effect]
-    assert!(
-        !build_deps.contains("cc = \"1.0\""),
-        "cc is hidden and should not appear in [build-dependencies]: {build_deps}"
+    assert_data_eq!(
+        build_deps,
+        str![[r#"
+[build-dependencies]
+fancy-battery-pack = { path = "[..]" }
+
+
+"#]]
     );
 }
 
@@ -1338,11 +1327,7 @@ fn add_specific_crates_writes_only_named() {
     let content = read_cargo_toml(&tmp);
     let deps = extract_section(&content, "[dependencies]");
 
-    assert!(
-        deps.contains("clap"),
-        "Expected clap dependency with derive feature"
-    );
-    assert!(deps.contains("version"), "Expected version");
+    assert_data_eq!(deps, file![_]);
 }
 
 // ============================================================================
@@ -1366,11 +1351,7 @@ fn add_unknown_crate_writes_valid_ones() {
     let content = read_cargo_toml(&tmp);
     let deps = extract_section(&content, "[dependencies]");
 
-    assert!(deps.contains("clap"), "Expected clap dependency");
-    assert!(
-        !deps.contains("nonexistent"),
-        "Expected nonexistent to not be in deps"
-    );
+    assert_data_eq!(deps, file![_]);
 }
 
 // ============================================================================
@@ -1394,12 +1375,7 @@ fn add_target_package_writes_metadata() {
     let content = read_cargo_toml(&tmp);
     let meta = extract_metadata(&content, "basic-battery-pack");
 
-    assert!(
-        meta.contains("basic-battery-pack"),
-        "Expected basic-battery-pack metadata"
-    );
-    assert!(meta.contains("features"), "Expected features");
-    assert!(meta.contains("default"), "Expected default feature");
+    assert_data_eq!(meta, file![_]);
 }
 
 // ============================================================================
@@ -1422,11 +1398,7 @@ fn add_creates_build_rs() {
 
     let build_rs = std::fs::read_to_string(tmp.path().join("build.rs")).unwrap();
 
-    assert!(build_rs.contains("fn main()"), "Expected fn main()");
-    assert!(
-        build_rs.contains("basic_battery_pack::validate"),
-        "Expected basic_battery_pack::validate call"
-    );
+    assert_data_eq!(build_rs, file![_]);
 }
 
 // ============================================================================
@@ -1467,11 +1439,7 @@ fn add_twice_is_idempotent() {
 
     // build.rs should have exactly one validate call
     let build_rs = std::fs::read_to_string(tmp.path().join("build.rs")).unwrap();
-    assert!(build_rs.contains("fn main()"), "Expected fn main()");
-    assert!(
-        build_rs.contains("basic_battery_pack::validate"),
-        "Expected basic_battery_pack::validate call"
-    );
+    assert_data_eq!(build_rs, file![_]);
 }
 
 // ============================================================================

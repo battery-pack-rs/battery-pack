@@ -1,0 +1,4 @@
+basic-battery-pack 0.1.0 -- A simple test battery pack
+broken-battery-pack 0.1.0 -- A deliberately broken battery pack for testing validation
+fancy-battery-pack 0.2.0 -- A feature-rich test battery pack
+managed-battery-pack 0.2.0 -- A test battery pack for bp-managed resolution

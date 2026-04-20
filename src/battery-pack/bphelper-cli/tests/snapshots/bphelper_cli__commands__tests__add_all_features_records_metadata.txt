@@ -1,0 +1,7 @@
+[package.metadata.battery-pack.basic-battery-pack]
+features = ["all"]
+managed-deps = [
+    "anyhow",
+    "eyre",
+    "thiserror",
+]

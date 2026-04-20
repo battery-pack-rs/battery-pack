@@ -1,0 +1,4 @@
+| Crate | Version | Description |
+|-------|---------|-------------|
+| [anyhow](https://crates.io/crates/anyhow) | 1 | Flexible concrete Error type |
+| [thiserror](https://crates.io/crates/thiserror) | 2 | derive(Error) |

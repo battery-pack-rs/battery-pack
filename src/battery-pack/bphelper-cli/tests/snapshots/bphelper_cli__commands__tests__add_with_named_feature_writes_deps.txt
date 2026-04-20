@@ -1,0 +1,5 @@
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+console = "0.15"
+dialoguer = "0.11"
+indicatif = "0.17"

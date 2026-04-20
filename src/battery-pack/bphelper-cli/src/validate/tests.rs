@@ -1,5 +1,6 @@
 //! Tests for battery pack validation.
 
+use snapbox::{assert_data_eq, str};
 use std::path::PathBuf;
 
 fn fixtures_dir() -> PathBuf {
@@ -44,10 +45,7 @@ fn validate_broken_fixture_fails() {
         "broken-battery-pack should fail validation"
     );
     let err = result.unwrap_err().to_string();
-    assert!(
-        err.contains("error(s)"),
-        "error message should report error count: {err}"
-    );
+    assert_data_eq!(err, str!["validation failed: 3 error(s), 2 warning(s)"]);
 }
 
 // [verify cli.validate.workspace-error]
@@ -58,9 +56,12 @@ fn validate_workspace_manifest_fails() {
     let result = super::validate_battery_pack_cmd(Some(fixture.to_str().unwrap()));
     assert!(result.is_err(), "workspace manifest should fail");
     let err = result.unwrap_err().to_string();
-    assert!(
-        err.contains("workspace manifest"),
-        "should mention workspace manifest: {err}"
+    assert_data_eq!(
+        err,
+        str![[r#"
+[..]/tests/fixtures/Cargo.toml is a workspace manifest, not a battery pack crate.
+Run this from a battery pack crate directory, or use --path to point to one.
+"#]]
     );
 }
 

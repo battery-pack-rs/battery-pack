@@ -1,0 +1,12 @@
+# fancy-battery-pack
+
+CLI tools.
+
+| Crate | Version | Description |
+|-------|---------|-------------|
+| [assert_cmd](https://crates.io/crates/assert_cmd) | 2.0 | Easy command testing |
+| [clap](https://crates.io/crates/clap) | 4 | A simple to use, efficient, and full-featured Command Line Argument Parser |
+| [console](https://crates.io/crates/console) | 0.15 | A terminal and console abstraction for Rust |
+| [dialoguer](https://crates.io/crates/dialoguer) | 0.11 | A command line prompting library |
+| [indicatif](https://crates.io/crates/indicatif) | 0.17 | A progress bar and CLI reporting library |
+| [predicates](https://crates.io/crates/predicates) | 3.0 | Boolean predicate combinators |

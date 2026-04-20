@@ -146,8 +146,10 @@ fn resolve_no_default_non_interactive_errors() {
     let mut vars = BTreeMap::new();
 
     let err = resolve_placeholders(&defs, &defines, &mut vars, None).unwrap_err();
-    assert!(err.to_string().contains("description"));
-    assert!(err.to_string().contains("no default"));
+    assert_data_eq!(
+        err.to_string(),
+        str!["placeholder 'description' has no default and no value provided"]
+    );
 }
 
 #[test]
@@ -163,8 +165,10 @@ fn resolve_rejects_kebab_case_name() {
     );
     let err =
         resolve_placeholders(&defs, &BTreeMap::new(), &mut BTreeMap::new(), None).unwrap_err();
-    assert!(err.to_string().contains("my-thing"));
-    assert!(err.to_string().contains("snake_case"));
+    assert_data_eq!(
+        err.to_string(),
+        str!["placeholder 'my-thing' contains '-'; use snake_case (MiniJinja treats '-' as minus)"]
+    );
 }
 
 // -- build_jinja_env --
@@ -229,7 +233,17 @@ fn parse_config_unsupported_type_errors() {
             type = "bool"
         "#;
     let err = toml::from_str::<BpTemplateConfig>(toml).unwrap_err();
-    assert!(err.to_string().contains("unknown variant"), "{err}");
+    assert_data_eq!(
+        err.to_string(),
+        str![[r#"
+TOML parse error at line 3, column 20
+  |
+3 |             type = "bool"
+  |                    ^^^^^^
+unknown variant `bool`, expected `string`
+
+"#]]
+    );
 }
 
 // -- preview --

@@ -99,18 +99,10 @@ fn test_context_hidden_excluded() {
     let ctx = build_context(&spec, &descriptions, "");
 
     let names: Vec<&str> = ctx.crates.iter().map(|c| c.name.as_str()).collect();
-    // serde, serde_json, cc should be hidden
-    assert!(!names.contains(&"serde"), "serde should be hidden");
-    assert!(
-        !names.contains(&"serde_json"),
-        "serde_json should be hidden"
+    assert_data_eq!(
+        names.join(", "),
+        str!["assert_cmd, clap, console, dialoguer, indicatif, predicates"]
     );
-    assert!(!names.contains(&"cc"), "cc should be hidden");
-    // visible crates should be present
-    assert!(names.contains(&"clap"));
-    assert!(names.contains(&"dialoguer"));
-    assert!(names.contains(&"indicatif"));
-    assert!(names.contains(&"console"));
 }
 
 #[test]
@@ -121,9 +113,7 @@ fn test_context_features() {
     let ctx = build_context(&spec, &descriptions, "");
 
     let feature_names: Vec<&str> = ctx.features.iter().map(|f| f.name.as_str()).collect();
-    assert!(feature_names.contains(&"default"));
-    assert!(feature_names.contains(&"indicators"));
-    assert!(feature_names.contains(&"fancy"));
+    assert_data_eq!(feature_names.join(", "), str!["default, fancy, indicators"]);
 
     let indicators = ctx
         .features
@@ -272,8 +262,7 @@ fn test_render_crate_table_empty() {
 fn test_render_crate_table_links() {
     let ctx = simple_context();
     let output = render_docs("{{crate-table}}", &ctx).unwrap();
-    assert!(output.contains("[anyhow](https://crates.io/crates/anyhow)"));
-    assert!(output.contains("[thiserror](https://crates.io/crates/thiserror)"));
+    assert_data_eq!(output, file![_]);
 }
 
 #[test]
@@ -283,12 +272,7 @@ fn test_render_no_html_escaping() {
         ..simple_context()
     };
     let output = render_docs("{{readme}}", &ctx).unwrap();
-    // Angle brackets and ampersand should NOT be escaped
-    assert!(output.contains("<T>"));
-    assert!(output.contains("<T, E>"));
-    assert!(output.contains("&"));
-    assert!(!output.contains("&amp;"));
-    assert!(!output.contains("&lt;"));
+    assert_data_eq!(output, str!["Use `Option<T>` and `Result<T, E>` & more"]);
 }
 
 // ================================================================
@@ -322,10 +306,7 @@ fn test_template_lib_rs_includes_generated_docs() {
         .unwrap()
         .join("templates/default/src/lib.rs");
     let content = std::fs::read_to_string(&template_dir).unwrap();
-    assert!(
-        content.contains(r#"include_str!(concat!(env!("OUT_DIR"), "/docs.md"))"#),
-        "template lib.rs must include generated docs from OUT_DIR"
-    );
+    assert_data_eq!(content, file![_]);
 }
 
 #[test]
@@ -343,10 +324,7 @@ fn test_crate_table_update_is_automatic() {
     // test_render_crate_table).
     let ctx = simple_context();
     let output = render_docs("{{crate-table}}", &ctx).unwrap();
-    assert!(
-        output.contains("| Crate |"),
-        "crate-table helper must be registered"
-    );
+    assert_data_eq!(output, file![_]);
 }
 
 // ================================================================
@@ -363,17 +341,7 @@ fn test_full_pipeline_fancy() {
     let ctx = build_context(&spec, &descriptions, readme);
     let output = render_docs("{{readme}}\n\n{{crate-table}}", &ctx).unwrap();
 
-    // Hidden crates (serde*, cc) must not appear in the table
-    assert!(!output.contains("serde"));
-    assert!(!output.contains("| cc"));
-    // Visible crates must appear
-    assert!(output.contains("[clap]"));
-    assert!(output.contains("[dialoguer]"));
-    assert!(output.contains("[indicatif]"));
-    assert!(output.contains("[console]"));
-    // Dev-deps should also appear
-    assert!(output.contains("[assert_cmd]"));
-    assert!(output.contains("[predicates]"));
+    assert_data_eq!(output, file![_]);
 }
 
 // ================================================================
@@ -412,14 +380,7 @@ fn test_generate_docs_writes_output_file() {
     assert!(output_path.exists(), "docs.md must be written to out_dir");
 
     let content = std::fs::read_to_string(&output_path).unwrap();
-    assert!(
-        content.contains("# Hello"),
-        "output must contain rendered readme"
-    );
-    assert!(
-        content.contains("[anyhow]"),
-        "output must contain crate table"
-    );
+    assert_data_eq!(content, file![_]);
 }
 
 #[test]
@@ -469,9 +430,9 @@ fn test_generate_docs_missing_template_errors() {
 
     assert!(result.is_err(), "missing template must produce an error");
     let err = result.unwrap_err().to_string();
-    assert!(
-        err.contains("docs.handlebars.md"),
-        "error must mention the template file: {err}"
+    assert_data_eq!(
+        err,
+        str!["reading [..]/docs.handlebars.md: No such file or directory (os error 2)"]
     );
 }
 
@@ -513,9 +474,8 @@ fn test_fetch_crate_descriptions_returns_workspace_packages() {
         descriptions.contains_key("bphelper-build"),
         "must include workspace package bphelper-build"
     );
-    assert!(
-        descriptions["bphelper-build"].contains("documentation generation"),
-        "description must match Cargo.toml: {:?}",
-        descriptions["bphelper-build"]
+    assert_data_eq!(
+        &descriptions["bphelper-build"],
+        str!["Build-time documentation generation for battery packs"]
     );
 }

@@ -1,0 +1,9 @@
+[package]
+name = "my-app"
+version = "0.1.0"
+
+[dependencies]
+serde = "1.0.200"
+
+[package.metadata.battery-pack]
+managed-battery-pack = { features = ["default"] }

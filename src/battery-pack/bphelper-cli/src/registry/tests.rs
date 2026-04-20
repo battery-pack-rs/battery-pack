@@ -17,6 +17,7 @@
 //   - cli.list.filter          — filters results by name pattern
 
 use super::CrateSource;
+use snapbox::{assert_data_eq, file, str};
 use std::path::PathBuf;
 
 fn fixtures_dir() -> PathBuf {
@@ -46,22 +47,7 @@ fn list_discovers_local_battery_packs() {
     let source = CrateSource::Local(fixtures_dir());
     let packs = super::fetch_battery_pack_list(&source, None).unwrap();
     let formatted = format_summaries(&packs);
-    assert!(
-        formatted.contains("basic-battery-pack"),
-        "Expected basic-battery-pack"
-    );
-    assert!(
-        formatted.contains("broken-battery-pack"),
-        "Expected broken-battery-pack"
-    );
-    assert!(
-        formatted.contains("fancy-battery-pack"),
-        "Expected fancy-battery-pack"
-    );
-    assert!(
-        formatted.contains("managed-battery-pack"),
-        "Expected managed-battery-pack"
-    );
+    assert_data_eq!(formatted, file![_]);
 }
 
 // [verify cli.list.filter]
@@ -71,9 +57,9 @@ fn list_filter_narrows_results() {
     let packs = super::fetch_battery_pack_list(&source, Some("basic")).unwrap();
     let formatted = format_summaries(&packs);
     assert_eq!(packs.len(), 1, "Expected exactly 1 result");
-    assert!(
-        formatted.contains("basic-battery-pack"),
-        "Expected basic-battery-pack"
+    assert_data_eq!(
+        formatted,
+        str!["basic-battery-pack 0.1.0 -- A simple test battery pack"]
     );
 }
 
@@ -178,22 +164,7 @@ managed-battery-pack = { features = ["default"] }
 
     let result = resolve_with_fixture(cargo_toml, &bp_root).unwrap();
 
-    assert!(
-        result.contains(r#"name = "my-app""#),
-        "Expected package name"
-    );
-    assert!(
-        result.contains(r#"anyhow = "1""#),
-        "Expected anyhow version"
-    );
-    assert!(
-        result.contains(r#"clap = { version = "4""#),
-        "Expected clap version"
-    );
-    assert!(
-        result.contains(r#"managed-battery-pack = "0.2.0""#),
-        "Expected managed-battery-pack version"
-    );
+    assert_data_eq!(result, file![_]);
 }
 
 #[test]
@@ -218,13 +189,7 @@ managed-battery-pack = { features = ["default"] }
 
     let result = resolve_with_fixture(cargo_toml, &bp_root).unwrap();
 
-    assert!(
-        result.contains(r#"name = "my-app""#),
-        "Expected package name"
-    );
-    assert!(result.contains(r#"anyhow = "1""#), "Expected anyhow");
-    assert!(result.contains(r#"insta = "1.34""#), "Expected insta");
-    assert!(result.contains(r#"cc = "1.0""#), "Expected cc");
+    assert_data_eq!(result, file![_]);
 }
 
 #[test]
@@ -242,9 +207,11 @@ managed-battery-pack = { features = ["default"] }
 "#;
 
     let err = resolve_with_fixture(cargo_toml, &bp_root).unwrap_err();
-    assert!(
-        err.to_string().contains("bp-managed") && err.to_string().contains("conflicting keys"),
-        "should error on both bp-managed and version: {err}"
+    assert_data_eq!(
+        err.to_string(),
+        str![
+            "dependency 'anyhow' in [dependencies] has `bp-managed = true` with conflicting keys: version"
+        ]
     );
 }
 
@@ -263,10 +230,7 @@ managed-battery-pack = { features = ["default"] }
 "#;
 
     let result = resolve_with_fixture(cargo_toml, &bp_root).unwrap();
-    assert!(
-        result.contains(r#"serde = "1.0.200""#),
-        "explicit version should be untouched: {result}"
-    );
+    assert_data_eq!(result, file![_]);
 }
 
 #[test]
@@ -284,10 +248,11 @@ managed-battery-pack = { features = ["default"] }
 "#;
 
     let err = resolve_with_fixture(cargo_toml, &bp_root).unwrap_err();
-    assert!(
-        err.to_string().contains("nonexistent")
-            && err.to_string().contains("no battery pack provides it"),
-        "should error on unresolvable dep: {err}"
+    assert_data_eq!(
+        err.to_string(),
+        str![
+            "dependency 'nonexistent' in [dependencies] has `bp-managed = true` but no battery pack provides it"
+        ]
     );
 }
 
@@ -303,10 +268,7 @@ serde = "1"
 "#;
 
     let result = resolve_with_fixture(cargo_toml, &bp_root).unwrap();
-    assert!(
-        result.contains(r#"serde = "1""#),
-        "should be unchanged: {result}"
-    );
+    assert_data_eq!(result, file![_]);
 }
 
 #[test]
@@ -324,9 +286,11 @@ managed-battery-pack = { features = ["default"] }
 "#;
 
     let err = resolve_with_fixture(cargo_toml, &bp_root).unwrap_err();
-    assert!(
-        err.to_string().contains("conflicting keys") && err.to_string().contains("features"),
-        "should error on bp-managed with features: {err}"
+    assert_data_eq!(
+        err.to_string(),
+        str![
+            "dependency 'clap' in [dependencies] has `bp-managed = true` with conflicting keys: features"
+        ]
     );
 }
 
@@ -345,10 +309,11 @@ managed-battery-pack = { features = ["default"] }
 "#;
 
     let err = resolve_with_fixture(cargo_toml, &bp_root).unwrap_err();
-    assert!(
-        err.to_string().contains("conflicting keys")
-            && err.to_string().contains("default-features"),
-        "should error on bp-managed with default-features: {err}"
+    assert_data_eq!(
+        err.to_string(),
+        str![
+            "dependency 'clap' in [dependencies] has `bp-managed = true` with conflicting keys: default-features"
+        ]
     );
 }
 
@@ -372,17 +337,5 @@ managed-battery-pack = { features = ["default"] }
 
     let result = resolve_with_fixture(cargo_toml, &bp_root).unwrap();
 
-    assert!(
-        result.contains(r#"name = "my-app""#),
-        "Expected package name"
-    );
-    assert!(result.contains(r#"anyhow = "1""#), "Expected anyhow");
-    assert!(
-        result.contains(r#"clap = { version = "4""#),
-        "Expected clap"
-    );
-    assert!(
-        result.contains(r#"managed-battery-pack = "0.2.0""#),
-        "Expected managed-battery-pack"
-    );
+    assert_data_eq!(result, file![_]);
 }
