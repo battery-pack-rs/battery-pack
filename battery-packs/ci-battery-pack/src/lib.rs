@@ -618,4 +618,26 @@ src/main.rs
 "#]]
         );
     }
+
+    // -- pin_github_action output verification --
+
+    #[test]
+    fn pin_github_action_subpath_in_generated_output() {
+        let files = PreviewBuilder::new(env!("CARGO_MANIFEST_DIR"))
+            .template("templates/full")
+            .define("ci_platform", "github")
+            .define("repo_owner", "test-owner")
+            .define("description", "")
+            .define("clippy_sarif", "true")
+            .preview()
+            .unwrap();
+        let ci = files
+            .iter()
+            .find(|f| f.path == ".github/workflows/ci.yml")
+            .unwrap();
+        assert!(
+            ci.content.contains("github/codeql-action/upload-sarif@"),
+            "should contain subpath in action reference"
+        );
+    }
 }

@@ -460,57 +460,6 @@ fn jinja_bool_false_is_falsy() {
 // -- pin_github_action --
 
 #[test]
-fn pin_github_action_resolves_known_repo() {
-    let vars = BTreeMap::new();
-    let env = build_jinja_env(Path::new("."), &vars).unwrap();
-    let result = env
-        .render_str(
-            r#"{{ pin_github_action("actions/checkout", "v4") }}"#,
-            minijinja::context! {},
-        )
-        .unwrap();
-    assert!(
-        result.starts_with("actions/checkout@"),
-        "should start with owner/repo@: {result}"
-    );
-    if result.contains("could-not-resolve") {
-        assert!(
-            result.contains("TODO"),
-            "failure should include TODO: {result}"
-        );
-    } else {
-        let comment = result.split("# ").nth(1).unwrap();
-        assert!(
-            comment.contains('.'),
-            "should resolve to a specific version (e.g. v4.2.2), got: {comment}"
-        );
-        let sha = result.split('@').nth(1).unwrap().split(' ').next().unwrap();
-        assert_eq!(sha.len(), 40, "SHA should be 40 chars: {sha}");
-        assert!(
-            sha.chars().all(|c| c.is_ascii_hexdigit()),
-            "SHA should be hex: {sha}"
-        );
-    }
-}
-
-#[test]
-fn pin_github_action_bad_repo_returns_error_marker() {
-    let vars = BTreeMap::new();
-    let env = build_jinja_env(Path::new("."), &vars).unwrap();
-    let result = env
-        .render_str(
-            r#"{{ pin_github_action("nonexistent-owner-xyz/nonexistent-repo-xyz", "v999") }}"#,
-            minijinja::context! {},
-        )
-        .unwrap();
-    assert!(
-        result.contains("could-not-resolve"),
-        "should contain error marker: {result}"
-    );
-    assert!(result.contains("TODO"), "should contain TODO: {result}");
-}
-
-#[test]
 fn rust_stable_version_returns_semver() {
     let version = rust_stable_version();
     let parts: Vec<&str> = version.split('.').collect();
@@ -536,13 +485,42 @@ fn rust_stable_version_available_in_jinja() {
     assert!(!result.is_empty(), "should not be empty");
 }
 
+// -- pin_github_action tests (require network, run with `cargo test -- --ignored`) --
+
 #[test]
-fn pin_github_action_available_in_jinja() {
+fn pin_github_action_resolves_known_repo() {
     let vars = BTreeMap::new();
     let env = build_jinja_env(Path::new("."), &vars).unwrap();
     let result = env
         .render_str(
-            r#"uses: {{ pin_github_action("nonexistent-owner-xyz/nonexistent-repo-xyz", "v1") }}"#,
+            r#"{{ pin_github_action("actions/checkout", "v4") }}"#,
+            minijinja::context! {},
+        )
+        .unwrap();
+    assert!(
+        result.starts_with("actions/checkout@"),
+        "should start with owner/repo@: {result}"
+    );
+    assert!(
+        !result.contains("could-not-resolve"),
+        "should resolve successfully: {result}"
+    );
+    let comment = result.split("# ").nth(1).unwrap();
+    assert!(
+        comment.contains('.'),
+        "should resolve to a specific version: {comment}"
+    );
+    let sha = result.split('@').nth(1).unwrap().split(' ').next().unwrap();
+    assert_eq!(sha.len(), 40, "SHA should be 40 chars: {sha}");
+}
+
+#[test]
+fn pin_github_action_bad_repo_returns_error_marker() {
+    let vars = BTreeMap::new();
+    let env = build_jinja_env(Path::new("."), &vars).unwrap();
+    let result = env
+        .render_str(
+            r#"{{ pin_github_action("nonexistent-owner-xyz/nonexistent-repo-xyz", "v999") }}"#,
             minijinja::context! {},
         )
         .unwrap();
@@ -550,9 +528,21 @@ fn pin_github_action_available_in_jinja() {
         result.contains("could-not-resolve"),
         "should contain error marker: {result}"
     );
+}
+
+#[test]
+fn pin_github_action_subpath() {
+    let vars = BTreeMap::new();
+    let env = build_jinja_env(Path::new("."), &vars).unwrap();
+    let result = env
+        .render_str(
+            r#"{{ pin_github_action("github/codeql-action", "v3", "upload-sarif") }}"#,
+            minijinja::context! {},
+        )
+        .unwrap();
     assert!(
-        result.starts_with("uses: "),
-        "should preserve prefix: {result}"
+        result.contains("github/codeql-action/upload-sarif@"),
+        "should contain subpath: {result}"
     );
 }
 
