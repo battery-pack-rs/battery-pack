@@ -1,0 +1,17 @@
+{%- if ci_platform == "github" -%}
+# cargo-mutants: find code not covered by tests
+# https://mutants.rs/
+name: Mutation Testing
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+{% include "snippets/github/jobs/mutants.yml" %}
+{%- endif %}

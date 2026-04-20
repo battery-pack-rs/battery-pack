@@ -256,6 +256,7 @@ xtask/src/main.rs
             ("spellcheck", "true"),
             ("xtask", "true"),
             ("binary_release", "true"),
+            ("mutation_testing", "true"),
         ]);
         assert_eq!(all_files, individual_files);
     }

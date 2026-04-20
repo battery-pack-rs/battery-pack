@@ -62,6 +62,7 @@ The `full` template generates a stub Rust project (Cargo.toml, src/lib.rs, READM
 | `mdbook` | false | [mdBook](https://rust-lang.github.io/mdBook/) scaffold + GitHub Pages deployment | |
 | `spellcheck` | false | [typos](https://github.com/crate-ci/typos) config + workflow | |
 | `xtask` | false | [cargo-xtask](https://github.com/matklad/cargo-xtask) scaffold with codegen `--check` | `xshell`, `xflags` |
+| `mutation_testing` | false | [cargo-mutants](https://mutants.rs/) mutation testing | |
 
 ### SHA pinning
 

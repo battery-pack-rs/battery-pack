@@ -17,6 +17,7 @@ spellcheck = { path = "templates/spellcheck", description = "crate-ci/typos conf
 xtask = { path = "templates/xtask", description = "cargo-xtask scaffold with codegen --check" }
 trusted-publishing = { path = "templates/trusted-publishing", description = "release-plz with OIDC trusted publishing" }
 binary-release = { path = "templates/binary-release", description = "Cross-platform binary builds for GitHub Releases + cargo-binstall" }
+mutation-testing = { path = "templates/mutation-testing", description = "Mutation testing with cargo-mutants" }
 
 [package.metadata.battery-pack]
 hidden = ["battery-pack", "snapbox"]

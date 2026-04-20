@@ -1,0 +1,10 @@
+[placeholders.ci_platform]
+type = "select"
+prompt = "CI platform"
+options = ["github", "none"]
+default = "github"
+
+[placeholders.repo_owner]
+type = "string"
+prompt = "Repository owner (org or user)"
+default = "OWNER"

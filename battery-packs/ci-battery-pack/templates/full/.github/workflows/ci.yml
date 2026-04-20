@@ -40,6 +40,9 @@ jobs:
 {%- endif -%}
 {%- if all or xtask %}
 {% include "snippets/github/jobs/xtask.yml" %}
+{%- endif -%}
+{%- if all or mutation_testing %}
+{% include "snippets/github/jobs/mutants.yml" %}
 {%- endif %}
 {% include "snippets/github/ci-pass.yml" %}
 {%- endif %}
