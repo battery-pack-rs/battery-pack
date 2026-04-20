@@ -158,11 +158,13 @@ pub fn validate_templates(manifest_dir: &str) -> Result<()> {
             .context("failed to run cargo check")?;
         anyhow::ensure!(
             output.status.success(),
-            "cargo check failed for template '{name}':\n{}",
+            "cargo check failed for template '{name}':\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
 
         // cargo test
+        // Failure details (assertions, panics) go to stdout, not stderr.
         let output = std::process::Command::new("cargo")
             .args(["test"])
             .env("CARGO_TARGET_DIR", &*shared_target_dir)
@@ -171,7 +173,8 @@ pub fn validate_templates(manifest_dir: &str) -> Result<()> {
             .context("failed to run cargo test")?;
         anyhow::ensure!(
             output.status.success(),
-            "cargo test failed for template '{name}':\n{}",
+            "cargo test failed for template '{name}':\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
 

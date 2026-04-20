@@ -1,3 +1,4 @@
+use indoc::indoc;
 use snapbox::{ToDebug, assert_data_eq, str};
 
 use super::*;
@@ -320,5 +321,76 @@ fn preview_resolves_bp_managed_deps() {
     assert!(
         cargo.content.contains("managed-battery-pack"),
         "Expected managed dependency"
+    );
+}
+
+#[test]
+fn preview_warns_on_unresolvable_bp_managed_dep() {
+    let tmp = tempfile::tempdir().unwrap();
+    let crate_root = tmp.path();
+
+    std::fs::write(
+        crate_root.join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "fake-battery-pack"
+            version = "0.1.0"
+            edition = "2021"
+            description = "test"
+            keywords = ["battery-pack"]
+
+            [package.metadata.battery.templates]
+            default = { path = "templates/default", description = "test" }
+        "#},
+    )
+    .unwrap();
+
+    std::fs::create_dir_all(crate_root.join("src")).unwrap();
+    std::fs::write(crate_root.join("src/lib.rs"), "").unwrap();
+
+    let tpl_dir = crate_root.join("templates/default");
+    std::fs::create_dir_all(&tpl_dir).unwrap();
+    std::fs::write(
+        tpl_dir.join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "{{ project_name }}"
+            version = "0.1.0"
+            edition = "2021"
+
+            [dependencies]
+            nonexistent-crate.bp-managed = true
+
+            [package.metadata.battery-pack]
+            fake-battery-pack = { features = ["default"] }
+        "#},
+    )
+    .unwrap();
+
+    let opts = RenderOpts {
+        crate_root: crate_root.to_path_buf(),
+        template_path: "templates/default".to_string(),
+        project_name: "test-project".to_string(),
+        defines: BTreeMap::new(),
+        interactive_override: Some(false),
+    };
+
+    // Should succeed (warn, not error) since the battery pack may not exist yet
+    let files = preview(opts).unwrap();
+    let cargo = files.iter().find(|f| f.path == "Cargo.toml").unwrap();
+    assert_data_eq!(
+        &cargo.content,
+        str![[r#"
+[package]
+name = "test-project"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nonexistent-crate.bp-managed = true
+
+[package.metadata.battery-pack]
+fake-battery-pack = { features = ["default"] }
+"#]]
     );
 }

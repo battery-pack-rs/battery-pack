@@ -1,3 +1,1 @@
-fn main() {
-    http_battery_pack::validate();
-}
+fn main() {}

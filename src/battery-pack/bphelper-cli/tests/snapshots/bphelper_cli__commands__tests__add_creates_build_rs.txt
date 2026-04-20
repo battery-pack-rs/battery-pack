@@ -1,3 +1,0 @@
-fn main() {
-    basic_battery_pack::validate();
-}

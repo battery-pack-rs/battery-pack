@@ -315,6 +315,7 @@ dependencies = [
  "crossterm 0.28.1",
  "dialoguer",
  "flate2",
+ "indoc",
  "minijinja",
  "open",
  "ratatui",
