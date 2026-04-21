@@ -16,10 +16,13 @@ pub(crate) fn get_cache_dir() -> PathBuf {
 }
 
 fn find_context_battery_pack() -> Option<String> {
-    let args: Vec<String> = std::env::args().collect();
+    find_context_battery_pack_from_args(&std::env::args().collect::<Vec<_>>())
+}
+
+fn find_context_battery_pack_from_args(args: &[String]) -> Option<String> {
     let cmds = ["new", "add", "show", "rm", "info", "edit"];
     let mut found_cmd = false;
-    for arg in args.into_iter().skip(1) {
+    for arg in args.iter().skip(1) {
         if arg.starts_with('-') {
             continue;
         }
@@ -28,7 +31,7 @@ fn find_context_battery_pack() -> Option<String> {
             continue;
         }
         if found_cmd {
-            return Some(arg);
+            return Some(arg.to_string());
         }
     }
     None
@@ -117,3 +120,6 @@ pub fn pack_features(_current: &OsStr) -> Vec<CompletionCandidate> {
 pub fn pack_crates(_current: &OsStr) -> Vec<CompletionCandidate> {
     collect_keys(|spec| spec.crates.into_keys())
 }
+
+#[cfg(test)]
+mod tests;
