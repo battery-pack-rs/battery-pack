@@ -8,6 +8,7 @@ use anyhow::{Context, Result, bail};
 use flate2::read::GzDecoder;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
 use std::path::{Path, PathBuf};
 use tar::Archive;
 
@@ -249,11 +250,18 @@ pub(crate) fn fetch_bp_spec_from_registry(
         .join(format!("{}-{}", crate_name, crate_info.version));
 
     let manifest_path = crate_dir.join("Cargo.toml");
-    let manifest_content = std::fs::read_to_string(&manifest_path)
+    let manifest_content = fs::read_to_string(&manifest_path)
         .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
 
     let spec = bphelper_manifest::parse_battery_pack(&manifest_content)
         .map_err(|e| anyhow::anyhow!("Failed to parse battery pack '{}': {}", crate_name, e))?;
+
+    // Cache the manifest dynamically for autocomplete
+    let cache_dir = crate::completions::get_cache_dir();
+    if fs::create_dir_all(&cache_dir).is_ok() {
+        let cache_file = cache_dir.join(format!("{}_spec.toml", crate_name));
+        let _ = fs::write(&cache_file, &manifest_content);
+    }
 
     Ok((crate_info.version, spec))
 }
@@ -405,7 +413,7 @@ fn extra_keys_on_bp_managed(value: &toml_edit::Item) -> Vec<String> {
 
 pub(crate) fn fetch_battery_pack_spec(bp_name: &str) -> Result<bphelper_manifest::BatteryPackSpec> {
     let manifest_path = resolve_battery_pack_manifest(bp_name)?;
-    let manifest_content = std::fs::read_to_string(&manifest_path)
+    let manifest_content = fs::read_to_string(&manifest_path)
         .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
 
     bphelper_manifest::parse_battery_pack(&manifest_content)
@@ -419,7 +427,7 @@ pub(crate) fn load_installed_bp_spec(
 ) -> Result<bphelper_manifest::BatteryPackSpec> {
     if let Some(local_path) = path {
         let manifest_path = Path::new(local_path).join("Cargo.toml");
-        let manifest_content = std::fs::read_to_string(&manifest_path)
+        let manifest_content = fs::read_to_string(&manifest_path)
             .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
         return bphelper_manifest::parse_battery_pack(&manifest_content)
             .map_err(|e| anyhow::anyhow!("Failed to parse battery pack '{}': {}", bp_name, e));
@@ -490,6 +498,19 @@ fn fetch_battery_pack_list_from_registry(filter: Option<&str>) -> Result<Vec<Bat
         .collect();
 
     Ok(battery_packs)
+}
+
+pub(crate) fn update_cache() -> Result<()> {
+    let packs = fetch_battery_pack_list_from_registry(None)?;
+    let pack_names: Vec<String> = packs.into_iter().map(|p| p.name).collect();
+
+    let cache_dir = crate::completions::get_cache_dir();
+    fs::create_dir_all(&cache_dir)?;
+
+    let cache_file = cache_dir.join("registry_packs.json");
+    let content = serde_json::to_string(&pack_names)?;
+    fs::write(&cache_file, content)?;
+    Ok(())
 }
 
 pub(crate) fn discover_local_battery_packs(
@@ -570,7 +591,7 @@ pub(crate) fn fetch_bp_spec(
         CrateSource::Local(workspace_dir) => {
             let crate_dir = find_local_battery_pack_dir(workspace_dir, &crate_name)?;
             let manifest_path = crate_dir.join("Cargo.toml");
-            let manifest_content = std::fs::read_to_string(&manifest_path)
+            let manifest_content = fs::read_to_string(&manifest_path)
                 .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
             let spec = bphelper_manifest::parse_battery_pack(&manifest_content).map_err(|e| {
                 anyhow::anyhow!("Failed to parse battery pack '{}': {}", crate_name, e)
@@ -634,7 +655,7 @@ pub(crate) fn fetch_battery_pack_detail(
 
     // Parse the battery pack spec
     let manifest_path = crate_dir.join("Cargo.toml");
-    let manifest_content = std::fs::read_to_string(&manifest_path)
+    let manifest_content = fs::read_to_string(&manifest_path)
         .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
     let spec = bphelper_manifest::parse_battery_pack(&manifest_content)
         .map_err(|e| anyhow::anyhow!("Failed to parse battery pack: {}", e))?;
@@ -649,7 +670,7 @@ pub(crate) fn fetch_battery_pack_detail(
 fn fetch_battery_pack_detail_from_path(path: &str) -> Result<BatteryPackDetail> {
     let crate_dir = std::path::Path::new(path);
     let manifest_path = crate_dir.join("Cargo.toml");
-    let manifest_content = std::fs::read_to_string(&manifest_path)
+    let manifest_content = fs::read_to_string(&manifest_path)
         .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
 
     let spec = bphelper_manifest::parse_battery_pack(&manifest_content)

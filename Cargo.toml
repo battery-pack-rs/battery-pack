@@ -41,3 +41,7 @@ features = [
 [workspace.dependencies.serde]
 version = "1"
 features = ["derive"]
+
+[workspace.dependencies.clap_complete]
+version = "4"
+features = ["unstable-dynamic"]

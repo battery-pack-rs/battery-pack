@@ -4,7 +4,7 @@
 //! Depends on `registry` and `manifest`.
 
 use anyhow::{Context, Result, bail};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -54,6 +54,7 @@ pub(crate) enum BpCommands {
     /// Create a new project from a battery pack template
     New {
         /// Name of the battery pack (e.g., "cli" resolves to "cli-battery-pack")
+        #[arg(add = clap_complete::ArgValueCompleter::new(crate::completions::registry_and_local_packs))]
         battery_pack: String,
 
         /// Name for the new project (prompted interactively if not provided)
@@ -62,7 +63,7 @@ pub(crate) enum BpCommands {
 
         /// Which template to use (defaults to first available, or prompts if multiple)
         // [impl cli.new.template-flag]
-        #[arg(long, short = 't')]
+        #[arg(long, short = 't', add = clap_complete::ArgValueCompleter::new(crate::completions::templates))]
         template: Option<String>,
 
         /// Use a local path instead of downloading from crates.io
@@ -84,15 +85,17 @@ pub(crate) enum BpCommands {
     Add {
         /// Name of the battery pack (e.g., "cli" resolves to "cli-battery-pack").
         /// Omit to open the interactive manager.
+        #[arg(add = clap_complete::ArgValueCompleter::new(crate::completions::registry_and_local_packs))]
         battery_pack: Option<String>,
 
         /// Specific crates to add from the battery pack (ignores defaults/features)
+        #[arg(add = clap_complete::ArgValueCompleter::new(crate::completions::pack_crates))]
         crates: Vec<String>,
 
         // [impl cli.add.features]
         // [impl cli.add.features-multiple]
         /// Named features to enable (comma-separated or repeated)
-        #[arg(long = "features", short = 'F', value_delimiter = ',')]
+        #[arg(long = "features", short = 'F', value_delimiter = ',', add = clap_complete::ArgValueCompleter::new(crate::completions::pack_features))]
         features: Vec<String>,
 
         // [impl cli.add.no-default-features]
@@ -128,6 +131,7 @@ pub(crate) enum BpCommands {
     #[command(visible_alias = "remove")]
     Rm {
         /// Name of the battery pack to remove (e.g., "cli" resolves to "cli-battery-pack")
+        #[arg(add = clap_complete::ArgValueCompleter::new(crate::completions::installed_packs))]
         battery_pack: String,
 
         /// Also remove dependencies that were added by the tool
@@ -150,6 +154,7 @@ pub(crate) enum BpCommands {
     #[command(visible_alias = "info")]
     Show {
         /// Name of the battery pack (e.g., "cli" resolves to "cli-battery-pack")
+        #[arg(add = clap_complete::ArgValueCompleter::new(crate::completions::registry_and_local_packs))]
         battery_pack: String,
 
         /// Preview a specific template's rendered output
@@ -184,6 +189,15 @@ pub(crate) enum BpCommands {
         #[arg(long)]
         path: Option<String>,
     },
+
+    /// Print the one-line shell configuration to enable native shell completions
+    Completions {
+        /// Explicitly specify the shell (bash, zsh, fish)
+        shell: Option<String>,
+    },
+
+    #[command(hide = true)]
+    UpdateCache,
 }
 
 // [impl cli.add.target]
@@ -198,6 +212,7 @@ pub(crate) enum AddTarget {
 }
 
 pub fn main() -> Result<()> {
+    clap_complete::env::CompleteEnv::with_factory(Cli::command).complete();
     let cli = Cli::parse();
     let project_dir = std::env::current_dir().context("Failed to get current directory")?;
     let interactive = std::io::stdout().is_terminal();
@@ -317,6 +332,20 @@ pub fn main() -> Result<()> {
                 }
                 BpCommands::Validate { path } => {
                     crate::validate::validate_battery_pack_cmd(path.as_deref())
+                }
+                BpCommands::Completions { shell } => {
+                    let shell_name = shell.unwrap_or_else(|| {
+                        std::env::var("SHELL")
+                            .ok()
+                            .and_then(|s| s.rsplit('/').next().map(|s| s.to_string()))
+                            .unwrap_or_else(|| "bash".to_string())
+                    });
+                    println!("source <(COMPLETE={} cargo-bp)", shell_name);
+                    Ok(())
+                }
+                BpCommands::UpdateCache => {
+                    let _ = crate::registry::update_cache();
+                    Ok(())
                 }
             }
         }

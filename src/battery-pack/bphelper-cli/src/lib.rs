@@ -1,6 +1,7 @@
 //! CLI for battery-pack: create and manage battery packs.
 
 mod commands;
+mod completions;
 pub(crate) mod manifest;
 pub(crate) mod registry;
 pub(crate) mod template_engine;
