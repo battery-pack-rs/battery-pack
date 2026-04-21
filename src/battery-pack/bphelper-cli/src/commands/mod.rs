@@ -117,6 +117,18 @@ pub(crate) enum BpCommands {
         /// Use a local path instead of downloading from crates.io
         #[arg(long)]
         path: Option<String>,
+
+        /// Apply a battery pack template to the current project (renders and merges files)
+        #[arg(long, short = 't')]
+        template: Option<String>,
+
+        /// Set a template variable (e.g., -d ci_platform=github). Skips the prompt for that variable.
+        #[arg(long = "define", short = 'd', value_parser = parse_define)]
+        define: Vec<(String, String)>,
+
+        /// Overwrite existing files without prompting (TOML and YAML files are always merged, never overwritten)
+        #[arg(long)]
+        overwrite: bool,
     },
 
     /// Update dependencies from installed battery packs
@@ -252,8 +264,23 @@ pub fn main() -> Result<()> {
                     all_features,
                     target,
                     path,
-                } => match battery_pack {
-                    Some(name) => add_battery_pack(
+                    template,
+                    define,
+                    overwrite,
+                } => match (battery_pack, template) {
+                    // Template merge: cargo bp add <pack> -t <template>
+                    (Some(name), Some(tmpl)) => add_template(AddTemplateOpts {
+                        battery_pack: &name,
+                        template: &tmpl,
+                        path_override: path.as_deref(),
+                        source: &source,
+                        project_dir: &project_dir,
+                        defines: define.into_iter().collect(),
+                        overwrite,
+                        interactive,
+                    }),
+                    // Normal add: cargo bp add <pack>
+                    (Some(name), None) => add_battery_pack(
                         &name,
                         &features,
                         no_default_features,
@@ -264,7 +291,7 @@ pub fn main() -> Result<()> {
                         &source,
                         &project_dir,
                     ),
-                    None => show_add_help(&project_dir),
+                    (None, _) => show_add_help(&project_dir),
                 },
                 BpCommands::Sync { path } => {
                     sync_battery_packs(&project_dir, path.as_deref(), &source)
@@ -499,6 +526,163 @@ pub(crate) fn resolve_add_crates(
 
 // [impl cli.add.register]
 // [impl cli.add.dep-kind]
+// ============================================================================
+// Template merge: cargo bp add <pack> -t <template>
+// ============================================================================
+
+/// Options for `cargo bp add <pack> -t <template>`.
+struct AddTemplateOpts<'a> {
+    battery_pack: &'a str,
+    template: &'a str,
+    path_override: Option<&'a str>,
+    source: &'a CrateSource,
+    project_dir: &'a Path,
+    defines: BTreeMap<String, String>,
+    overwrite: bool,
+    interactive: bool,
+}
+
+/// Warn if the git working tree has uncommitted changes.
+///
+/// Silently passes if git is not installed or the directory is not a git repo.
+/// In interactive mode, warns and asks for confirmation. In non-interactive
+/// mode, refuses unless `overwrite` is true.
+fn check_git_clean(project_dir: &Path, interactive: bool, overwrite: bool) -> Result<()> {
+    let output = std::process::Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(project_dir)
+        .output();
+
+    let output = match output {
+        Ok(o) if o.status.success() => o,
+        // Not a git repo or git not installed: skip the check.
+        _ => return Ok(()),
+    };
+
+    let status = String::from_utf8_lossy(&output.stdout);
+    if status.trim().is_empty() {
+        return Ok(());
+    }
+
+    if overwrite {
+        // User explicitly accepted risk with --overwrite.
+        return Ok(());
+    }
+
+    eprintln!(
+        "warning: git working tree has uncommitted changes. \
+         Template merge may be hard to undo."
+    );
+
+    if !interactive {
+        bail!(
+            "Working tree has uncommitted changes. \
+             Commit or stash first, or pass --overwrite to proceed."
+        );
+    }
+
+    let proceed = dialoguer::Confirm::new()
+        .with_prompt("Proceed anyway?")
+        .default(false)
+        .interact()
+        .context("prompt failed")?;
+
+    if !proceed {
+        bail!("Aborted.");
+    }
+
+    Ok(())
+}
+
+/// Merge a battery pack template into the current project.
+///
+/// Renders the template to memory, then applies each file using format-aware
+/// merge strategies: TOML merge for Cargo.toml, YAML merge for workflow files,
+/// and skip/overwrite for everything else.
+fn add_template(opts: AddTemplateOpts<'_>) -> Result<()> {
+    // Warn if the git working tree is dirty so the user can undo changes.
+    check_git_clean(opts.project_dir, opts.interactive, opts.overwrite)?;
+
+    let crate_name = resolve_crate_name(opts.battery_pack);
+
+    // Resolve the battery pack directory.
+    let crate_dir = if let Some(local_path) = opts.path_override {
+        PathBuf::from(local_path)
+    } else {
+        let resolved = crate::registry::resolve_crate_dir(opts.battery_pack, None, opts.source)?;
+        resolved.dir
+    };
+
+    // Read template metadata and resolve which template to use.
+    let manifest_path = crate_dir.join("Cargo.toml");
+    let manifest_content = std::fs::read_to_string(&manifest_path)
+        .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
+    let templates = parse_template_metadata(&manifest_content, &crate_name)?;
+    let template_path = resolve_template(&templates, Some(opts.template), opts.interactive)?;
+
+    // Load post-merge hints before moving template_path.
+    let hints = crate::template_engine::load_template_hints(&crate_dir, &template_path);
+
+    // Infer project_name from the current Cargo.toml or directory name.
+    let project_name = infer_project_name(opts.project_dir)?;
+
+    // Render the template to memory.
+    let interactive_override = if opts.interactive { None } else { Some(false) };
+    let render_opts = crate::template_engine::RenderOpts {
+        crate_root: crate_dir,
+        template_path,
+        project_name,
+        defines: opts.defines,
+        interactive_override,
+    };
+    let files = crate::template_engine::preview(render_opts)?;
+
+    // Apply rendered files with format-aware merging.
+    let apply_opts = crate::merge::ApplyOpts {
+        project_dir: opts.project_dir.to_path_buf(),
+        overwrite: opts.overwrite,
+        interactive: opts.interactive,
+    };
+    let results = crate::merge::apply_rendered_files(&files, &apply_opts)?;
+    crate::merge::print_summary(&results);
+
+    // Print post-merge hints if the template defines any.
+    if !hints.is_empty() {
+        eprintln!();
+        eprintln!("Next steps:");
+        for hint in &hints {
+            eprintln!("  {hint}");
+        }
+    }
+
+    Ok(())
+}
+
+/// Infer the project name from the current Cargo.toml or directory name.
+fn infer_project_name(project_dir: &Path) -> Result<String> {
+    let cargo_toml = project_dir.join("Cargo.toml");
+    if let Ok(content) = std::fs::read_to_string(&cargo_toml)
+        && let Ok(doc) = content.parse::<toml_edit::DocumentMut>()
+        && let Some(name) = doc
+            .get("package")
+            .and_then(|p| p.get("name"))
+            .and_then(|n| n.as_str())
+    {
+        return Ok(name.to_string());
+    }
+
+    // Fallback: directory name.
+    Ok(project_dir
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("my-project")
+        .to_string())
+}
+
+// ============================================================================
+// Dependency add: cargo bp add <pack>
+// ============================================================================
+
 // [impl cli.add.specific-crates]
 // [impl cli.add.unknown-crate]
 // [impl manifest.register.location]
