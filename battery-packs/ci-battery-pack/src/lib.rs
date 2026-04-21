@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod tests {
-    use battery_pack::testing::PreviewBuilder;
+    use ::battery_pack::testing::PreviewBuilder;
 
     // Note: validate_templates is not used because it runs cargo check on ALL
     // templates, but standalone templates (benchmarks, fuzzing, etc.) are partial
