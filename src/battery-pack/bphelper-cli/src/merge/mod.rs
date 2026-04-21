@@ -196,43 +196,34 @@ fn resolve_plain_conflict(
         return Ok(FileResult::Skipped(ctx.rel_path.to_string()));
     }
 
-    // Interactive prompt with batch options.
+    // Interactive prompt with single-key shortcuts.
     loop {
-        let choice = dialoguer::Select::new()
-            .with_prompt(format!("{} already exists", ctx.rel_path))
-            .items(&[
-                "skip",
-                "overwrite",
-                "view diff",
-                "skip all",
-                "overwrite all",
-            ])
-            .default(0)
-            .interact()
-            .context("prompt failed")?;
-
-        match choice {
-            0 => return Ok(FileResult::Skipped(ctx.rel_path.to_string())),
-            1 => {
+        eprintln!(
+            "{} already exists: [s]kip [o]verwrite [d]iff [S]kip all [O]verwrite all",
+            ctx.rel_path
+        );
+        match read_single_key()? {
+            's' => return Ok(FileResult::Skipped(ctx.rel_path.to_string())),
+            'o' => {
                 std::fs::write(ctx.dest, ctx.new_content)
                     .with_context(|| format!("failed to write {}", ctx.dest.display()))?;
                 return Ok(FileResult::Overwritten(ctx.rel_path.to_string()));
             }
-            2 => {
+            'd' => {
                 let diff = unified_diff(ctx.existing, ctx.new_content, ctx.rel_path);
                 eprintln!("{diff}");
             }
-            3 => {
+            'S' => {
                 *batch = BatchDecision::SkipAll;
                 return Ok(FileResult::Skipped(ctx.rel_path.to_string()));
             }
-            4 => {
+            'O' => {
                 *batch = BatchDecision::AcceptAll;
                 std::fs::write(ctx.dest, ctx.new_content)
                     .with_context(|| format!("failed to write {}", ctx.dest.display()))?;
                 return Ok(FileResult::Overwritten(ctx.rel_path.to_string()));
             }
-            _ => unreachable!(),
+            _ => {} // Unrecognized key, re-prompt.
         }
     }
 }
@@ -274,21 +265,18 @@ fn resolve_structured_merge(
 
     let mut content_to_write = ctx.new_content.to_string();
     loop {
-        let choice = dialoguer::Select::new()
-            .with_prompt(format!("Merge {}?", ctx.rel_path))
-            .items(&["accept", "skip", "edit", "accept all", "skip all"])
-            .default(0)
-            .interact()
-            .context("prompt failed")?;
-
-        match choice {
-            0 => {
+        eprintln!(
+            "Merge {}? [a]ccept [s]kip [e]dit [A]ccept all [S]kip all",
+            ctx.rel_path
+        );
+        match read_single_key()? {
+            'a' => {
                 std::fs::write(ctx.dest, &content_to_write)
                     .with_context(|| format!("failed to write {}", ctx.dest.display()))?;
                 return Ok(FileResult::Merged(ctx.rel_path.to_string()));
             }
-            1 => return Ok(FileResult::Skipped(ctx.rel_path.to_string())),
-            2 => {
+            's' => return Ok(FileResult::Skipped(ctx.rel_path.to_string())),
+            'e' => {
                 content_to_write = open_in_editor(&content_to_write, ctx.rel_path)?;
                 let updated_diff = unified_diff(ctx.existing, &content_to_write, ctx.rel_path);
                 if updated_diff.is_empty() {
@@ -297,19 +285,26 @@ fn resolve_structured_merge(
                     eprintln!("{updated_diff}");
                 }
             }
-            3 => {
+            'A' => {
                 *batch = BatchDecision::AcceptAll;
                 std::fs::write(ctx.dest, &content_to_write)
                     .with_context(|| format!("failed to write {}", ctx.dest.display()))?;
                 return Ok(FileResult::Merged(ctx.rel_path.to_string()));
             }
-            4 => {
+            'S' => {
                 *batch = BatchDecision::SkipAll;
                 return Ok(FileResult::Skipped(ctx.rel_path.to_string()));
             }
-            _ => unreachable!(),
+            _ => {} // Unrecognized key, re-prompt.
         }
     }
+}
+
+/// Read a single keypress from the terminal (no Enter required).
+fn read_single_key() -> Result<char> {
+    let term = console::Term::stderr();
+    let key = term.read_char().context("failed to read key")?;
+    Ok(key)
 }
 
 /// Open content in $EDITOR and return the edited result.
@@ -552,10 +547,10 @@ fn merge_yaml_values(existing: &yaml_rust2::Yaml, template: &yaml_rust2::Yaml) -
 // Diff display
 // ============================================================================
 
-/// Produce a colored unified diff between two strings.
-/// Produce a unified diff between two strings. Returns an empty string when
-/// the inputs are identical (no hunks to display).
+/// Produce a colored unified diff between two strings. Returns an empty
+/// string when the inputs are identical (no hunks to display).
 pub(crate) fn unified_diff(old: &str, new: &str, path: &str) -> String {
+    use console::style;
     use similar::TextDiff;
 
     let diff = TextDiff::from_lines(old, new);
@@ -566,7 +561,28 @@ pub(crate) fn unified_diff(old: &str, new: &str, path: &str) -> String {
         .header(&format!("a/{path}"), &format!("b/{path}"))
         .iter_hunks()
     {
-        output.push_str(&format!("{hunk}"));
+        // Hunk header (e.g., @@ -1,3 +1,5 @@)
+        output.push_str(&style(format!("{}", hunk.header())).cyan().to_string());
+        output.push('\n');
+
+        for change in hunk.iter_changes() {
+            let sign = match change.tag() {
+                similar::ChangeTag::Insert => "+",
+                similar::ChangeTag::Delete => "-",
+                similar::ChangeTag::Equal => " ",
+            };
+            let line = format!("{sign}{}", change.value());
+            let styled = match change.tag() {
+                similar::ChangeTag::Insert => style(line).green().to_string(),
+                similar::ChangeTag::Delete => style(line).red().to_string(),
+                similar::ChangeTag::Equal => line,
+            };
+            output.push_str(&styled);
+            // Ensure trailing newline for lines that don't have one.
+            if !change.value().ends_with('\n') {
+                output.push('\n');
+            }
+        }
     }
 
     output
