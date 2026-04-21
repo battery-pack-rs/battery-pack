@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2](https://github.com/battery-pack-rs/battery-pack/compare/ci-battery-pack-v0.1.1...ci-battery-pack-v0.1.2) - 2026-04-21
+
+### Other
+
+- *(ci)* Clarify defaults/all flag, expand SARIF docs, fix mdbook duplicate guard ([#110](https://github.com/battery-pack-rs/battery-pack/pull/110))
+
 ## [0.1.1](https://github.com/battery-pack-rs/battery-pack/compare/ci-battery-pack-v0.1.0...ci-battery-pack-v0.1.1) - 2026-04-21
 
 ### Other
