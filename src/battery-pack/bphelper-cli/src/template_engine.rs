@@ -25,6 +25,10 @@ struct BpTemplateConfig {
     /// Whole-file includes: copy src -> dest in the generated project.
     #[serde(default)]
     files: Vec<FileInclude>,
+
+    /// Post-merge hints shown after `cargo bp add -t`.
+    #[serde(default)]
+    hints: Vec<Hint>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -53,6 +57,12 @@ enum PlaceholderType {
 struct FileInclude {
     src: String,
     dest: String,
+}
+
+/// A post-merge hint shown to the user after `cargo bp add -t`.
+#[derive(Debug, Deserialize)]
+struct Hint {
+    message: String,
 }
 
 /// Options for template generation.
@@ -103,6 +113,20 @@ pub(crate) fn preview(mut opts: RenderOpts) -> Result<Vec<RenderedFile>> {
 
     let variables = prepare_render(&opts, &config)?;
     render(&opts.crate_root, &template_dir, &config, &variables)
+}
+
+/// Load post-merge hints from a template's `bp-template.toml`.
+///
+/// Returns an empty vec if the template has no hints or no config file.
+pub(crate) fn load_template_hints(crate_root: &Path, template_path: &str) -> Vec<String> {
+    let config_path = crate_root.join(template_path).join("bp-template.toml");
+    let Ok(content) = std::fs::read_to_string(&config_path) else {
+        return Vec::new();
+    };
+    let Ok(config) = toml::from_str::<BpTemplateConfig>(&content) else {
+        return Vec::new();
+    };
+    config.hints.into_iter().map(|h| h.message).collect()
 }
 
 /// Generate a project from a battery pack template.
