@@ -1,0 +1,58 @@
+{%- if ci_platform == "github" -%}
+# release-plz: automated releases to crates.io (https://release-plz.dev/docs)
+# Setup: configure trusted publishing on crates.io
+#   https://doc.rust-lang.org/cargo/reference/registry-authentication.html#trusted-publishing
+# If using binary_release, also add a RELEASE_PLZ_TOKEN PAT (contents + pull-requests: write)
+#   https://github.com/settings/personal-access-tokens/new
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  release-plz-release:
+    if: {% raw %}${{ github.repository_owner == '{% endraw %}{{ repo_owner }}{% raw %}' }}{% endraw %}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: {{ pin_github_action("actions/checkout", "v6") }}
+        with:
+          fetch-depth: 0
+{%- if all or binary_release %}
+          token: {% raw %}${{ secrets.RELEASE_PLZ_TOKEN }}{% endraw %}
+{%- endif %}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: {{ pin_github_action("rust-lang/crates-io-auth-action", "v1") }}
+      - uses: {{ pin_github_action("release-plz/action", "v0") }}
+        with:
+          command: release
+        env:
+{%- if all or binary_release %}
+          GITHUB_TOKEN: {% raw %}${{ secrets.RELEASE_PLZ_TOKEN }}{% endraw %}
+{%- else %}
+          GITHUB_TOKEN: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
+{%- endif %}
+
+  release-plz-pr:
+    if: {% raw %}${{ !failure() && github.repository_owner == '{% endraw %}{{ repo_owner }}{% raw %}' }}{% endraw %}
+    needs: release-plz-release
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-plz-{% raw %}${{ github.ref }}{% endraw %}
+      cancel-in-progress: false
+    steps:
+      - uses: {{ pin_github_action("actions/checkout", "v6") }}
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: {{ pin_github_action("release-plz/action", "v0") }}
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
+{%- endif %}

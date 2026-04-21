@@ -1,0 +1,18 @@
+{%- if ci_platform == "github" -%}
+# Clippy with GitHub PR annotations via SARIF
+# https://github.com/psastras/sarif-rs
+name: Clippy SARIF
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+{% include "snippets/github/jobs/clippy-sarif.yml" %}
+{%- endif %}

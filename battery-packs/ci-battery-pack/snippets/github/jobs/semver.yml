@@ -1,0 +1,8 @@
+  # https://github.com/obi1kenobi/cargo-semver-checks
+  semver:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: {{ pin_github_action("actions/checkout", "v6") }}
+        with:
+          persist-credentials: false
+      - uses: {{ pin_github_action("obi1kenobi/cargo-semver-checks-action", "v2") }}

@@ -1,0 +1,27 @@
+  # Clippy with GitHub PR annotations via SARIF (https://github.com/psastras/sarif-rs)
+  clippy-sarif:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: {{ pin_github_action("actions/checkout", "v6") }}
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: {{ pin_github_action("Swatinem/rust-cache", "v2") }}
+        with:
+          save-if: {% raw %}${{ github.ref == 'refs/heads/main' }}{% endraw %}
+      - run: cargo install clippy-sarif --locked
+      - run: cargo install sarif-fmt --locked
+      - name: Run clippy with SARIF output
+        run: >
+          cargo clippy --workspace --all-features --all-targets --message-format=json
+          | clippy-sarif | tee clippy-results.sarif | sarif-fmt
+        continue-on-error: true
+      - name: Upload SARIF
+        uses: {{ pin_github_action("github/codeql-action", "v3", "upload-sarif") }}
+        with:
+          sarif_file: clippy-results.sarif
+          wait-for-processing: true

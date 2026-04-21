@@ -1,0 +1,6 @@
+[book]
+title = "{{ project_name }}"
+language = "en"
+src = "md"
+
+[output.html]

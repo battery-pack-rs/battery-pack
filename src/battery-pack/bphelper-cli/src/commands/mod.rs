@@ -1412,10 +1412,10 @@ fn generate_from_path(opts: NewOpts, crate_path: &Path, template_path: &str) -> 
 
 /// Parse a `key=value` string for clap's `value_parser`.
 fn parse_define(s: &str) -> Result<(String, String), String> {
-    let (key, value) = s
-        .split_once('=')
-        .ok_or_else(|| format!("invalid define '{s}': expected key=value"))?;
-    Ok((key.to_string(), value.to_string()))
+    match s.split_once('=') {
+        Some((key, value)) => Ok((key.to_string(), value.to_string())),
+        None => Ok((s.to_string(), "true".to_string())),
+    }
 }
 
 fn parse_template_metadata(

@@ -1,0 +1,38 @@
+{%- if ci_platform == "github" -%}
+# https://embarkstudios.github.io/cargo-deny/
+name: Audit
+
+on:
+  push:
+    paths: ["**/Cargo.toml", "**/Cargo.lock"]
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Advisories are non-blocking: new advisories shouldn't break CI for unrelated PRs
+  advisories:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: {{ pin_github_action("actions/checkout", "v6") }}
+        with:
+          persist-credentials: false
+      - uses: {{ pin_github_action("EmbarkStudios/cargo-deny-action", "v2") }}
+        with:
+          command: check advisories
+
+  # Licenses, bans, and sources are blocking: these are the user's responsibility
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: {{ pin_github_action("actions/checkout", "v6") }}
+        with:
+          persist-credentials: false
+      - uses: {{ pin_github_action("EmbarkStudios/cargo-deny-action", "v2") }}
+        with:
+          command: check bans licenses sources
+{%- endif %}

@@ -1,0 +1,15 @@
+{%- if ci_platform == "github" -%}
+name: Xtask
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+{% include "snippets/github/jobs/xtask.yml" %}
+{%- endif %}

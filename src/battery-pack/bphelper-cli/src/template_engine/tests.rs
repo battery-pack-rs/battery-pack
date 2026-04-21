@@ -53,6 +53,7 @@ PlaceholderDef {
     prompt: None,
     default: None,
     placeholder_type: String,
+    options: [],
 }
 
 "#]]
@@ -103,6 +104,7 @@ fn resolve_uses_define_over_default() {
             prompt: None,
             default: Some("fallback".to_string()),
             placeholder_type: PlaceholderType::String,
+            options: vec![],
         },
     );
     let mut defines = BTreeMap::new();
@@ -122,6 +124,7 @@ fn resolve_uses_default_non_interactive() {
             prompt: None,
             default: Some("fallback".to_string()),
             placeholder_type: PlaceholderType::String,
+            options: vec![],
         },
     );
     let defines = BTreeMap::new();
@@ -141,6 +144,7 @@ fn resolve_no_default_non_interactive_errors() {
             prompt: Some("Describe it".to_string()),
             default: None,
             placeholder_type: PlaceholderType::String,
+            options: vec![],
         },
     );
     let defines = BTreeMap::new();
@@ -162,6 +166,7 @@ fn resolve_rejects_kebab_case_name() {
             prompt: None,
             default: Some("val".to_string()),
             placeholder_type: PlaceholderType::String,
+            options: vec![],
         },
     );
     let err =
@@ -228,10 +233,40 @@ fn crate_name_derived_from_project_name() {
 }
 
 #[test]
-fn parse_config_unsupported_type_errors() {
+fn parse_config_bool_placeholder() {
     let toml = r#"
             [placeholders.flag]
             type = "bool"
+            prompt = "Enable it?"
+            default = "true"
+        "#;
+    let config: BpTemplateConfig = toml::from_str(toml).unwrap();
+    let p = &config.placeholders["flag"];
+    assert_eq!(p.placeholder_type, PlaceholderType::Bool);
+    assert_eq!(p.default.as_deref(), Some("true"));
+}
+
+#[test]
+fn parse_config_select_placeholder() {
+    let toml = r#"
+            [placeholders.platform]
+            type = "select"
+            prompt = "CI platform"
+            options = ["github", "gitlab"]
+            default = "github"
+        "#;
+    let config: BpTemplateConfig = toml::from_str(toml).unwrap();
+    let p = &config.placeholders["platform"];
+    assert_eq!(p.placeholder_type, PlaceholderType::Select);
+    assert_eq!(p.options, vec!["github", "gitlab"]);
+    assert_eq!(p.default.as_deref(), Some("github"));
+}
+
+#[test]
+fn parse_config_unknown_type_errors() {
+    let toml = r#"
+            [placeholders.flag]
+            type = "number"
         "#;
     let err = toml::from_str::<BpTemplateConfig>(toml).unwrap_err();
     assert_data_eq!(
@@ -239,11 +274,275 @@ fn parse_config_unsupported_type_errors() {
         str![[r#"
 TOML parse error at line 3, column 20
   |
-3 |             type = "bool"
-  |                    ^^^^^^
-unknown variant `bool`, expected `string`
+3 |             type = "number"
+  |                    ^^^^^^^^
+unknown variant `number`, expected one of `string`, `bool`, `select`
 
 "#]]
+    );
+}
+
+// -- Bool placeholder resolution --
+
+#[test]
+fn resolve_bool_true_non_interactive() {
+    let mut defs = BTreeMap::new();
+    defs.insert(
+        "flag".to_string(),
+        PlaceholderDef {
+            prompt: None,
+            default: Some("true".to_string()),
+            placeholder_type: PlaceholderType::Bool,
+            options: vec![],
+        },
+    );
+    let mut vars = BTreeMap::new();
+    resolve_placeholders(&defs, &BTreeMap::new(), &mut vars, None).unwrap();
+    assert_eq!(vars["flag"], "true");
+}
+
+#[test]
+fn resolve_bool_false_non_interactive() {
+    let mut defs = BTreeMap::new();
+    defs.insert(
+        "flag".to_string(),
+        PlaceholderDef {
+            prompt: None,
+            default: Some("false".to_string()),
+            placeholder_type: PlaceholderType::Bool,
+            options: vec![],
+        },
+    );
+    let mut vars = BTreeMap::new();
+    resolve_placeholders(&defs, &BTreeMap::new(), &mut vars, None).unwrap();
+    assert_eq!(vars["flag"], "false");
+}
+
+#[test]
+fn resolve_bool_no_default_is_false() {
+    let mut defs = BTreeMap::new();
+    defs.insert(
+        "flag".to_string(),
+        PlaceholderDef {
+            prompt: None,
+            default: None,
+            placeholder_type: PlaceholderType::Bool,
+            options: vec![],
+        },
+    );
+    let mut vars = BTreeMap::new();
+    resolve_placeholders(&defs, &BTreeMap::new(), &mut vars, None).unwrap();
+    assert_eq!(vars["flag"], "false");
+}
+
+#[test]
+fn resolve_bool_define_override() {
+    let mut defs = BTreeMap::new();
+    defs.insert(
+        "flag".to_string(),
+        PlaceholderDef {
+            prompt: None,
+            default: Some("false".to_string()),
+            placeholder_type: PlaceholderType::Bool,
+            options: vec![],
+        },
+    );
+    let mut defines = BTreeMap::new();
+    defines.insert("flag".to_string(), "true".to_string());
+    let mut vars = BTreeMap::new();
+    resolve_placeholders(&defs, &defines, &mut vars, None).unwrap();
+    assert_eq!(vars["flag"], "true");
+}
+
+// -- Select placeholder resolution --
+
+#[test]
+fn resolve_select_non_interactive() {
+    let mut defs = BTreeMap::new();
+    defs.insert(
+        "platform".to_string(),
+        PlaceholderDef {
+            prompt: None,
+            default: Some("github".to_string()),
+            placeholder_type: PlaceholderType::Select,
+            options: vec!["github".to_string(), "gitlab".to_string()],
+        },
+    );
+    let mut vars = BTreeMap::new();
+    resolve_placeholders(&defs, &BTreeMap::new(), &mut vars, None).unwrap();
+    assert_eq!(vars["platform"], "github");
+}
+
+#[test]
+fn resolve_select_invalid_default_errors() {
+    let mut defs = BTreeMap::new();
+    defs.insert(
+        "platform".to_string(),
+        PlaceholderDef {
+            prompt: None,
+            default: Some("bitbucket".to_string()),
+            placeholder_type: PlaceholderType::Select,
+            options: vec!["github".to_string(), "gitlab".to_string()],
+        },
+    );
+    let err =
+        resolve_placeholders(&defs, &BTreeMap::new(), &mut BTreeMap::new(), None).unwrap_err();
+    assert!(err.to_string().contains("bitbucket"), "{err}");
+    assert!(err.to_string().contains("not in options"), "{err}");
+}
+
+#[test]
+fn resolve_select_empty_options_errors() {
+    let mut defs = BTreeMap::new();
+    defs.insert(
+        "platform".to_string(),
+        PlaceholderDef {
+            prompt: None,
+            default: Some("github".to_string()),
+            placeholder_type: PlaceholderType::Select,
+            options: vec![],
+        },
+    );
+    let err =
+        resolve_placeholders(&defs, &BTreeMap::new(), &mut BTreeMap::new(), None).unwrap_err();
+    assert!(err.to_string().contains("no options"), "{err}");
+}
+
+#[test]
+fn resolve_select_define_override() {
+    let mut defs = BTreeMap::new();
+    defs.insert(
+        "platform".to_string(),
+        PlaceholderDef {
+            prompt: None,
+            default: Some("github".to_string()),
+            placeholder_type: PlaceholderType::Select,
+            options: vec!["github".to_string(), "gitlab".to_string()],
+        },
+    );
+    let mut defines = BTreeMap::new();
+    defines.insert("platform".to_string(), "gitlab".to_string());
+    let mut vars = BTreeMap::new();
+    resolve_placeholders(&defs, &defines, &mut vars, None).unwrap();
+    assert_eq!(vars["platform"], "gitlab");
+}
+
+// -- Bool values in MiniJinja --
+
+#[test]
+fn jinja_bool_true_is_truthy() {
+    let mut vars = BTreeMap::new();
+    vars.insert("flag".to_string(), "true".to_string());
+    let env = build_jinja_env(Path::new("."), &vars).unwrap();
+    let result = env
+        .render_str(
+            "{% if flag %}yes{% else %}no{% endif %}",
+            minijinja::context! {},
+        )
+        .unwrap();
+    assert_eq!(result, "yes");
+}
+
+#[test]
+fn jinja_bool_false_is_falsy() {
+    let mut vars = BTreeMap::new();
+    vars.insert("flag".to_string(), "false".to_string());
+    let env = build_jinja_env(Path::new("."), &vars).unwrap();
+    let result = env
+        .render_str(
+            "{% if flag %}yes{% else %}no{% endif %}",
+            minijinja::context! {},
+        )
+        .unwrap();
+    assert_eq!(result, "no");
+}
+
+// -- pin_github_action --
+
+#[test]
+fn rust_stable_version_returns_semver() {
+    let version = rust_stable_version();
+    let parts: Vec<&str> = version.split('.').collect();
+    assert!(parts.len() >= 2, "should be semver-like: {version}");
+    assert!(
+        parts[0].parse::<u32>().is_ok(),
+        "major should be numeric: {version}"
+    );
+    assert!(
+        parts[1].parse::<u32>().is_ok(),
+        "minor should be numeric: {version}"
+    );
+}
+
+#[test]
+fn rust_stable_version_available_in_jinja() {
+    let vars = BTreeMap::new();
+    let env = build_jinja_env(Path::new("."), &vars).unwrap();
+    let result = env
+        .render_str("{{ rust_stable_version() }}", minijinja::context! {})
+        .unwrap();
+    assert!(result.contains('.'), "should contain a dot: {result}");
+    assert!(!result.is_empty(), "should not be empty");
+}
+
+// -- pin_github_action tests (require network, run with `cargo test -- --ignored`) --
+
+#[test]
+fn pin_github_action_resolves_known_repo() {
+    let vars = BTreeMap::new();
+    let env = build_jinja_env(Path::new("."), &vars).unwrap();
+    let result = env
+        .render_str(
+            r#"{{ pin_github_action("actions/checkout", "v4") }}"#,
+            minijinja::context! {},
+        )
+        .unwrap();
+    assert!(
+        result.starts_with("actions/checkout@"),
+        "should start with owner/repo@: {result}"
+    );
+    assert!(
+        !result.contains("could-not-resolve"),
+        "should resolve successfully: {result}"
+    );
+    let comment = result.split("# ").nth(1).unwrap();
+    assert!(
+        comment.contains('.'),
+        "should resolve to a specific version: {comment}"
+    );
+    let sha = result.split('@').nth(1).unwrap().split(' ').next().unwrap();
+    assert_eq!(sha.len(), 40, "SHA should be 40 chars: {sha}");
+}
+
+#[test]
+fn pin_github_action_bad_repo_returns_error_marker() {
+    let vars = BTreeMap::new();
+    let env = build_jinja_env(Path::new("."), &vars).unwrap();
+    let result = env
+        .render_str(
+            r#"{{ pin_github_action("nonexistent-owner-xyz/nonexistent-repo-xyz", "v999") }}"#,
+            minijinja::context! {},
+        )
+        .unwrap();
+    assert!(
+        result.contains("could-not-resolve"),
+        "should contain error marker: {result}"
+    );
+}
+
+#[test]
+fn pin_github_action_subpath() {
+    let vars = BTreeMap::new();
+    let env = build_jinja_env(Path::new("."), &vars).unwrap();
+    let result = env
+        .render_str(
+            r#"{{ pin_github_action("github/codeql-action", "v3", "upload-sarif") }}"#,
+            minijinja::context! {},
+        )
+        .unwrap();
+    assert!(
+        result.contains("github/codeql-action/upload-sarif@"),
+        "should contain subpath: {result}"
     );
 }
 

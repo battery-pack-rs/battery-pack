@@ -1,0 +1,42 @@
+{%- if ci_platform == "github" -%}
+# https://github.com/rust-fuzz/cargo-fuzz
+name: Fuzz (nightly)
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: "Fuzz duration per target in seconds"
+        default: "300"
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz-nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: {{ pin_github_action("actions/checkout", "v6") }}
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: {{ pin_github_action("Swatinem/rust-cache", "v2") }}
+        with:
+          save-if: {% raw %}${{ github.ref == 'refs/heads/main' }}{% endraw %}
+          workspaces: fuzz -> target
+      - uses: dtolnay/install@cargo-fuzz
+      - name: Extended fuzz run
+        run: |
+          duration={% raw %}${{ inputs.duration || '300' }}{% endraw %}
+          for target in $(cargo fuzz list); do
+            cargo fuzz run "$target" -- -max_total_time="$duration"
+          done
+      - name: Upload crash artifacts
+        if: failure()
+        uses: {{ pin_github_action("actions/upload-artifact", "v4") }}
+        with:
+          name: fuzz-crashes
+          path: fuzz/artifacts/
+{%- endif %}

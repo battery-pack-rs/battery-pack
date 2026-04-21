@@ -1,0 +1,24 @@
+[package]
+name = "{{ crate_name }}-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys.bp-managed = true
+arbitrary.bp-managed = true
+{{ project_name }} = { path = ".." }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_example"
+path = "fuzz_targets/fuzz_example.rs"
+doc = false
+
+[package.metadata.battery-pack]
+ci-battery-pack = { features = ["fuzzing"] }

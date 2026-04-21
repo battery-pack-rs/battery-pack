@@ -198,6 +198,46 @@ The template engine also provides built-in variables (no declaration needed):
 - `{{ project_name }}` — the project name passed via `--name`
 - `{{ crate_name }}` — derived from `project_name` with `-` replaced by `_`
 
+### Built-in functions
+
+Templates can call these functions in MiniJinja expressions:
+
+- `{{ pin_github_action("actions/checkout", "v6") }}` — resolves a GitHub
+  Action tag to a SHA-pinned reference at generation time (e.g.
+  `actions/checkout@abc123 # v6.0.2`). Semver-aware: finds the latest
+  version under the given major tag. Supports an optional subpath:
+  `{{ pin_github_action("github/codeql-action", "v3", "upload-sarif") }}`.
+- `{{ rust_stable_version() }}` — returns the current stable Rust version
+  from `rustc --version` (e.g. `1.80.0`).
+
+### Placeholder types
+
+Placeholders support three types:
+
+```toml
+# String (default)
+[placeholders.description]
+type = "string"
+prompt = "Project description"
+default = "A new project"
+
+# Bool — interactive: yes/no prompt, non-interactive: defaults to false
+[placeholders.benchmarks]
+type = "bool"
+prompt = "Include benchmarks?"
+
+# Select — interactive: arrow-key selection, requires explicit default
+[placeholders.ci_platform]
+type = "select"
+prompt = "CI platform"
+options = ["github", "none"]
+default = "github"
+```
+
+Bool values are registered as actual booleans in MiniJinja, so
+`{% if benchmarks %}` works naturally. Bare `-d benchmarks` on the
+command line implies `=true`.
+
 To include files from outside the template directory (e.g. shared
 license files), use `[[files]]`:
 

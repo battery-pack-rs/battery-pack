@@ -1,0 +1,5 @@
+# https://release-plz.dev/docs/config
+
+[workspace]
+git_release_enable = true
+changelog_update = true

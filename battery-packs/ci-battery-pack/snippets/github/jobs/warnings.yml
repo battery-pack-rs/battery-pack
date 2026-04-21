@@ -1,0 +1,14 @@
+  # Dedicated warnings check so test failures are visible even with warnings
+  warnings:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-Dwarnings"
+    steps:
+      - uses: {{ pin_github_action("actions/checkout", "v6") }}
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: {{ pin_github_action("Swatinem/rust-cache", "v2") }}
+        with:
+          save-if: {% raw %}${{ github.ref == 'refs/heads/main' }}{% endraw %}
+      - run: cargo check --all-targets --all-features --keep-going

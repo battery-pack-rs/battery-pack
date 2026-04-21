@@ -1,0 +1,33 @@
+{%- if ci_platform == "github" -%}
+# https://nexte.st/ (--stress-duration)
+name: Stress Test
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: "Stress test duration in minutes"
+        default: "60"
+
+permissions:
+  contents: read
+
+jobs:
+  stress-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: {{ pin_github_action("actions/checkout", "v6") }}
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: {{ pin_github_action("Swatinem/rust-cache", "v2") }}
+        with:
+          save-if: {% raw %}${{ github.ref == 'refs/heads/main' }}{% endraw %}
+      - uses: {{ pin_github_action("taiki-e/install-action", "v2") }}
+        with:
+          tool: nextest
+      - run: cargo nextest run --all-features --stress-duration '{% raw %}${{ inputs.duration_minutes || '60' }}{% endraw %}m'
+{%- endif %}

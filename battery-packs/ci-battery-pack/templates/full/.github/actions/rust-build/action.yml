@@ -1,0 +1,39 @@
+{%- if ci_platform == "github" -%}
+name: Rust Test
+description: Install toolchain, cache, build, and test a Rust project.
+
+inputs:
+  toolchain:
+    description: Rust toolchain to install (e.g. stable, nightly, 1.80.0)
+    required: true
+  flags:
+    description: Cargo flags (e.g. --all-features, --no-default-features)
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - uses: {{ pin_github_action("dtolnay/rust-toolchain", "master") }}
+      with:
+        toolchain: {% raw %}${{ inputs.toolchain }}{% endraw %}
+
+    - uses: {{ pin_github_action("Swatinem/rust-cache", "v2") }}
+      with:
+        save-if: {% raw %}${{ github.ref == 'refs/heads/main' }}{% endraw %}
+
+    - name: Build
+      shell: bash
+      run: cargo test --no-run --verbose {% raw %}${{ inputs.flags }}{% endraw %}
+
+    - name: Test
+      shell: bash
+      # For faster parallel test execution, consider nextest (https://nexte.st/).
+      # Note: nextest has non-standard behaviors. Review before adopting.
+      run: cargo test --verbose {% raw %}${{ inputs.flags }}{% endraw %}
+
+    # cargo test doesn't run doctests with --no-run, run them separately
+    - name: Doctests
+      shell: bash
+      run: cargo test --doc --verbose {% raw %}${{ inputs.flags }}{% endraw %}
+{%- endif %}

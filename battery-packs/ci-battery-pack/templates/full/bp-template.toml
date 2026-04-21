@@ -1,0 +1,75 @@
+[placeholders.ci_platform]
+type = "select"
+prompt = "CI platform"
+options = ["github", "none"]
+default = "github"
+
+[placeholders.repo_owner]
+type = "string"
+prompt = "Repository owner (org or user)"
+default = "OWNER"
+
+[placeholders.description]
+type = "string"
+prompt = "Project description"
+default = "TODO: add description"
+
+[placeholders.all]
+type = "bool"
+prompt = "Enable all optional features?"
+default = "false"
+
+[placeholders.trusted_publishing]
+type = "bool"
+prompt = "Include trusted publishing (release-plz)?"
+default = "true"
+
+[placeholders.benchmarks]
+type = "bool"
+prompt = "Include benchmark CI (Criterion + Bencher)?"
+default = "false"
+
+[placeholders.fuzzing]
+type = "bool"
+prompt = "Include fuzz testing (cargo-fuzz)?"
+default = "false"
+
+[placeholders.stress_tests]
+type = "bool"
+prompt = "Include stress tests (nextest --stress-duration)?"
+default = "false"
+
+[placeholders.mdbook]
+type = "bool"
+prompt = "Include mdBook with GitHub Pages deployment?"
+default = "false"
+
+[placeholders.spellcheck]
+type = "bool"
+prompt = "Include spell checking (crate-ci/typos)?"
+default = "false"
+
+[placeholders.xtask]
+type = "bool"
+prompt = "Include cargo-xtask pattern?"
+default = "false"
+
+[placeholders.binary_release]
+type = "bool"
+prompt = "Include cross-platform binary builds (GitHub Releases + cargo-binstall)?"
+default = "false"
+
+[placeholders.mutation_testing]
+type = "bool"
+prompt = "Include mutation testing (cargo-mutants)?"
+default = "false"
+
+[placeholders.clippy_sarif]
+type = "bool"
+prompt = "Include clippy SARIF integration (PR annotations)?"
+default = "false"
+
+[placeholders.repository]
+type = "string"
+prompt = "Repository URL (leave empty for GitHub default)"
+default = ""

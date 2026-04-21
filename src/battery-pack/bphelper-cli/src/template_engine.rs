@@ -35,6 +35,9 @@ struct PlaceholderDef {
     default: Option<String>,
     #[serde(default, rename = "type")]
     placeholder_type: PlaceholderType,
+    /// Valid options for `select` type placeholders.
+    #[serde(default)]
+    options: Vec<String>,
 }
 
 #[derive(Debug, Default, Deserialize, PartialEq)]
@@ -42,7 +45,8 @@ struct PlaceholderDef {
 enum PlaceholderType {
     #[default]
     String,
-    // TODO: support more types (bool, etc).
+    Bool,
+    Select,
 }
 
 #[derive(Debug, Deserialize)]
@@ -141,6 +145,7 @@ fn render(
     variables: &BTreeMap<String, String>,
 ) -> Result<Vec<RenderedFile>> {
     let env = build_jinja_env(crate_root, variables)?;
+    prefetch_pin_github_actions(crate_root);
     let ignore_set: Vec<&str> = config.ignore.iter().map(|s| s.as_str()).collect();
 
     let mut files = Vec::new();
@@ -173,6 +178,9 @@ fn render(
     }
 
     // Process [[files]] includes
+    // TODO: support conditional file includes (e.g. a `condition` field evaluated as a
+    // MiniJinja expression, or grouped tables like [[files.fuzzing]]) so battery pack
+    // authors don't need to wrap entire file contents in {% if %}...{% endif %}.
     for file_include in &config.files {
         let src_path = crate_root.join(&file_include.src);
         if !src_path.exists() {
@@ -193,6 +201,9 @@ fn render(
     }
 
     files.sort_by(|a, b| a.path.cmp(&b.path));
+
+    // Filter out files whose rendered content is empty (e.g. wrapped in {% if false %}...{% endif %}).
+    files.retain(|f| !f.content.trim().is_empty());
 
     // Resolve bp-managed dependencies in all rendered Cargo.toml files.
     // Resolution can fail for nested templates (e.g. battery-pack-of-battery-packs)
@@ -291,6 +302,56 @@ fn resolve_placeholders(
                     })?
                 }
             }
+            PlaceholderType::Bool => {
+                if interactive {
+                    let prompt = def.prompt.as_deref().unwrap_or(name);
+                    let default_val = def
+                        .default
+                        .as_deref()
+                        .map(|d| d.eq_ignore_ascii_case("true"))
+                        .unwrap_or(false);
+                    let val = dialoguer::Confirm::new()
+                        .with_prompt(prompt)
+                        .default(default_val)
+                        .interact()
+                        .with_context(|| format!("failed to read placeholder '{name}'"))?;
+                    val.to_string()
+                } else {
+                    def.default.clone().unwrap_or_else(|| "false".to_string())
+                }
+            }
+            PlaceholderType::Select => {
+                if def.options.is_empty() {
+                    bail!("select placeholder '{name}' has no options");
+                }
+                if interactive {
+                    let prompt = def.prompt.as_deref().unwrap_or(name);
+                    let default_idx = def
+                        .default
+                        .as_ref()
+                        .and_then(|d| def.options.iter().position(|o| o == d))
+                        .unwrap_or(0);
+                    let idx = dialoguer::Select::new()
+                        .with_prompt(prompt)
+                        .items(&def.options)
+                        .default(default_idx)
+                        .interact()
+                        .with_context(|| format!("failed to read placeholder '{name}'"))?;
+                    def.options[idx].clone()
+                } else {
+                    let val = def.default.clone().ok_or_else(|| {
+                        anyhow::anyhow!("placeholder '{name}' has no default and no value provided")
+                    })?;
+                    if !def.options.contains(&val) {
+                        bail!(
+                            "placeholder '{name}' default '{}' is not in options: {:?}",
+                            val,
+                            def.options
+                        );
+                    }
+                    val
+                }
+            }
         };
         variables.insert(name.clone(), value);
     }
@@ -320,12 +381,223 @@ fn build_jinja_env(
         }
     });
 
-    // Register all variables as globals
+    // Register all variables as globals.
+    // "true"/"false" strings are registered as actual bools so {% if flag %} works.
     for (key, value) in variables {
-        env.add_global(key.clone(), value.clone());
+        match value.as_str() {
+            "true" => env.add_global(key.clone(), true),
+            "false" => env.add_global(key.clone(), false),
+            _ => env.add_global(key.clone(), value.clone()),
+        }
     }
 
+    // Register pin_github_action — reads from the global cache (populated by prefetch or on-demand).
+    env.add_function(
+        "pin_github_action",
+        |owner_repo: &str, tag: &str, subpath: Option<&str>| -> String {
+            let key = (owner_repo.to_string(), tag.to_string());
+            let mut cache = PIN_GITHUB_ACTION_CACHE.lock().unwrap();
+            let resolved = if let Some(cached) = cache.get(&key) {
+                cached.clone()
+            } else {
+                let result =
+                    resolve_latest_tag(owner_repo, tag).or_else(|_| resolve_ref(owner_repo, tag));
+                let output = match result {
+                    Ok((sha, resolved_tag)) => format!("{owner_repo}@{sha} # {resolved_tag}"),
+                    Err(_) => {
+                        let url = format!("https://github.com/{owner_repo}.git");
+                        format!(
+                            "{owner_repo}@could-not-resolve-git-sha-for-{tag} \
+                         # TODO: run 'git ls-remote --tags {url} \"refs/tags/{tag}.*\"' and pin"
+                        )
+                    }
+                };
+                cache.insert(key, output.clone());
+                output
+            };
+            // Insert subpath between owner/repo and @sha
+            if let Some(sub) = subpath {
+                resolved.replacen(owner_repo, &format!("{owner_repo}/{sub}"), 1)
+            } else {
+                resolved
+            }
+        },
+    );
+
+    // Register rust_stable_version() — returns the current stable Rust version (e.g. "1.91.1").
+    env.add_function("rust_stable_version", rust_stable_version);
+
     Ok(env)
+}
+
+/// Returns the current stable Rust version from `rustc --version`.
+fn rust_stable_version() -> String {
+    let output = std::process::Command::new("rustc")
+        .args(["--version"])
+        .output()
+        .expect("rustc must be on PATH");
+    let s = String::from_utf8_lossy(&output.stdout);
+    s.split_whitespace()
+        .nth(1)
+        .expect("unexpected rustc --version output")
+        .to_string()
+}
+
+/// Global cache for resolved pin_github_action results. Persists across preview/render calls.
+static PIN_GITHUB_ACTION_CACHE: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<(String, String), String>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+/// Pre-resolve all `pin_github_action` calls in parallel, then register the cached results.
+fn prefetch_pin_github_actions(crate_root: &Path) {
+    use std::collections::HashSet;
+
+    let re = regex::Regex::new(r#"pin_github_action\(\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)"#).unwrap();
+    let mut pairs: HashSet<(String, String)> = HashSet::new();
+
+    // Scan all templates and snippets for pin_github_action calls.
+    // We scan broadly because templates can {% include %} from other template dirs.
+    for dir in [crate_root.join("templates"), crate_root.join("snippets")] {
+        if !dir.is_dir() {
+            continue;
+        }
+        for entry in walkdir::WalkDir::new(dir).into_iter().flatten() {
+            if entry.file_type().is_file() {
+                let Ok(content) = std::fs::read_to_string(entry.path()) else {
+                    continue;
+                };
+                for cap in re.captures_iter(&content) {
+                    pairs.insert((cap[1].to_string(), cap[2].to_string()));
+                }
+            }
+        }
+    }
+
+    if pairs.is_empty() {
+        return;
+    }
+
+    // Filter out already-cached pairs.
+    {
+        let cache = PIN_GITHUB_ACTION_CACHE.lock().unwrap();
+        pairs.retain(|key| !cache.contains_key(key));
+    }
+
+    // Resolve uncached pairs in parallel.
+    if !pairs.is_empty() {
+        std::thread::scope(|s| {
+            for (owner_repo, tag) in &pairs {
+                let owner_repo = owner_repo.clone();
+                let tag = tag.clone();
+                s.spawn(move || {
+                    let result = resolve_latest_tag(&owner_repo, &tag)
+                        .or_else(|_| resolve_ref(&owner_repo, &tag));
+                    let output = match result {
+                        Ok((sha, resolved_tag)) => {
+                            format!("{owner_repo}@{sha} # {resolved_tag}")
+                        }
+                        Err(_) => {
+                            let url = format!("https://github.com/{owner_repo}.git");
+                            format!(
+                                "{owner_repo}@could-not-resolve-git-sha-for-{tag} \
+                                 # TODO: run 'git ls-remote --tags {url} \"refs/tags/{tag}.*\"' and pin"
+                            )
+                        }
+                    };
+                    PIN_GITHUB_ACTION_CACHE
+                        .lock()
+                        .unwrap()
+                        .insert((owner_repo, tag), output);
+                });
+            }
+        });
+    }
+}
+
+/// Find the latest semver tag matching a prefix and return (sha, tag_name).
+///
+/// For `tag = "v4"`, lists all `v4*` tags, parses semver, picks the highest,
+/// and returns its SHA. Falls back to the exact tag if no semver matches exist.
+fn resolve_latest_tag(owner_repo: &str, tag: &str) -> Result<(String, String)> {
+    let url = format!("https://github.com/{owner_repo}.git");
+    let output = std::process::Command::new("git")
+        .args(["ls-remote", "--tags", &url, &format!("refs/tags/{tag}*")])
+        .output()
+        .context("failed to run git ls-remote")?;
+
+    if !output.status.success() {
+        bail!("git ls-remote failed for {owner_repo}@{tag}");
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Parse all tags into (sha, tag_name) pairs.
+    // For annotated tags, prefer the ^{} (dereferenced) line.
+    let mut tags: Vec<(String, String)> = Vec::new();
+    for line in stdout.lines() {
+        let Some((sha, ref_name)) = line.split_once('\t') else {
+            continue;
+        };
+        let tag_name = ref_name.strip_prefix("refs/tags/").unwrap_or(ref_name);
+
+        // ^{} is the dereferenced commit for annotated tags — update the SHA
+        if let Some(base) = tag_name.strip_suffix("^{}") {
+            if let Some(entry) = tags.iter_mut().find(|(_, t)| t == base) {
+                entry.0 = sha.to_string();
+            } else {
+                tags.push((sha.to_string(), base.to_string()));
+            }
+        } else {
+            tags.push((sha.to_string(), tag_name.to_string()));
+        }
+    }
+
+    if tags.is_empty() {
+        bail!("no tags matching '{tag}*' found in {owner_repo}");
+    }
+
+    // Find the highest semver tag.
+    let best = tags
+        .iter()
+        .filter_map(|(sha, name)| {
+            let version_str = name.strip_prefix('v').unwrap_or(name);
+            let version = semver::Version::parse(version_str).ok()?;
+            Some((sha.clone(), name.clone(), version))
+        })
+        .max_by(|(_, _, a), (_, _, b)| a.cmp(b));
+
+    match best {
+        Some((sha, name, _)) => Ok((sha, name)),
+        // No semver tags found — fall back to exact tag match
+        None => tags
+            .into_iter()
+            .find(|(_, name)| name == tag)
+            .ok_or_else(|| anyhow::anyhow!("tag '{tag}' not found in {owner_repo}")),
+    }
+}
+
+/// Resolve a non-tag ref (branch name like "stable", "master") to its commit SHA.
+fn resolve_ref(owner_repo: &str, ref_name: &str) -> Result<(String, String)> {
+    let url = format!("https://github.com/{owner_repo}.git");
+    let output = std::process::Command::new("git")
+        .args(["ls-remote", &url, ref_name])
+        .output()
+        .context("failed to run git ls-remote")?;
+
+    if !output.status.success() {
+        bail!("git ls-remote failed for {owner_repo}@{ref_name}");
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let sha = stdout
+        .lines()
+        .find_map(|line| {
+            let (sha, _) = line.split_once('\t')?;
+            Some(sha.to_string())
+        })
+        .ok_or_else(|| anyhow::anyhow!("ref '{ref_name}' not found in {owner_repo}"))?;
+
+    Ok((sha, ref_name.to_string()))
 }
 
 /// Check if a relative path should be ignored.

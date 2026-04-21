@@ -1,0 +1,75 @@
+{%- if ci_platform == "github" -%}
+# Builds cross-platform binaries and uploads to GitHub Releases.
+# Binaries are discoverable by cargo-binstall (https://github.com/cargo-bins/cargo-binstall).
+# Triggered automatically when release-plz publishes a release.
+name: Build Binaries
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: {% raw %}Build ${{ matrix.target }}{% endraw %}
+    runs-on: {% raw %}${{ matrix.os }}{% endraw %}
+    if: {% raw %}${{ github.repository_owner == '{% endraw %}{{ repo_owner }}{% raw %}' }}{% endraw %}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            archive: tar.gz
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            archive: zip
+
+    steps:
+      - uses: {{ pin_github_action("actions/checkout", "v6") }}
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: {% raw %}${{ matrix.target }}{% endraw %}
+      - run: cargo build --release --target {% raw %}${{ matrix.target }}{% endraw %} -p {{ project_name }}
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          TAG="{% raw %}${{ github.event.release.tag_name }}{% endraw %}"
+          # Strip package name prefix (e.g. "my-crate-v0.1.0" -> "v0.1.0")
+          VERSION="${TAG##*-v}"
+          echo "version=v${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Package (Unix)
+        if: {% raw %}${{ matrix.archive == 'tar.gz' }}{% endraw %}
+        shell: bash
+        run: |
+          cd target/{% raw %}${{ matrix.target }}{% endraw %}/release
+          tar -czvf ../../../{{ project_name }}-{% raw %}${{ matrix.target }}{% endraw %}-{% raw %}${{ steps.version.outputs.version }}{% endraw %}.tar.gz {{ project_name }}
+
+      - name: Package (Windows)
+        if: {% raw %}${{ matrix.archive == 'zip' }}{% endraw %}
+        shell: pwsh
+        run: |
+          cd target/{% raw %}${{ matrix.target }}{% endraw %}/release
+          Compress-Archive -Path {{ project_name }}.exe -DestinationPath ../../../{{ project_name }}-{% raw %}${{ matrix.target }}{% endraw %}-{% raw %}${{ steps.version.outputs.version }}{% endraw %}.zip
+
+      - name: Upload release asset
+        uses: {{ pin_github_action("softprops/action-gh-release", "v2") }}
+        with:
+          files: {{ project_name }}-{% raw %}${{ matrix.target }}{% endraw %}-{% raw %}${{ steps.version.outputs.version }}{% endraw %}.{% raw %}${{ matrix.archive }}{% endraw %}
+{%- endif %}

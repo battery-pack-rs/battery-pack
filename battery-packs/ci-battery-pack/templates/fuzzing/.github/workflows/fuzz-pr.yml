@@ -1,0 +1,13 @@
+{%- if ci_platform == "github" -%}
+name: Fuzz (PR)
+
+on:
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+{% include "snippets/github/jobs/fuzz-smoke.yml" %}
+{%- endif %}

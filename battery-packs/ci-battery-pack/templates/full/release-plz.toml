@@ -1,0 +1,3 @@
+{%- if all or trusted_publishing -%}
+{% include "templates/trusted-publishing/release-plz.toml" %}
+{%- endif %}

@@ -1,0 +1,15 @@
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [stable, nightly]
+        flags: ["--all-features", "--no-default-features"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: {{ pin_github_action("actions/checkout", "v6") }}
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-build
+        with:
+          toolchain: {% raw %}${{ matrix.toolchain }}{% endraw %}
+          flags: {% raw %}${{ matrix.flags }}{% endraw %}
