@@ -14,7 +14,10 @@ fn test_find_context_battery_pack() {
         "--name".to_string(),
         "foo".to_string(),
     ];
-    assert_eq!(find_context_battery_pack_from_args(&args), Some("cli".to_string()));
+    assert_eq!(
+        find_context_battery_pack_from_args(&args),
+        Some("cli".to_string())
+    );
 
     let args = vec!["cargo-bp".to_string(), "list".to_string()];
     assert_eq!(find_context_battery_pack_from_args(&args), None);
