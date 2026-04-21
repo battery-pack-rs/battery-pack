@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/battery-pack-rs/battery-pack/compare/error-battery-pack-v0.5.3...error-battery-pack-v0.6.0) - 2026-04-21
+
+### Added
+
+- implement dynamic shell completions using clap_complete for CLI commands and arguments. ([#99](https://github.com/battery-pack-rs/battery-pack/pull/99))
+
+### Other
+
+- Remove build.rs hooks, add cargo bp check for drift detection
+
 ## [0.5.3](https://github.com/battery-pack-rs/battery-pack/compare/error-battery-pack-v0.5.2...error-battery-pack-v0.5.3) - 2026-03-13
 
 ### Other

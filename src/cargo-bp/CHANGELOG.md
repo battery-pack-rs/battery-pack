@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1](https://github.com/battery-pack-rs/battery-pack/compare/cargo-bp-v0.5.0...cargo-bp-v0.5.1) - 2026-04-21
+
+### Added
+
+- implement dynamic shell completions using clap_complete for CLI commands and arguments. ([#99](https://github.com/battery-pack-rs/battery-pack/pull/99))
+- *(cli)* add template preview to `cargo bp show -t` ([#91](https://github.com/battery-pack-rs/battery-pack/pull/91))
+- CI battery pack ([#101](https://github.com/battery-pack-rs/battery-pack/pull/101))
+- *(cli)* add global --non-interactive / -N flag with env var support
+
+### Fixed
+
+- Propagate bp-managed errors and show full validation output
+
+### Other
+
+- *(test)* convert .contains() assertions to snapbox snapshots
+- more tweaks to snap tests ([#108](https://github.com/battery-pack-rs/battery-pack/pull/108))
+- Remove build.rs hooks, add cargo bp check for drift detection
+- fmt
+- *(cli)* Use interactive bool instead of passing non_interactive
+- *(cli)* Use interactive bool instead of passing non_interactive
+
 ## [0.4.13](https://github.com/battery-pack-rs/battery-pack/compare/cargo-bp-v0.4.12...cargo-bp-v0.4.13) - 2026-04-18
 
 ### Added

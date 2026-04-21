@@ -17,7 +17,7 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-battery-pack = { path = "src/battery-pack", version = "0.4" }
+battery-pack = { path = "src/battery-pack", version = "0.5" }
 anyhow = "1"
 minijinja = { version = "2", features = ["loader"] }
 cargo_metadata = "0.23"

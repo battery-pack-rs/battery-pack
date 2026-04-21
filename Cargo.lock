@@ -245,7 +245,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "battery-pack"
-version = "0.4.13"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "battery-pack",
@@ -316,7 +316,7 @@ dependencies = [
 
 [[package]]
 name = "bphelper-build"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "bphelper-manifest",
  "cargo_metadata",
@@ -329,7 +329,7 @@ dependencies = [
 
 [[package]]
 name = "bphelper-cli"
-version = "0.7.4"
+version = "0.7.5"
 dependencies = [
  "anyhow",
  "bphelper-manifest",
@@ -411,7 +411,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-bp"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -492,7 +492,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "ci-battery-pack"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "arbitrary",
  "battery-pack",
@@ -584,7 +584,7 @@ checksum = "3a822ea5bc7590f9d40f1ba12c0dc3c2760f3482c6984db1573ad11031420831"
 
 [[package]]
 name = "cli-battery-pack"
-version = "0.5.1"
+version = "0.6.0"
 dependencies = [
  "anstream 1.0.0",
  "anstyle",
@@ -1091,7 +1091,7 @@ dependencies = [
 
 [[package]]
 name = "error-battery-pack"
-version = "0.5.3"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "battery-pack",
@@ -1956,7 +1956,7 @@ checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "logging-battery-pack"
-version = "0.4.3"
+version = "0.5.0"
 dependencies = [
  "battery-pack",
  "tracing",

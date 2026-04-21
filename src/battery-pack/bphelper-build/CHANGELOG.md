@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.6](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-build-v0.4.5...bphelper-build-v0.4.6) - 2026-04-21
+
+### Added
+
+- implement dynamic shell completions using clap_complete for CLI commands and arguments. ([#99](https://github.com/battery-pack-rs/battery-pack/pull/99))
+
+### Fixed
+
+- Propagate bp-managed errors and show full validation output
+
+### Other
+
+- *(test)* convert .contains() assertions to snapbox snapshots
+
 ## [0.4.5](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-build-v0.4.4...bphelper-build-v0.4.5) - 2026-04-13
 
 ### Other
