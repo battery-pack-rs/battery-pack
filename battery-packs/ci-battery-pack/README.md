@@ -52,6 +52,10 @@ The `full` template generates a stub Rust project (Cargo.toml, src/lib.rs, READM
 
 ### Optional features (`-d flag`)
 
+Use `-d all` to enable every optional feature. Otherwise, each defaults to off
+(except `trusted_publishing` which defaults to on). In interactive mode, you'll
+be prompted for each.
+
 | Flag | Default | What it adds | Curated deps |
 |------|---------|-------------|-------------|
 | `trusted_publishing` | true | [release-plz](https://release-plz.dev/) with OIDC trusted publishing | |
@@ -102,7 +106,13 @@ See [Bencher docs](https://bencher.dev/docs) for more.
 
 ### Clippy SARIF (if clippy_sarif enabled)
 
+Uploads clippy results to GitHub [Code Scanning](https://docs.github.com/en/code-security/code-scanning), showing warnings as inline PR annotations. Replaces the regular clippy job when enabled.
+
 Works automatically on public repos. For private repos, enable Code Scanning at Settings → Security → Code security.
+
+### mdBook (if mdbook enabled)
+
+Enable GitHub Pages in repo settings (Settings → Pages → Source: GitHub Actions).
 
 ## License
 

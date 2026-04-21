@@ -1,5 +1,4 @@
 {%- if ci_platform == "github" -%}
-{%- if ci_platform == "github" -%}
 # https://rust-lang.github.io/mdBook/
 name: Deploy mdBook
 
@@ -47,5 +46,4 @@ jobs:
     steps:
       - id: deployment
         uses: {{ pin_github_action("actions/deploy-pages", "v4") }}
-{%- endif %}
 {%- endif %}
