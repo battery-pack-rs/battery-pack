@@ -725,7 +725,7 @@ fn unified_diff_snapshot_yaml_merge() {
 #[test]
 fn print_summary_snapshot_mixed_results() {
     // Capture stderr output from print_summary.
-    let results = vec![
+    let results = [
         FileResult::Created(".github/workflows/typos.yml".to_string()),
         FileResult::Created("_typos.toml".to_string()),
         FileResult::Merged("Cargo.toml".to_string()),
@@ -793,7 +793,7 @@ fn apply_skips_binary_file_conflict_non_interactive() {
 
     // Pre-create a binary file (invalid UTF-8).
     let bin_path = tmp.path().join("icon.png");
-    std::fs::write(&bin_path, &[0xFF, 0xD8, 0xFF, 0xE0, 0x00]).unwrap();
+    std::fs::write(&bin_path, [0xFF, 0xD8, 0xFF, 0xE0, 0x00]).unwrap();
 
     let files = vec![RenderedFile {
         path: "icon.png".to_string(),
@@ -811,7 +811,7 @@ fn apply_skips_binary_file_conflict_non_interactive() {
 
     // Original binary content should be preserved.
     let content = std::fs::read(&bin_path).unwrap();
-    assert_eq!(content, &[0xFF, 0xD8, 0xFF, 0xE0, 0x00]);
+    assert_eq!(content, [0xFF, 0xD8, 0xFF, 0xE0, 0x00]);
 }
 
 #[test]
@@ -820,7 +820,7 @@ fn apply_overwrites_binary_file_with_flag() {
 
     // Pre-create a binary file.
     let bin_path = tmp.path().join("icon.png");
-    std::fs::write(&bin_path, &[0xFF, 0xD8, 0xFF, 0xE0, 0x00]).unwrap();
+    std::fs::write(&bin_path, [0xFF, 0xD8, 0xFF, 0xE0, 0x00]).unwrap();
 
     let files = vec![RenderedFile {
         path: "icon.png".to_string(),
