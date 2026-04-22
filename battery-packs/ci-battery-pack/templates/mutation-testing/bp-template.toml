@@ -8,3 +8,6 @@ default = "github"
 type = "string"
 prompt = "Repository owner (org or user)"
 default = "OWNER"
+
+[[hints]]
+message = "Install cargo-mutants: cargo install cargo-mutants"

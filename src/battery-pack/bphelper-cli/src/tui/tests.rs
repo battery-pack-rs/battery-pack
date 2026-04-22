@@ -105,6 +105,7 @@ fn detail_selected_item_returns_correct_item() {
 fn make_app(screen: Screen) -> App {
     App {
         source: CrateSource::Registry,
+        pack_path: None,
         screen,
         should_quit: false,
         pending_action: None,

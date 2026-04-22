@@ -17,6 +17,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
 };
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -64,6 +65,7 @@ fn run_preview(opts: ShowOpts<'_>) -> Result<()> {
     let line_count = content.lines.len() as u16;
     let app = App {
         source: opts.source,
+        pack_path: opts.path.map(|s| s.to_string()),
         screen: Screen::Preview(PreviewScreen {
             content,
             battery_pack_name: crate_name,
@@ -88,6 +90,8 @@ fn run_preview(opts: ShowOpts<'_>) -> Result<()> {
 
 struct App {
     source: CrateSource,
+    /// The `--path` value, if the TUI was launched with a direct battery pack path.
+    pack_path: Option<String>,
     screen: Screen,
     should_quit: bool,
     pending_action: Option<PendingAction>,
@@ -321,6 +325,12 @@ enum PendingAction {
         directory: String,
         name: String,
     },
+    UseTemplate {
+        battery_pack: String,
+        template: String,
+        source: Option<PathBuf>,
+        pack_path: Option<String>,
+    },
 }
 
 // ============================================================================
@@ -347,6 +357,7 @@ impl App {
         let (in_project, installed_bp_names) = detect_project_state();
         Self {
             source,
+            pack_path: None,
             screen: Screen::Loading(LoadingState {
                 message: "Loading battery packs...".to_string(),
                 target: LoadingTarget::List { filter },
@@ -362,6 +373,7 @@ impl App {
         let (in_project, installed_bp_names) = detect_project_state();
         Self {
             source,
+            pack_path: path.map(|s| s.to_string()),
             screen: Screen::Loading(LoadingState {
                 message: format!("Loading {}...", name),
                 target: LoadingTarget::Detail {
@@ -553,6 +565,31 @@ impl App {
                     Ok(false)
                 }
             }
+            PendingAction::UseTemplate {
+                battery_pack,
+                template,
+                source,
+                pack_path,
+            } => {
+                let mut cmd = std::process::Command::new("cargo");
+                cmd.arg("bp");
+                if let Some(path) = source {
+                    cmd.args(["--crate-source", &path.to_string_lossy()]);
+                }
+                cmd.args(["add", battery_pack, "-t", template]);
+                if let Some(path) = pack_path {
+                    cmd.args(["--path", path]);
+                }
+                let status = cmd.status()?;
+
+                if status.success() {
+                    println!("\nSuccessfully applied template '{}'!", template);
+                    Ok(true)
+                } else {
+                    wait_for_enter();
+                    Ok(false)
+                }
+            }
         }
     }
 
@@ -578,6 +615,7 @@ impl App {
             DetailOpenCratesIo(String),
             DetailAdd(String),
             DetailNewProject(Rc<BatteryPackDetail>, Option<String>, usize, bool),
+            DetailUseTemplate(Rc<BatteryPackDetail>, String, usize, bool),
             DetailBack(bool),
             FormToggleField,
             FormSubmit(
@@ -707,6 +745,31 @@ impl App {
                             state.selected_index,
                             state.came_from_list,
                         )
+                    } else {
+                        Action::None
+                    }
+                }
+                KeyCode::Char('u') => {
+                    // 'u' merges the selected template into the current project
+                    if !state.in_project {
+                        Action::None
+                    } else if let Some(DetailItem::Template { _path, .. }) = state.selected_item() {
+                        let template_name = state
+                            .detail
+                            .templates
+                            .iter()
+                            .find(|t| t.path == _path)
+                            .map(|t| t.name.clone());
+                        if let Some(name) = template_name {
+                            Action::DetailUseTemplate(
+                                Rc::clone(&state.detail),
+                                name,
+                                state.selected_index,
+                                state.came_from_list,
+                            )
+                        } else {
+                            Action::None
+                        }
                     } else {
                         Action::None
                     }
@@ -845,6 +908,25 @@ impl App {
                     detail,
                     selected_index,
                     came_from_list,
+                });
+            }
+            Action::DetailUseTemplate(detail, template, selected_index, came_from_list) => {
+                let source_path = match &self.source {
+                    CrateSource::Local(p) => Some(p.clone()),
+                    CrateSource::Registry => None,
+                };
+                self.pending_action = Some(PendingAction::UseTemplate {
+                    battery_pack: detail.short_name.clone(),
+                    template,
+                    source: source_path,
+                    pack_path: self.pack_path.clone(),
+                });
+                self.screen = Screen::Detail(DetailScreen {
+                    detail: detail.clone(),
+                    selected_index,
+                    came_from_list,
+                    in_project: self.in_project,
+                    is_installed: self.installed_bp_names.contains(&detail.name),
                 });
             }
             Action::DetailBack(came_from_list) => {
@@ -1365,7 +1447,7 @@ fn render_detail(frame: &mut Frame, state: &DetailScreen) {
     let template_selected = matches!(state.selected_item(), Some(DetailItem::Template { .. }));
     let footer_text = if template_selected {
         format!(
-            "↑↓/jk Navigate | Enter Open | p Preview | n New project | {}",
+            "↑↓/jk Navigate | Enter Open | p Preview | n New project | u Use in project | {}",
             back_hint
         )
     } else {

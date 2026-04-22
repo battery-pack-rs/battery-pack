@@ -5,6 +5,7 @@
 - [Introduction](./intro.md)
 - [Getting Started](./getting-started.md)
 - [Using Battery Packs](./using.md)
+- [Templates](./templates.md)
 
 # Author's Guide
 

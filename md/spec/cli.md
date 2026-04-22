@@ -145,6 +145,81 @@ Adding a battery pack that is already registered MUST NOT create
 duplicate entries. If the battery pack is already present,
 `cargo bp add` MUST update its version and sync any new crates.
 
+### Template merging
+
+r[cli.add.template-flag]
+`cargo bp add <pack> --template <name>` (or `-t <name>`) MUST
+render the named template and merge the output into the current
+project directory. This does not register the battery pack or
+add its curated crates; it only applies the template files.
+
+r[cli.add.template-project-name]
+When merging a template, `cargo bp` MUST infer `project_name`
+from the current `Cargo.toml` `[package].name`. If no
+`Cargo.toml` exists or it has no `[package].name`, the current
+directory name MUST be used as a fallback.
+
+r[cli.add.template-define]
+`cargo bp add <pack> -t <name> --define <key>=<value>` (or `-d`)
+MUST set the named placeholder to the given value, skipping the
+prompt for that placeholder. Multiple `-d` flags MAY be provided.
+
+r[cli.add.template-merge-toml]
+When a template produces a `.toml` file and the target file
+already exists, `cargo bp` MUST merge using TOML-aware logic:
+for `Cargo.toml`, dependencies are synced (version upgraded if
+behind, features unioned, never removed); for all `.toml` files,
+sections and keys are recursively merged (inserted if absent,
+left alone if present). The user's existing formatting MUST
+be preserved.
+
+r[cli.add.template-merge-yaml]
+When a template produces a `.yml` or `.yaml` file and the target
+file already exists, `cargo bp` MUST merge using YAML-aware
+logic: top-level mapping keys are merged additively. For known
+GitHub Actions keys (`jobs`, `on`, `permissions`), child maps
+are also merged additively. Existing keys are never removed.
+
+r[cli.add.template-merge-plain]
+When a template produces any other file and the target file
+already exists, `cargo bp` MUST prompt the user to skip,
+overwrite, or view a diff.
+
+r[cli.add.template-overwrite]
+`cargo bp add <pack> -t <name> --overwrite` MUST force overwrite
+all plain file conflicts without prompting. Structured file
+merges (TOML, YAML) MUST still use merge logic.
+
+r[cli.add.template-non-interactive]
+In non-interactive mode, conflicts with files that are not
+`.toml`, `.yml`, or `.yaml` MUST be skipped unless `--overwrite`
+is passed. TOML and YAML merges MUST still apply.
+
+r[cli.add.template-hints]
+If the template's `bp-template.toml` declares `[[hints]]`
+entries, `cargo bp` MUST print them after the merge summary.
+
+r[cli.add.template-git-dirty]
+Before applying template files, `cargo bp` MUST check for
+uncommitted git changes. In interactive mode, it MUST warn
+and prompt for confirmation. In non-interactive mode, it MUST
+refuse unless `--overwrite` is passed. If the directory is not
+a git repository, the check MUST be skipped.
+
+r[cli.add.template-batch]
+When prompting for conflict resolution, `cargo bp` MUST offer
+batch options. For TOML and YAML merge prompts: "accept all"
+and "skip all". For other file prompts: "overwrite all" and
+"skip all". Batch options apply to all remaining conflicts
+without further prompting.
+
+r[cli.add.template-edit]
+When prompting for structured merge conflicts (TOML, YAML),
+`cargo bp` MUST offer an "edit" option that opens the merged
+result in `$VISUAL`, `$EDITOR`, or `vi` (in that order). After
+editing, the updated diff MUST be shown and the user MUST be
+returned to the accept/skip/edit prompt.
+
 ## `cargo bp new`
 
 r[cli.new.template]

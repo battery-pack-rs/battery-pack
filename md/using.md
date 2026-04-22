@@ -60,47 +60,6 @@ cargo bp list cli          # filter by name
 cargo bp show cli          # detailed view of cli-battery-pack
 ```
 
-## Creating a new project from a template
-
-Some battery packs ship with project templates that scaffold a new Rust project with the recommended crates and project structure already wired up.
-
-```bash
-cargo bp new cli
-```
-
-You'll be prompted for a project name and directory. The result is a ready-to-go Rust project with the battery pack's recommended crates already in your `Cargo.toml`.
-
-### Choosing a template
-
-If a battery pack offers multiple templates, you can pick one:
-
-```bash
-cargo bp new cli --template simple
-cargo bp new cli --template subcmds
-```
-
-### Previewing output
-
-To see what a template will generate without writing any files:
-
-```bash
-cargo bp show cli -t default
-```
-
-In a terminal, this opens an interactive scrollable preview. For plain text output (e.g. in CI or piped to another command):
-
-```bash
-cargo bp show cli -t default --non-interactive
-```
-
-For `new`, use `--name` and `-d` to provide values that would otherwise be prompted:
-
-```bash
-cargo bp new cli --name my-app -d description="My CLI tool"
-```
-
-You can also create new projects from the TUI's "New project" tab.
-
 ## Adding a battery pack
 
 ### Basic add

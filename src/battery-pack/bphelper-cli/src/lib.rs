@@ -3,6 +3,7 @@
 mod commands;
 mod completions;
 pub(crate) mod manifest;
+pub(crate) mod merge;
 pub(crate) mod registry;
 pub(crate) mod template_engine;
 mod tui;

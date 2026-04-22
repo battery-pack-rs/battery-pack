@@ -8,3 +8,6 @@ default = "github"
 type = "string"
 prompt = "Repository owner (org or user)"
 default = "OWNER"
+
+[[hints]]
+message = "Add \"xtask\" to your workspace members in the root Cargo.toml"

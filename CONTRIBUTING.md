@@ -3,6 +3,35 @@
 > [!tip]
 > Use the `init.py` script to initialise git pre-push hooks that check the formatting of your code before CI, catching common mistakes. Note that you need `typos-cli` for it to work.
 
+## Development
+
+### Running the dev build
+
+The CLI binary is `cargo-bp` in `src/cargo-bp`. To test your changes:
+
+```bash
+# Run directly (works for all CLI commands)
+cargo run --bin cargo-bp -- bp add ci -t spellcheck --path battery-packs/ci-battery-pack
+
+# Or install locally so `cargo bp` picks up your build
+# (needed for TUI actions that spawn `cargo bp` internally)
+cargo install --path src/cargo-bp
+```
+
+### Running tests
+
+```bash
+cargo test --all --workspace        # full suite
+cargo nextest run --package bphelper-cli  # just the CLI library
+cargo nextest run --package cargo-bp      # integration tests
+```
+
+To update snapbox snapshots after intentional output changes:
+
+```bash
+SNAPSHOTS=overwrite cargo nextest run
+```
+
 ## Doing releases
 
 There is a `.github/workflows/release-plz.yml` workflow that automates releases via [release-plz]. On every push to `main`, it:

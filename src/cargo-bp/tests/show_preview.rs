@@ -48,6 +48,16 @@ fn show_template_preview_prints_rendered_files() {
     assert_data_eq!(
         stdout.as_ref(),
         str![[r#"
+── .github/workflows/ci.yml ──
+name: CI
+on: [push]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo clippy
+
 ── Cargo.toml ──
 [package]
 name = "my-project"

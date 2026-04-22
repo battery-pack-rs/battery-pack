@@ -529,6 +529,9 @@ struct ParsedAdd {
     _all_features: bool,
     target: Option<super::AddTarget>,
     _path: Option<String>,
+    _template: Option<String>,
+    _define: Vec<(String, String)>,
+    _overwrite: bool,
 }
 
 /// Parse args as `cargo bp add ...` and return all Add fields.
@@ -544,6 +547,9 @@ fn parse_add_command(args: &[&str]) -> ParsedAdd {
             all_features,
             target,
             path,
+            template,
+            define,
+            overwrite,
         } => ParsedAdd {
             _battery_pack: battery_pack,
             crates,
@@ -552,6 +558,9 @@ fn parse_add_command(args: &[&str]) -> ParsedAdd {
             _all_features: all_features,
             target,
             _path: path,
+            _template: template,
+            _define: define,
+            _overwrite: overwrite,
         },
         other => panic!("expected Add, got {:?}", std::mem::discriminant(&other)),
     }
@@ -1625,4 +1634,83 @@ fn collect_versions_errors_on_invalid_toml() {
     std::fs::write(&manifest_path, "not valid toml {{{").unwrap();
     let result = super::collect_user_dep_versions(&manifest_path, "not valid toml {{{");
     assert!(result.is_err());
+}
+
+// ============================================================================
+// infer_project_name
+// ============================================================================
+
+#[test]
+fn infer_project_name_from_cargo_toml() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname = \"my-cool-app\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    let name = super::infer_project_name(tmp.path()).unwrap();
+    assert_eq!(name, "my-cool-app");
+}
+
+#[test]
+fn infer_project_name_falls_back_to_dir_name() {
+    let tmp = tempfile::tempdir().unwrap();
+    // No Cargo.toml, so it falls back to directory name.
+    let name = super::infer_project_name(tmp.path()).unwrap();
+    // tempdir names are random, just check it's non-empty.
+    assert!(!name.is_empty());
+}
+
+#[test]
+fn infer_project_name_workspace_without_package() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/*\"]\n",
+    )
+    .unwrap();
+    // No [package].name, so falls back to directory name.
+    let name = super::infer_project_name(tmp.path()).unwrap();
+    assert!(!name.is_empty());
+}
+
+// ============================================================================
+// load_template_hints
+// ============================================================================
+
+#[test]
+fn load_template_hints_returns_empty_for_no_config() {
+    let tmp = tempfile::tempdir().unwrap();
+    let hints = crate::template_engine::load_template_hints(tmp.path(), "templates/default");
+    assert!(hints.is_empty());
+}
+
+#[test]
+fn load_template_hints_returns_empty_for_no_hints() {
+    let tmp = tempfile::tempdir().unwrap();
+    let tmpl_dir = tmp.path().join("templates/default");
+    std::fs::create_dir_all(&tmpl_dir).unwrap();
+    std::fs::write(
+        tmpl_dir.join("bp-template.toml"),
+        "[placeholders.name]\ndefault = \"test\"\n",
+    )
+    .unwrap();
+    let hints = crate::template_engine::load_template_hints(tmp.path(), "templates/default");
+    assert!(hints.is_empty());
+}
+
+#[test]
+fn load_template_hints_returns_hints() {
+    let tmp = tempfile::tempdir().unwrap();
+    let tmpl_dir = tmp.path().join("templates/default");
+    std::fs::create_dir_all(&tmpl_dir).unwrap();
+    std::fs::write(
+        tmpl_dir.join("bp-template.toml"),
+        "[[hints]]\nmessage = \"Add mod errors;\"\n\n[[hints]]\nmessage = \"Run cargo install cargo-fuzz\"\n",
+    )
+    .unwrap();
+    let hints = crate::template_engine::load_template_hints(tmp.path(), "templates/default");
+    assert_eq!(hints.len(), 2);
+    assert_eq!(hints[0], "Add mod errors;");
+    assert_eq!(hints[1], "Run cargo install cargo-fuzz");
 }

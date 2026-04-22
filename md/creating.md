@@ -314,3 +314,34 @@ mod tests {
 ```
 
 The built-in scaffolding template includes this test by default.
+
+### Merge-friendly templates
+
+Templates can also be applied to existing projects with `cargo bp add <pack> -t <template>`. This is especially useful for "micro" templates that add a single concern (CI workflow, fuzzing scaffold, spellcheck config, etc.).
+
+When merged into an existing project, `cargo bp` handles files by type:
+
+- **`Cargo.toml`**: dependencies are merged (versions upgraded if behind, missing features added)
+- **Other `.toml`**: new sections and keys added, existing ones left alone
+- **YAML**: top-level keys merged additively (new jobs added, existing ones preserved)
+- **Other files**: the user is prompted to skip or overwrite if they already exist
+
+Note: YAML merges don't preserve comments in existing files. For YAML, only `jobs`, `on`, and `permissions` are deep-merged; other top-level keys are atomic, so if the key already exists, the user's value wins. To avoid conflicts, use unique workflow filenames (e.g., `typos.yml` instead of `ci.yml`).
+
+To help users with steps that can't be automated (like adding `mod` declarations or installing tools), declare hints in your `bp-template.toml`:
+
+```toml
+[[hints]]
+message = "Add `mod errors;` to your lib.rs or main.rs"
+
+[[hints]]
+message = "Run `cargo install cargo-fuzz` if you haven't already"
+```
+
+Hints are printed after the merge summary. They're only shown for `cargo bp add -t`, not for `cargo bp new`.
+
+Tips for writing merge-friendly templates:
+
+- Keep template `Cargo.toml` files minimal; only include dependencies the template actually needs.
+- Use `bp-managed = true` for dependencies so versions stay current with the battery pack spec.
+- Use `[[hints]]` for anything the user needs to do manually after the merge.
