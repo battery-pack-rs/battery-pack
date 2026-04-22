@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2](https://github.com/battery-pack-rs/battery-pack/compare/cargo-bp-v0.5.1...cargo-bp-v0.5.2) - 2026-04-22
+
+### Added
+
+- *(merge)* colored diffs and single-key shortcuts for prompts
+- *(tui)* add "Use in project" action for templates
+- *(template)* add [[hints]] support to bp-template.toml
+- *(cli)* add -t/--template flag to `cargo bp add`
+- *(merge)* add format-aware file merge engine
+
+### Fixed
+
+- address clippy warnings in merge tests
+- *(tui)* propagate --path flag to UseTemplate action
+- *(merge)* distinguish "unchanged" from "skipped" in summary
+
+### Other
+
+- add merge unit tests and integration tests
+
 ## [0.5.1](https://github.com/battery-pack-rs/battery-pack/compare/cargo-bp-v0.5.0...cargo-bp-v0.5.1) - 2026-04-21
 
 ### Added
