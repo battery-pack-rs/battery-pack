@@ -10,4 +10,7 @@ prompt = "Repository owner (org or user)"
 default = "OWNER"
 
 [[hints]]
-message = "Set up trusted publishing for your crate on crates.io (see https://doc.rust-lang.org/cargo/reference/registry-authentication.html#trusted-publishing)"
+message = "Configure trusted publishing on crates.io: https://doc.rust-lang.org/cargo/reference/registry-authentication.html#trusted-publishing"
+
+[[hints]]
+message = "In repo Settings → Actions → General, enable 'Allow GitHub Actions to create and approve pull requests'"

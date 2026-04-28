@@ -1,5 +1,6 @@
 {%- if ci_platform == "github" -%}
 # https://rust-lang.github.io/mdBook/
+# Setup: enable GitHub Pages in repo Settings → Pages → Source: GitHub Actions
 name: Deploy mdBook
 
 on:

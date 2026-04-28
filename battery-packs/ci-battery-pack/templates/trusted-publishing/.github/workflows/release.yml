@@ -1,9 +1,15 @@
 {%- if ci_platform == "github" -%}
 # release-plz: automated releases to crates.io (https://release-plz.dev/docs)
-# Setup: configure trusted publishing on crates.io
-#   https://doc.rust-lang.org/cargo/reference/registry-authentication.html#trusted-publishing
-# If using binary_release, also add a RELEASE_PLZ_TOKEN PAT (contents + pull-requests: write)
-#   https://github.com/settings/personal-access-tokens/new
+# Setup:
+# 1. Configure trusted publishing on crates.io
+#    https://doc.rust-lang.org/cargo/reference/registry-authentication.html#trusted-publishing
+# 2. In repo Settings → Actions → General, enable
+#    "Allow GitHub Actions to create and approve pull requests"
+{%- if all or binary_release %}
+# 3. Create a fine-grained PAT (contents:write + pull-requests:write) and add
+#    it as a RELEASE_PLZ_TOKEN repo secret so release events trigger binary builds
+#    https://github.com/settings/personal-access-tokens/new
+{%- endif %}
 name: Release
 
 on:

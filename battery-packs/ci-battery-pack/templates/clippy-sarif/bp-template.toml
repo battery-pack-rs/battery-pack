@@ -8,3 +8,6 @@ default = "github"
 type = "string"
 prompt = "Repository owner (org or user)"
 default = "OWNER"
+
+[[hints]]
+message = "Works automatically on public repos. For private repos, enable Code Scanning at Settings → Security → Code security"

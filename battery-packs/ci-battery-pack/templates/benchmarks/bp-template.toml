@@ -11,3 +11,6 @@ default = "OWNER"
 
 [[hints]]
 message = "Edit benches/example_bench.rs with your benchmarks"
+
+[[hints]]
+message = "Create a Bencher project at https://bencher.dev/docs, then add BENCHER_API_TOKEN as a repo secret and BENCHER_PROJECT as a repo variable"

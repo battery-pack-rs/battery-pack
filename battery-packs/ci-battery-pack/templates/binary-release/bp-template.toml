@@ -11,3 +11,6 @@ default = "OWNER"
 
 [[hints]]
 message = "Update the [[bin]] name in Cargo.toml to match your binary"
+
+[[hints]]
+message = "Requires the trusted-publishing template. Create a fine-grained PAT with contents:write and pull-requests:write, then add it as a RELEASE_PLZ_TOKEN repo secret so release events trigger the binary build"

@@ -75,4 +75,4 @@ prompt = "Repository URL (leave empty for GitHub default)"
 default = ""
 
 [[hints]]
-message = "Review the generated workflows in .github/workflows/ and adjust to your project"
+message = "See setup instructions at https://crates.io/crates/ci-battery-pack#setup"

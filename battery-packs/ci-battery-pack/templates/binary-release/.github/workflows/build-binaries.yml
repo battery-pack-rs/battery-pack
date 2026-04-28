@@ -2,6 +2,10 @@
 # Builds cross-platform binaries and uploads to GitHub Releases.
 # Binaries are discoverable by cargo-binstall (https://github.com/cargo-bins/cargo-binstall).
 # Triggered automatically when release-plz publishes a release.
+# Requires the trusted-publishing template. Add a RELEASE_PLZ_TOKEN PAT
+# (contents:write + pull-requests:write) as a repo secret so release events
+# trigger this workflow.
+# https://github.com/settings/personal-access-tokens/new
 name: Build Binaries
 
 on:

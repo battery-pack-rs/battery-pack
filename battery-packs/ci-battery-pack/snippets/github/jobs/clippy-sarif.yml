@@ -1,4 +1,5 @@
   # Clippy with GitHub PR annotations via SARIF (https://github.com/psastras/sarif-rs)
+  # For private repos, enable Code Scanning at Settings → Security → Code security.
   clippy-sarif:
     runs-on: ubuntu-latest
     permissions:

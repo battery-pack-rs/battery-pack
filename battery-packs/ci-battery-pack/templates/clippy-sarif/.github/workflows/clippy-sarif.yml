@@ -1,6 +1,8 @@
 {%- if ci_platform == "github" -%}
 # Clippy with GitHub PR annotations via SARIF
 # https://github.com/psastras/sarif-rs
+# Works automatically on public repos. For private repos, enable Code Scanning
+# at Settings → Security → Code security.
 name: Clippy SARIF
 
 on:
