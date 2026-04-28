@@ -12,7 +12,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tar::Archive;
 
-use crate::manifest::resolve_battery_pack_manifest;
+use crate::manifest::{
+    find_installed_bp_names, find_user_manifest, read_active_features_for_project,
+    resolve_battery_pack_manifest,
+};
 
 const CRATES_IO_API: &str = "https://crates.io/api/v1/crates";
 const CRATES_IO_CDN: &str = "https://static.crates.io/crates";
@@ -448,6 +451,32 @@ pub(crate) struct InstalledPack {
     pub active_features: BTreeSet<String>,
 }
 
+/// Load all installed battery packs with their specs and active features.
+///
+/// Reads `[build-dependencies]` from the user's Cargo.toml, fetches each
+/// battery pack's spec via cargo metadata, and reads active features from
+/// `battery-pack.toml` first, with metadata fallback for migration.
+pub(crate) fn load_installed_packs(project_dir: &Path) -> Result<Vec<InstalledPack>> {
+    let user_manifest_path = find_user_manifest(project_dir)?;
+    let user_manifest_content =
+        std::fs::read_to_string(&user_manifest_path).context("Failed to read Cargo.toml")?;
+
+    let bp_names = find_installed_bp_names(&user_manifest_content)?;
+    let mut packs = Vec::new();
+    for bp_name in bp_names {
+        let spec = fetch_battery_pack_spec(&bp_name)?;
+        let active_features =
+            read_active_features_for_project(&user_manifest_path, &user_manifest_content, &bp_name);
+        packs.push(InstalledPack {
+            short_name: short_name(&bp_name).to_string(),
+            version: spec.version.clone(),
+            spec,
+            active_features,
+        });
+    }
+
+    Ok(packs)
+}
 pub(crate) fn fetch_battery_pack_list(
     source: &CrateSource,
     filter: Option<&str>,

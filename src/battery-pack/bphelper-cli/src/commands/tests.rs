@@ -978,7 +978,7 @@ fn target_invalid_value_rejected() {
 //   - cli.add.all-features      — all crates appear
 //   - cli.add.specific-crates   — only named crates appear
 //   - cli.add.unknown-crate     — unknown skipped, valid written
-//   - cli.add.target            — metadata lands in package vs workspace
+//   - cli.add.target            — compatibility flag parses
 //   - cli.add.register          — battery pack in build-dependencies
 //   - cli.add.dep-kind          — dev-deps land in [dev-dependencies]
 
@@ -1006,6 +1006,10 @@ fn read_cargo_toml(tmp: &tempfile::TempDir) -> String {
     std::fs::read_to_string(tmp.path().join("Cargo.toml")).unwrap()
 }
 
+fn read_bp_state_toml(tmp: &tempfile::TempDir) -> String {
+    std::fs::read_to_string(tmp.path().join("battery-pack.toml")).unwrap()
+}
+
 /// Extract a TOML section by header name (e.g. "[dependencies]") from raw text.
 /// Returns the section contents including the header, or an empty string if absent.
 fn extract_section(toml_text: &str, section: &str) -> String {
@@ -1031,26 +1035,27 @@ fn extract_section(toml_text: &str, section: &str) -> String {
     result
 }
 
-/// Extract dotted-table sections like [package.metadata.battery-pack.X].
-/// Since toml_edit may write these in different styles, we parse and re-format.
-fn extract_metadata(toml_text: &str, bp_name: &str) -> String {
-    let doc: toml::Value = toml::from_str(toml_text).unwrap();
-    let bp_meta = doc
-        .get("package")
-        .and_then(|p| p.get("metadata"))
-        .and_then(|m| m.get("battery-pack"))
-        .and_then(|bp| bp.get(bp_name));
+/// Extract one `[[battery-pack]]` entry from `battery-pack.toml` by matching
+/// either full crate name or short name.
+fn extract_state_entry(state_text: &str, bp_name: &str) -> Option<toml::Value> {
+    let doc: toml::Value = toml::from_str(state_text).unwrap();
+    let short = bp_name
+        .strip_suffix("-battery-pack")
+        .unwrap_or(bp_name)
+        .to_string();
 
-    match bp_meta {
-        Some(val) => {
-            // Pretty-print the metadata value
-            format!(
-                "[package.metadata.battery-pack.{bp_name}]\n{}",
-                toml::to_string_pretty(val).unwrap()
-            )
-        }
-        None => String::new(),
-    }
+    doc.get("battery-pack")
+        .and_then(|v| v.as_array())
+        .and_then(|entries| {
+            entries.iter().find(|entry| {
+                entry
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .map(|name| name == bp_name || name == short)
+                    .unwrap_or(false)
+            })
+        })
+        .cloned()
 }
 
 #[derive(Clone, Copy)]
@@ -1114,6 +1119,27 @@ fn add_registers_build_dep() {
     let build_deps = extract_section(&content, "[build-dependencies]");
 
     assert_data_eq!(build_deps, str![""]);
+}
+
+#[test]
+fn add_creates_battery_pack_toml() {
+    let tmp = make_temp_project();
+    add(
+        "basic",
+        "basic-battery-pack",
+        &["default"],
+        FeatureMode::Default,
+        &[],
+        None,
+        tmp.path(),
+    );
+
+    let state_path = tmp.path().join("battery-pack.toml");
+    assert!(state_path.exists(), "battery-pack.toml should be created");
+
+    let state = read_bp_state_toml(&tmp);
+    let entry = extract_state_entry(&state, "basic-battery-pack").expect("state entry exists");
+    assert_eq!(entry.get("name").and_then(|v| v.as_str()), Some("basic"));
 }
 
 // ============================================================================
@@ -1248,33 +1274,15 @@ fn add_with_named_feature_records_metadata() {
         tmp.path(),
     );
 
-    let content = read_cargo_toml(&tmp);
-    let meta = extract_metadata(&content, "fancy-battery-pack");
-
-    assert!(
-        meta.contains("fancy-battery-pack"),
-        "Expected battery pack name in metadata"
-    );
-    assert!(meta.contains("indicators"), "Expected indicators feature");
-    assert_data_eq!(
-        meta,
-        str![[r#"
-[package.metadata.battery-pack.fancy-battery-pack]
-features = [
-    "default",
-    "indicators",
-]
-managed-deps = [
-    "assert_cmd",
-    "clap",
-    "console",
-    "dialoguer",
-    "indicatif",
-    "predicates",
-]
-
-"#]]
-    )
+    let state = read_bp_state_toml(&tmp);
+    let entry = extract_state_entry(&state, "fancy-battery-pack").expect("state entry exists");
+    let features = entry
+        .get("features")
+        .and_then(|v| v.as_array())
+        .expect("features array");
+    let names: Vec<&str> = features.iter().map(|v| v.as_str().unwrap()).collect();
+    assert!(names.contains(&"default"));
+    assert!(names.contains(&"indicators"));
 }
 
 // ============================================================================
@@ -1382,27 +1390,15 @@ fn add_all_features_records_metadata() {
         tmp.path(),
     );
 
-    let content = read_cargo_toml(&tmp);
-    let meta = extract_metadata(&content, "basic-battery-pack");
-
+    let state = read_bp_state_toml(&tmp);
+    let entry = extract_state_entry(&state, "basic-battery-pack").expect("state entry exists");
+    let features = entry
+        .get("features")
+        .and_then(|v| v.as_array())
+        .expect("features array");
     assert!(
-        meta.contains("basic-battery-pack"),
-        "Expected battery pack name in metadata"
-    );
-    assert!(meta.contains("features"), "Expected features key");
-    assert!(meta.contains("all"), "Expected all feature");
-    assert_data_eq!(
-        meta,
-        str![[r#"
-[package.metadata.battery-pack.basic-battery-pack]
-features = ["all"]
-managed-deps = [
-    "anyhow",
-    "eyre",
-    "thiserror",
-]
-
-"#]]
+        features.iter().any(|v| v.as_str() == Some("all")),
+        "expected all feature in state"
     );
 }
 
@@ -1554,26 +1550,58 @@ fn add_target_package_writes_metadata() {
         tmp.path(),
     );
 
-    let content = read_cargo_toml(&tmp);
-    let meta = extract_metadata(&content, "basic-battery-pack");
+    let state = read_bp_state_toml(&tmp);
+    let entry = extract_state_entry(&state, "basic-battery-pack").expect("state entry exists");
+    let features = entry
+        .get("features")
+        .and_then(|v| v.as_array())
+        .expect("features array");
+    assert!(
+        features.iter().any(|v| v.as_str() == Some("default")),
+        "expected default feature in state"
+    );
+}
+#[test]
+fn preflight_prunes_removed_managed_dep_from_state() {
+    let tmp = make_temp_project();
+    add(
+        "basic",
+        "basic-battery-pack",
+        &["default"],
+        FeatureMode::Default,
+        &[],
+        None,
+        tmp.path(),
+    );
+
+    let cargo_path = tmp.path().join("Cargo.toml");
+    let content = std::fs::read_to_string(&cargo_path).unwrap();
+    let updated = content
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("anyhow"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    std::fs::write(&cargo_path, updated).unwrap();
+
+    let removed = super::sync_state_with_current_manifest(tmp.path()).unwrap();
+    assert!(
+        removed >= 1,
+        "expected at least one managed dep to be pruned"
+    );
+
+    let state = read_bp_state_toml(&tmp);
+    let entry = extract_state_entry(&state, "basic-battery-pack").expect("state entry exists");
+    let managed = entry
+        .get("managed-deps")
+        .and_then(|v| v.as_array())
+        .expect("managed deps array");
 
     assert!(
-        meta.contains("basic-battery-pack"),
-        "Expected battery pack name in metadata"
-    );
-    assert!(meta.contains("features"), "Expected features key");
-    assert!(meta.contains("default"), "Expected default feature");
-    assert_data_eq!(
-        meta,
-        str![[r#"
-[package.metadata.battery-pack.basic-battery-pack]
-features = ["default"]
-managed-deps = [
-    "anyhow",
-    "thiserror",
-]
-
-"#]]
+        managed
+            .iter()
+            .all(|dep| dep.get("name").and_then(|v| v.as_str()) != Some("anyhow")),
+        "anyhow should be pruned from managed-deps"
     );
 }
 
