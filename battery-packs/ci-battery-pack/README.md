@@ -1,47 +1,38 @@
 # ci-battery-pack
 
-A [battery pack](https://crates.io/crates/battery-pack) for CI/CD workflows in Rust projects. This is the kind of thing you'd copy from tokio or hyper, but generated fresh with pinned SHAs and your project's MSRV.
+A [battery pack](https://crates.io/crates/battery-pack) for CI/CD workflows in Rust projects. Generates the kind of CI config you'd copy from tokio or hyper, but fresh with pinned SHAs and your project's MSRV.
 
-Currently supports GitHub Actions. Someday there will be more supported platforms.
+Currently supports GitHub Actions.
 
-## Quick Start
+## Adding CI to an existing project
 
-The `full` template generates a complete project with CI. Use it to bootstrap a new project:
+Each CI feature is available as a standalone template you can merge into your project with `cargo bp add`:
+
+```sh
+cargo bp add ci -t spellcheck
+cargo bp add ci -t fuzzing -d ci_platform=github
+cargo bp add ci -t trusted-publishing
+```
+
+New files are written directly. For existing files, TOML and YAML are merged (new keys added, existing keys preserved), and other file types prompt you to skip, overwrite, or view a diff. See the [templates docs](https://battery-pack-rs.github.io/battery-pack/templates.html) for the full merge behavior and flags.
+
+Available standalone templates: `benchmarks`, `binary-release`, `clippy-sarif`, `fuzzing`, `mdbook`, `mutation-testing`, `spellcheck`, `stress-test`, `trusted-publishing`, `xtask`.
+
+## Creating a new project
+
+The `full` template scaffolds a complete project (Cargo.toml, src/lib.rs, README with badges) plus CI configuration:
 
 ```sh
 cargo bp new ci --name my-project
 ```
 
-Everything enabled:
+Enable all optional features with `-d all`, or pick individual ones interactively. You can also pass them on the command line:
 
 ```sh
-cargo bp new ci --name my-project -d all
-```
-
-Pick individual features:
-
-```sh
-cargo bp new ci --name my-project -d ci_platform=github -d benchmarks -d fuzzing -d spellcheck
-```
-
-Config files only (no CI workflows, no stub project):
-
-```sh
-cargo bp new ci --name my-project -d ci_platform=none
-```
-
-Or run `cargo bp new ci` interactively and answer the prompts.
-
-Each optional feature is also available as a standalone template for adding to an existing project:
-
-```sh
-cargo bp new ci --template fuzzing --name my-project
-cargo bp new ci --template trusted-publishing --name my-project
+cargo bp new ci --name my-project -d benchmarks -d fuzzing -d spellcheck
 ```
 
 ## What the `full` template generates
-
-The `full` template generates a stub Rust project (Cargo.toml, src/lib.rs, README with badges) along with CI configuration. If you're adding CI to an existing project, use the standalone templates instead.
 
 ### Core CI (GitHub Actions)
 
@@ -50,11 +41,9 @@ The `full` template generates a stub Rust project (Cargo.toml, src/lib.rs, READM
 - Dependabot config for Cargo and GitHub Actions updates
 - cargo-deny config (`deny.toml`)
 
-### Optional features (`-d flag`)
+### Optional features
 
-Use `-d all` to enable every optional feature. Otherwise, each defaults to off
-(except `trusted_publishing` which defaults to on). In interactive mode, you'll
-be prompted for each.
+Use `-d all` to enable everything. Otherwise, each defaults to off (except `trusted_publishing` which defaults to on). In interactive mode, you'll be prompted for each.
 
 | Flag | Default | What it adds | Curated deps |
 |------|---------|-------------|-------------|
@@ -71,10 +60,7 @@ be prompted for each.
 
 ### SHA pinning
 
-All GitHub Actions are pinned to commit SHAs at generation time per
-[GitHub's security guidance](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions#using-third-party-actions).
-Use [Dependabot](https://docs.github.com/en/code-security/dependabot/working-with-dependabot/keeping-your-actions-up-to-date-with-dependabot)
-to keep them up to date.
+All GitHub Actions are pinned to commit SHAs at generation time per [GitHub's security guidance](https://docs.github.com/en/actions/security-for-github-actions/security-guides/security-hardening-for-github-actions#using-third-party-actions). Use [Dependabot](https://docs.github.com/en/code-security/dependabot/working-with-dependabot/keeping-your-actions-up-to-date-with-dependabot) to keep them up to date.
 
 ## Setup
 
@@ -85,12 +71,12 @@ After generating your project, set `ci-pass` as the required status check in bra
 1. [Configure trusted publishing](https://doc.rust-lang.org/cargo/reference/registry-authentication.html#trusted-publishing) on crates.io
 2. In repo settings → Actions → General, enable "Allow GitHub Actions to create and approve pull requests"
 
+Without `binary_release`, `GITHUB_TOKEN` works fine and no further setup is needed.
+
 If you enabled `binary_release`, you also need a PAT so the release event triggers the binary build:
 
-3. Create a [fine-grained PAT](https://github.com/settings/personal-access-tokens/new) with `contents: write` and `pull-requests: write` for your repo
-4. Add it as a `RELEASE_PLZ_TOKEN` repo secret
-
-Without `binary_release`, `GITHUB_TOKEN` works fine and no PAT is needed.
+1. Create a [fine-grained PAT](https://github.com/settings/personal-access-tokens/new) with `contents: write` and `pull-requests: write` for your repo
+2. Add it as a `RELEASE_PLZ_TOKEN` repo secret
 
 Alternatively, you can avoid the PAT by moving the binary build steps into the release workflow itself.
 
@@ -102,13 +88,9 @@ See [release-plz docs](https://release-plz.dev/docs) for more.
 2. Add `BENCHER_API_TOKEN` as a repo secret
 3. Add your project slug as a `BENCHER_PROJECT` repo variable
 
-See [Bencher docs](https://bencher.dev/docs) for more.
-
 ### Clippy SARIF (if clippy_sarif enabled)
 
-Uploads clippy results to GitHub [Code Scanning](https://docs.github.com/en/code-security/code-scanning), showing warnings as inline PR annotations. Replaces the regular clippy job when enabled.
-
-Works automatically on public repos. For private repos, enable Code Scanning at Settings → Security → Code security.
+Uploads clippy results to GitHub [Code Scanning](https://docs.github.com/en/code-security/code-scanning), showing warnings as inline PR annotations. Works automatically on public repos. For private repos, enable Code Scanning at Settings → Security → Code security.
 
 ### mdBook (if mdbook enabled)
 
