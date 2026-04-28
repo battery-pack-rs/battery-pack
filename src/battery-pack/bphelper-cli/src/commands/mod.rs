@@ -1403,6 +1403,10 @@ fn status_battery_packs(
     Ok(())
 }
 
+/// Check installed battery packs for version drift.
+/// 
+/// Compares user's current dependency versions against battery pack recommendations
+/// and warns when user versions are older than recommended versions.
 fn check_battery_packs(
     project_dir: &Path,
     _path: Option<&str>,
