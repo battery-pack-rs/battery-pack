@@ -478,7 +478,6 @@ fn new_non_interactive_requires_name() {
 //   - cli.add.no-default-features — --no-default-features skips defaults
 //   - cli.add.all-features      — --all-features selects every crate
 //   - cli.add.specific-crates   — positional crate args after pack name
-//   - cli.add.target            — --target={workspace,package,default}
 //   - cli.add.unknown-crate     — error for unknown crate, valid ones proceed
 
 use std::path::PathBuf;
@@ -527,7 +526,6 @@ struct ParsedAdd {
     features: Vec<String>,
     _no_default_features: bool,
     _all_features: bool,
-    target: Option<super::AddTarget>,
     _path: Option<String>,
     _template: Option<String>,
     _define: Vec<(String, String)>,
@@ -545,7 +543,6 @@ fn parse_add_command(args: &[&str]) -> ParsedAdd {
             features,
             no_default_features,
             all_features,
-            target,
             path,
             template,
             define,
@@ -556,7 +553,6 @@ fn parse_add_command(args: &[&str]) -> ParsedAdd {
             features,
             _no_default_features: no_default_features,
             _all_features: all_features,
-            target,
             _path: path,
             _template: template,
             _define: define,
@@ -932,37 +928,6 @@ fn resolve_all_unknown_crates_yields_empty() {
     assert!(crate_names.is_empty());
 }
 
-// ============================================================================
-// cli.add.target — flag parsing
-// ============================================================================
-
-// [verify cli.add.target]
-#[test]
-fn target_values_parsed() {
-    for (arg, expected) in [
-        ("workspace", super::AddTarget::Workspace),
-        ("package", super::AddTarget::Package),
-        ("default", super::AddTarget::Default),
-    ] {
-        let add = parse_add_command(&["cargo", "bp", "add", "cli", "--target", arg]);
-        assert_eq!(add.target, Some(expected), "for --target {arg}");
-    }
-}
-
-// [verify cli.add.target]
-#[test]
-fn target_omitted_is_none() {
-    let add = parse_add_command(&["cargo", "bp", "add", "cli"]);
-    assert!(add.target.is_none());
-}
-
-// [verify cli.add.target]
-#[test]
-fn target_invalid_value_rejected() {
-    let result = super::Cli::try_parse_from(["cargo", "bp", "add", "cli", "--target", "invalid"]);
-    assert!(result.is_err());
-}
-
 // --- from group2_add_integration.rs ---
 
 // Group 2 integration tests: full `add_battery_pack` flow with real fixtures.
@@ -978,7 +943,6 @@ fn target_invalid_value_rejected() {
 //   - cli.add.all-features      — all crates appear
 //   - cli.add.specific-crates   — only named crates appear
 //   - cli.add.unknown-crate     — unknown skipped, valid written
-//   - cli.add.target            — compatibility flag parses
 //   - cli.add.register          — battery pack in build-dependencies
 //   - cli.add.dep-kind          — dev-deps land in [dev-dependencies]
 
@@ -1072,7 +1036,6 @@ fn add(
     features: &[&str],
     feature_mode: FeatureMode,
     specific_crates: &[&str],
-    target: Option<super::AddTarget>,
     project_dir: &std::path::Path,
 ) {
     let (no_default_features, all_features) = match feature_mode {
@@ -1089,7 +1052,6 @@ fn add(
         no_default_features,
         all_features,
         &specific,
-        target,
         Some(fixture_path.to_str().unwrap()),
         &crate::registry::CrateSource::Registry,
         project_dir,
@@ -1111,7 +1073,6 @@ fn add_registers_build_dep() {
         &["default"],
         FeatureMode::Default,
         &[],
-        None,
         tmp.path(),
     );
 
@@ -1130,7 +1091,6 @@ fn add_creates_battery_pack_toml() {
         &["default"],
         FeatureMode::Default,
         &[],
-        None,
         tmp.path(),
     );
 
@@ -1156,7 +1116,6 @@ fn add_default_crates_basic() {
         &["default"],
         FeatureMode::Default,
         &[],
-        None,
         tmp.path(),
     );
 
@@ -1189,7 +1148,6 @@ fn add_default_includes_dev_and_build_deps() {
         &["default"],
         FeatureMode::Default,
         &[],
-        None,
         tmp.path(),
     );
 
@@ -1238,7 +1196,6 @@ fn add_with_named_feature_writes_deps() {
         &["indicators"],
         FeatureMode::Default,
         &[],
-        None,
         tmp.path(),
     );
 
@@ -1270,7 +1227,6 @@ fn add_with_named_feature_records_metadata() {
         &["indicators"],
         FeatureMode::Default,
         &[],
-        None,
         tmp.path(),
     );
 
@@ -1299,7 +1255,6 @@ fn add_no_default_features_with_feature() {
         &["indicators"],
         FeatureMode::NoDefault,
         &[],
-        None,
         tmp.path(),
     );
 
@@ -1330,7 +1285,6 @@ fn add_no_default_features_alone_writes_no_deps() {
         &[],
         FeatureMode::NoDefault,
         &[],
-        None,
         tmp.path(),
     );
 
@@ -1354,7 +1308,6 @@ fn add_all_features_basic() {
         &[],
         FeatureMode::All,
         &[],
-        None,
         tmp.path(),
     );
 
@@ -1386,7 +1339,6 @@ fn add_all_features_records_metadata() {
         &[],
         FeatureMode::All,
         &[],
-        None,
         tmp.path(),
     );
 
@@ -1412,7 +1364,6 @@ fn add_all_features_fancy() {
         &[],
         FeatureMode::All,
         &[],
-        None,
         tmp.path(),
     );
 
@@ -1478,7 +1429,6 @@ fn add_specific_crates_writes_only_named() {
         &[],
         FeatureMode::Default,
         &["clap"],
-        None,
         tmp.path(),
     );
 
@@ -1510,7 +1460,6 @@ fn add_unknown_crate_writes_valid_ones() {
         &[],
         FeatureMode::Default,
         &["nonexistent", "clap"],
-        None,
         tmp.path(),
     );
 
@@ -1533,12 +1482,11 @@ clap = { version = "4", features = ["derive"] }
 }
 
 // ============================================================================
-// cli.add.target — metadata location
+// cli.add — metadata written to battery-pack.toml
 // ============================================================================
 
-// [verify cli.add.target]
 #[test]
-fn add_target_package_writes_metadata() {
+fn add_writes_metadata() {
     let tmp = make_temp_project();
     add(
         "basic",
@@ -1546,7 +1494,6 @@ fn add_target_package_writes_metadata() {
         &["default"],
         FeatureMode::Default,
         &[],
-        Some(super::AddTarget::Package),
         tmp.path(),
     );
 
@@ -1570,7 +1517,6 @@ fn preflight_prunes_removed_managed_dep_from_state() {
         &["default"],
         FeatureMode::Default,
         &[],
-        None,
         tmp.path(),
     );
 
@@ -1615,7 +1561,6 @@ fn add_creates_build_rs() {
         &["default"],
         FeatureMode::Default,
         &[],
-        None,
         tmp.path(),
     );
 
@@ -1637,7 +1582,6 @@ fn add_twice_is_idempotent() {
         &["default"],
         FeatureMode::Default,
         &[],
-        None,
         tmp.path(),
     );
     let first_content = read_cargo_toml(&tmp);
@@ -1648,7 +1592,6 @@ fn add_twice_is_idempotent() {
         &["default"],
         FeatureMode::Default,
         &[],
-        None,
         tmp.path(),
     );
     let second_content = read_cargo_toml(&tmp);

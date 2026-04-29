@@ -111,7 +111,7 @@ fn resolve_uses_define_over_default() {
     defines.insert("description".to_string(), "override".to_string());
     let mut vars = BTreeMap::new();
 
-    resolve_placeholders(&defs, &defines, &mut vars, None).unwrap();
+    resolve_placeholders(&defs, &defines, &mut vars, Some(false)).unwrap();
     assert_eq!(vars["description"], "override");
 }
 
@@ -131,7 +131,7 @@ fn resolve_uses_default_non_interactive() {
     let mut vars = BTreeMap::new();
 
     // In test/CI, stdout is not a terminal, so non-interactive path is taken
-    resolve_placeholders(&defs, &defines, &mut vars, None).unwrap();
+    resolve_placeholders(&defs, &defines, &mut vars, Some(false)).unwrap();
     assert_eq!(vars["description"], "fallback");
 }
 
@@ -150,7 +150,7 @@ fn resolve_no_default_non_interactive_errors() {
     let defines = BTreeMap::new();
     let mut vars = BTreeMap::new();
 
-    let err = resolve_placeholders(&defs, &defines, &mut vars, None).unwrap_err();
+    let err = resolve_placeholders(&defs, &defines, &mut vars, Some(false)).unwrap_err();
     assert_data_eq!(
         err.to_string(),
         str!["placeholder 'description' has no default and no value provided"]
@@ -169,8 +169,8 @@ fn resolve_rejects_kebab_case_name() {
             options: vec![],
         },
     );
-    let err =
-        resolve_placeholders(&defs, &BTreeMap::new(), &mut BTreeMap::new(), None).unwrap_err();
+    let err = resolve_placeholders(&defs, &BTreeMap::new(), &mut BTreeMap::new(), Some(false))
+        .unwrap_err();
     assert_data_eq!(
         err.to_string(),
         str!["placeholder 'my-thing' contains '-'; use snake_case (MiniJinja treats '-' as minus)"]
@@ -297,7 +297,7 @@ fn resolve_bool_true_non_interactive() {
         },
     );
     let mut vars = BTreeMap::new();
-    resolve_placeholders(&defs, &BTreeMap::new(), &mut vars, None).unwrap();
+    resolve_placeholders(&defs, &BTreeMap::new(), &mut vars, Some(false)).unwrap();
     assert_eq!(vars["flag"], "true");
 }
 
@@ -314,7 +314,7 @@ fn resolve_bool_false_non_interactive() {
         },
     );
     let mut vars = BTreeMap::new();
-    resolve_placeholders(&defs, &BTreeMap::new(), &mut vars, None).unwrap();
+    resolve_placeholders(&defs, &BTreeMap::new(), &mut vars, Some(false)).unwrap();
     assert_eq!(vars["flag"], "false");
 }
 
@@ -331,7 +331,7 @@ fn resolve_bool_no_default_is_false() {
         },
     );
     let mut vars = BTreeMap::new();
-    resolve_placeholders(&defs, &BTreeMap::new(), &mut vars, None).unwrap();
+    resolve_placeholders(&defs, &BTreeMap::new(), &mut vars, Some(false)).unwrap();
     assert_eq!(vars["flag"], "false");
 }
 
@@ -350,7 +350,7 @@ fn resolve_bool_define_override() {
     let mut defines = BTreeMap::new();
     defines.insert("flag".to_string(), "true".to_string());
     let mut vars = BTreeMap::new();
-    resolve_placeholders(&defs, &defines, &mut vars, None).unwrap();
+    resolve_placeholders(&defs, &defines, &mut vars, Some(false)).unwrap();
     assert_eq!(vars["flag"], "true");
 }
 
@@ -369,7 +369,7 @@ fn resolve_select_non_interactive() {
         },
     );
     let mut vars = BTreeMap::new();
-    resolve_placeholders(&defs, &BTreeMap::new(), &mut vars, None).unwrap();
+    resolve_placeholders(&defs, &BTreeMap::new(), &mut vars, Some(false)).unwrap();
     assert_eq!(vars["platform"], "github");
 }
 
@@ -385,8 +385,8 @@ fn resolve_select_invalid_default_errors() {
             options: vec!["github".to_string(), "gitlab".to_string()],
         },
     );
-    let err =
-        resolve_placeholders(&defs, &BTreeMap::new(), &mut BTreeMap::new(), None).unwrap_err();
+    let err = resolve_placeholders(&defs, &BTreeMap::new(), &mut BTreeMap::new(), Some(false))
+        .unwrap_err();
     assert!(err.to_string().contains("bitbucket"), "{err}");
     assert!(err.to_string().contains("not in options"), "{err}");
 }
@@ -403,8 +403,8 @@ fn resolve_select_empty_options_errors() {
             options: vec![],
         },
     );
-    let err =
-        resolve_placeholders(&defs, &BTreeMap::new(), &mut BTreeMap::new(), None).unwrap_err();
+    let err = resolve_placeholders(&defs, &BTreeMap::new(), &mut BTreeMap::new(), Some(false))
+        .unwrap_err();
     assert!(err.to_string().contains("no options"), "{err}");
 }
 
@@ -423,7 +423,7 @@ fn resolve_select_define_override() {
     let mut defines = BTreeMap::new();
     defines.insert("platform".to_string(), "gitlab".to_string());
     let mut vars = BTreeMap::new();
-    resolve_placeholders(&defs, &defines, &mut vars, None).unwrap();
+    resolve_placeholders(&defs, &defines, &mut vars, Some(false)).unwrap();
     assert_eq!(vars["platform"], "gitlab");
 }
 
