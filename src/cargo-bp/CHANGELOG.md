@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3](https://github.com/battery-pack-rs/battery-pack/compare/cargo-bp-v0.5.2...cargo-bp-v0.5.3) - 2026-04-30
+
+### Added
+
+- use bp-managed in templates, add with_template snapshot tests
+- rename validate_templates to validate
+- validate templates from packaged tarball (inverted assertions)
+- *(bp-managed)* allow features and other keys alongside bp-managed
+- *(template-engine)* map _Cargo.toml to Cargo.toml in rendered output
+
+### Fixed
+
+- remove trailing newline from with_template snapshot
+- rename template Cargo.toml to _Cargo.toml, flip assertions
+- *(validate)* fall back to source tree when workspace deps are unpublished
+
+### Other
+
+- Merge pull request #120 from jlizen/feat/defines-in-show
+- Merge pull request #121 from jlizen/fix/preserve-cargo-toml-in-tarball
+- *(test)* add spirit asserts alongside snapshots, inline small file snapshots
+
 ## [0.5.2](https://github.com/battery-pack-rs/battery-pack/compare/cargo-bp-v0.5.1...cargo-bp-v0.5.2) - 2026-04-22
 
 ### Added

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4](https://github.com/battery-pack-rs/battery-pack/compare/ci-battery-pack-v0.1.3...ci-battery-pack-v0.1.4) - 2026-04-30
+
+### Added
+
+- rename validate_templates to validate
+- *(ci-battery-pack)* add validate test, merged snapshot tests for all templates
+
+### Fixed
+
+- rename template Cargo.toml to _Cargo.toml, flip assertions
+
+### Other
+
+- Merge pull request #120 from jlizen/feat/defines-in-show
+- *(ci-battery-pack)* replace file list and contains tests with merged snapshots
+- *(ci-battery-pack)* expand hints
+- *(ci)* restructure README for template merging ([#115](https://github.com/battery-pack-rs/battery-pack/pull/115))
+
 ## [0.1.3](https://github.com/battery-pack-rs/battery-pack/compare/ci-battery-pack-v0.1.2...ci-battery-pack-v0.1.3) - 2026-04-22
 
 ### Added

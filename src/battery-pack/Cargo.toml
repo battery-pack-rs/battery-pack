@@ -1,6 +1,6 @@
 [package]
 name = "battery-pack"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2024"
 description = "Curated crate bundles with docs, templates, and agentic skills"
 license = "MIT OR Apache-2.0"
@@ -21,9 +21,9 @@ build = ["bphelper-build"]
 cli = ["bphelper-cli"]
 
 [dependencies]
-bphelper-build = { path = "bphelper-build", version = "0.4.6", optional = true }
-bphelper-cli = { path = "bphelper-cli", version = "0.7.6", optional = true }
-bphelper-manifest = { path = "bphelper-manifest", version = "0.5.4" }
+bphelper-build = { path = "bphelper-build", version = "0.4.7", optional = true }
+bphelper-cli = { path = "bphelper-cli", version = "0.8.0", optional = true }
+bphelper-manifest = { path = "bphelper-manifest", version = "0.5.5" }
 anyhow.workspace = true
 
 [dev-dependencies]

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1](https://github.com/battery-pack-rs/battery-pack/compare/error-battery-pack-v0.6.0...error-battery-pack-v0.6.1) - 2026-04-30
+
+### Added
+
+- rename validate_templates to validate
+
 ## [0.6.0](https://github.com/battery-pack-rs/battery-pack/compare/error-battery-pack-v0.5.3...error-battery-pack-v0.6.0) - 2026-04-21
 
 ### Added
