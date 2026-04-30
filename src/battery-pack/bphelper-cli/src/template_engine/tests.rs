@@ -591,6 +591,97 @@ fn preview_renders_template_in_memory() {
 }
 
 #[test]
+fn preview_maps_underscore_cargo_toml_to_cargo_toml() {
+    let tmp = tempfile::tempdir().unwrap();
+    let crate_root = tmp.path();
+
+    std::fs::write(
+        crate_root.join("Cargo.toml"),
+        "[package]\nname = \"test-bp\"\nversion = \"0.1.0\"\nkeywords = [\"battery-pack\"]\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(crate_root.join("src")).unwrap();
+    std::fs::write(crate_root.join("src/lib.rs"), "").unwrap();
+
+    let tpl = crate_root.join("templates/default");
+    std::fs::create_dir_all(tpl.join("src")).unwrap();
+    std::fs::write(
+        tpl.join("_Cargo.toml"),
+        "[package]\nname = \"{{ project_name }}\"\n",
+    )
+    .unwrap();
+    std::fs::write(tpl.join("src/main.rs"), "fn main() {}\n").unwrap();
+
+    let opts = RenderOpts {
+        crate_root: crate_root.to_path_buf(),
+        template_path: "templates/default".to_string(),
+        project_name: "my-app".to_string(),
+        defines: BTreeMap::new(),
+        interactive_override: Some(false),
+    };
+
+    let files = preview(opts).unwrap();
+    let mut paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+    paths.sort();
+    assert_data_eq!(
+        paths.join("\n"),
+        str![[r#"
+Cargo.toml
+src/main.rs"#]]
+    );
+    assert!(
+        !files.iter().any(|f| f.path.contains("_Cargo")),
+        "_Cargo.toml should not appear in output"
+    );
+
+    let cargo = files.iter().find(|f| f.path == "Cargo.toml").unwrap();
+    assert_data_eq!(
+        &cargo.content,
+        str![[r#"
+[package]
+name = "my-app"
+"#]]
+    );
+}
+
+#[test]
+fn preview_preserves_underscore_cargo_toml_under_templates_dir() {
+    let tmp = tempfile::tempdir().unwrap();
+    let crate_root = tmp.path();
+
+    std::fs::write(
+        crate_root.join("Cargo.toml"),
+        "[package]\nname = \"test-bp\"\nversion = \"0.1.0\"\nkeywords = [\"battery-pack\"]\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(crate_root.join("src")).unwrap();
+    std::fs::write(crate_root.join("src/lib.rs"), "").unwrap();
+
+    let tpl = crate_root.join("tpl");
+    std::fs::create_dir_all(tpl.join("templates/default/src")).unwrap();
+    std::fs::write(tpl.join("templates/default/_Cargo.toml"), "[package]\n").unwrap();
+    std::fs::write(tpl.join("templates/default/src/main.rs"), "fn main() {}\n").unwrap();
+
+    let opts = RenderOpts {
+        crate_root: crate_root.to_path_buf(),
+        template_path: "tpl".to_string(),
+        project_name: "my-app".to_string(),
+        defines: BTreeMap::new(),
+        interactive_override: Some(false),
+    };
+
+    let files = preview(opts).unwrap();
+    let mut paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+    paths.sort();
+    assert_data_eq!(
+        paths.join("\n"),
+        str![[r#"
+templates/default/_Cargo.toml
+templates/default/src/main.rs"#]]
+    );
+}
+
+#[test]
 fn preview_resolves_bp_managed_deps() {
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
