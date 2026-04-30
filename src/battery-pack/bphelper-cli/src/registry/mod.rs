@@ -344,6 +344,14 @@ pub fn resolve_bp_managed_content(content: &str, bp_crate_root: &Path) -> Result
         }
     }
 
+    // Allow battery packs to reference their own version as bp-managed
+    // (e.g. battery-pack.bp-managed = true in battery-pack's own templates).
+    for spec in &all_specs {
+        bp_versions
+            .entry(spec.name.clone())
+            .or_insert_with(|| spec.version.clone());
+    }
+
     // Rewrite bp-managed entries with resolved versions.
     for section in &sections {
         let Some(table) = doc.get_mut(section).and_then(|v| v.as_table_mut()) else {
@@ -352,22 +360,88 @@ pub fn resolve_bp_managed_content(content: &str, bp_crate_root: &Path) -> Result
 
         let managed_names: Vec<String> = table
             .iter()
-            .filter(|(_, v)| is_bp_managed_item(v))
+            .filter(|(_, v)| is_bp_managed(v))
             .map(|(k, _)| k.to_string())
             .collect();
 
         for name in managed_names {
-            if let Some(crate_spec) = resolved.get(&name) {
-                // Regular dependency managed by a battery pack.
-                crate::manifest::add_dep_to_table(table, &name, crate_spec);
+            let version = if let Some(crate_spec) = resolved.get(&name) {
+                crate_spec.version.clone()
             } else if let Some(bp_version) = bp_versions.get(&name) {
-                // Battery pack itself in [build-dependencies].
-                table.insert(&name, toml_edit::value(bp_version));
+                bp_version.clone()
             } else {
                 bail!(
                     "dependency '{}' in [{}] has `bp-managed = true` but no battery pack provides it",
                     name,
                     section
+                );
+            };
+
+            // Resolve the spec features (used as default when none are explicit).
+            let spec_features: Vec<String> = resolved
+                .get(&name)
+                .map(|s| s.features.iter().cloned().collect())
+                .unwrap_or_default();
+
+            let entry = &table[&name];
+            let has_explicit_features = match entry {
+                toml_edit::Item::Value(toml_edit::Value::InlineTable(t)) => {
+                    t.contains_key("features")
+                }
+                toml_edit::Item::Table(t) => t.contains_key("features"),
+                _ => false,
+            };
+
+            // For simple `dep.bp-managed = true` with no extra keys and no
+            // spec features, emit a plain version string.
+            let only_bp_managed = match entry {
+                toml_edit::Item::Value(toml_edit::Value::InlineTable(t)) => t.len() == 1,
+                toml_edit::Item::Table(t) => t.len() == 1,
+                _ => false,
+            };
+            let is_simple = only_bp_managed && !has_explicit_features && spec_features.is_empty();
+
+            if is_simple {
+                table.insert(&name, toml_edit::value(&version));
+            } else {
+                // Convert to inline table, remove bp-managed, insert version,
+                // and add spec features if no explicit features were given.
+                let mut dep = toml_edit::InlineTable::new();
+                dep.insert("version", toml_edit::Value::from(version.as_str()));
+
+                // Copy all existing keys except bp-managed
+                match &table[&name] {
+                    toml_edit::Item::Value(toml_edit::Value::InlineTable(t)) => {
+                        for (k, v) in t.iter() {
+                            if k != "bp-managed" {
+                                dep.insert(k, v.clone());
+                            }
+                        }
+                    }
+                    toml_edit::Item::Table(t) => {
+                        for (k, v) in t.iter() {
+                            if k != "bp-managed"
+                                && let Some(val) = v.as_value()
+                            {
+                                dep.insert(k, val.clone());
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+
+                // If no explicit features, add spec features
+                if !has_explicit_features && !spec_features.is_empty() {
+                    let mut features = toml_edit::Array::new();
+                    for feat in &spec_features {
+                        features.push(feat.as_str());
+                    }
+                    dep.insert("features", toml_edit::Value::Array(features));
+                }
+
+                table.insert(
+                    &name,
+                    toml_edit::Item::Value(toml_edit::Value::InlineTable(dep)),
                 );
             }
         }
@@ -377,7 +451,7 @@ pub fn resolve_bp_managed_content(content: &str, bp_crate_root: &Path) -> Result
 }
 
 /// Check if a toml_edit Item has `bp-managed = true`.
-fn is_bp_managed_item(item: &toml_edit::Item) -> bool {
+fn is_bp_managed(item: &toml_edit::Item) -> bool {
     match item {
         toml_edit::Item::Value(toml_edit::Value::InlineTable(t)) => t
             .get("bp-managed")
@@ -392,11 +466,6 @@ fn is_bp_managed_item(item: &toml_edit::Item) -> bool {
     }
 }
 
-/// Check if a toml::Value has `bp-managed = true`.
-fn is_bp_managed(value: &toml_edit::Item) -> bool {
-    is_bp_managed_item(value)
-}
-
 /// Return any keys besides `bp-managed` on a bp-managed dep entry.
 fn extra_keys_on_bp_managed(value: &toml_edit::Item) -> Vec<String> {
     let keys: Box<dyn Iterator<Item = &str>> = match value {
@@ -406,9 +475,9 @@ fn extra_keys_on_bp_managed(value: &toml_edit::Item) -> Vec<String> {
         toml_edit::Item::Table(t) => Box::new(t.iter().map(|(k, _)| k)),
         _ => return vec![],
     };
-    keys.filter(|k| *k != "bp-managed")
-        .map(String::from)
-        .collect()
+    // Only `version` conflicts with bp-managed (it provides the version).
+    // Other keys like `features` and `optional` are passed through.
+    keys.filter(|k| *k == "version").map(String::from).collect()
 }
 
 pub(crate) fn fetch_battery_pack_spec(bp_name: &str) -> Result<bphelper_manifest::BatteryPackSpec> {

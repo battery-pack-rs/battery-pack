@@ -834,7 +834,7 @@ pub fn discover_battery_packs(workspace_path: &Path) -> Result<Vec<BatteryPackSp
         // Parse once, check name, keep if it's a battery pack
         // [impl format.crate.name]
         let spec = parse_battery_pack(&member_content)?;
-        if spec.name.ends_with("-battery-pack") {
+        if spec.name == "battery-pack" || spec.name.ends_with("-battery-pack") {
             packs.push(spec);
         }
     }
@@ -1793,6 +1793,22 @@ tokio = { version = "1", optional = true }
         assert_eq!(packs.len(), 1);
         assert_eq!(packs[0].name, "solo-battery-pack");
         assert_eq!(packs[0].version, "1.0.0");
+    }
+
+    #[test]
+    fn discover_from_crate_root_includes_battery_pack_itself() {
+        // battery-pack (the framework crate) should be discoverable from its
+        // own directory, so bp-managed self-references resolve correctly.
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let bp_crate = manifest_dir.parent().unwrap();
+
+        let packs = discover_from_crate_root(bp_crate).unwrap();
+        let names: Vec<&str> = packs.iter().map(|p| p.name.as_str()).collect();
+        assert!(
+            names.contains(&"battery-pack"),
+            "battery-pack should be discoverable, found: {:?}",
+            names
+        );
     }
 
     // -- validate_spec tests --

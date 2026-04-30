@@ -92,14 +92,17 @@ cli-battery-pack.bp-managed = true
 ```
 
 r[manifest.managed.conflict]
-A dependency MUST NOT have both `bp-managed = true` and any other keys
-(`version`, `features`, `default-features`, etc.). `cargo bp` MUST
-error if `bp-managed` is combined with other dependency keys.
+A dependency MUST NOT have both `bp-managed = true` and `version`.
+Other keys (`features`, `optional`, `default-features`, etc.) are
+allowed alongside `bp-managed` and are preserved in the resolved output.
 
 r[manifest.managed.resolution]
 When generating a project from a template, `cargo bp` MUST resolve
-each `bp-managed` dependency by replacing the entire entry with the
-version and Cargo features from the battery pack's spec. Specs are
+each `bp-managed` dependency by replacing `bp-managed` with the
+version from the battery pack's spec. If the entry has no explicit
+`features`, the spec's features are used as the default. If explicit
+`features` are present, they override the spec's features entirely.
+All other keys are preserved as-is. Specs are
 discovered from the crate root's workspace first. If a referenced
 battery pack is not found locally (e.g. a cross-pack reference after
 downloading from crates.io), `cargo bp` MUST fetch its spec from the
