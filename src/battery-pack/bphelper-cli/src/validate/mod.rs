@@ -48,7 +48,7 @@ pub(crate) fn validate_battery_pack_cmd(path: Option<&str>) -> Result<()> {
 
     // [impl cli.validate.clean]
     if report.is_clean() {
-        validate_templates(crate_root.to_str().unwrap_or("."))?;
+        validate(crate_root.to_str().unwrap_or("."))?;
         println!("{} is valid", spec.name);
         return Ok(());
     }
@@ -81,7 +81,7 @@ pub(crate) fn validate_battery_pack_cmd(path: Option<&str>) -> Result<()> {
 
     // [impl cli.validate.warnings-only]
     // Warnings only — still succeeds
-    validate_templates(crate_root.to_str().unwrap_or("."))?;
+    validate(crate_root.to_str().unwrap_or("."))?;
     println!("{} is valid ({} warning(s))", spec.name, warnings);
     Ok(())
 }
@@ -97,7 +97,7 @@ pub(crate) fn validate_battery_pack_cmd(path: Option<&str>) -> Result<()> {
 ///
 /// Compiled artifacts are cached in `<target_dir>/bp-validate/` so that
 /// subsequent runs are faster.
-pub fn validate_templates(manifest_dir: &str) -> Result<()> {
+pub fn validate(manifest_dir: &str) -> Result<()> {
     let manifest_dir = Path::new(manifest_dir);
     let cargo_toml = manifest_dir.join("Cargo.toml");
     let content = std::fs::read_to_string(&cargo_toml)

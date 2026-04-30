@@ -18,7 +18,7 @@ fn battery_pack_root() -> std::path::PathBuf {
 
 /// Patch crates-io deps so the generated battery pack resolves against local
 /// workspace packages instead of published versions. This is similar to how our
-/// `validate_templates` helper works.
+/// `validate` helper works.
 fn write_patches(bp_dir: &Path) {
     let cargo_dir = bp_dir.join(".cargo");
     std::fs::create_dir_all(&cargo_dir).unwrap();

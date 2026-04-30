@@ -174,7 +174,7 @@ fn validate_template_test_failure_includes_stdout() {
     )
     .unwrap();
 
-    let err = super::validate_templates(bp.to_str().unwrap()).unwrap_err();
+    let err = super::validate(bp.to_str().unwrap()).unwrap_err();
     let msg = format!("{err:#}");
 
     snapbox::assert_data_eq!(

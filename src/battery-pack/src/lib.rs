@@ -51,21 +51,21 @@ pub mod build {
 /// #[cfg(test)]
 /// mod tests {
 ///     #[test]
-///     fn validate_templates() {
-///         ::battery_pack::testing::validate_templates(env!("CARGO_MANIFEST_DIR")).unwrap();
+///     fn validate() {
+///         ::battery_pack::testing::validate(env!("CARGO_MANIFEST_DIR")).unwrap();
 ///     }
 /// }
 /// ```
 #[cfg(feature = "cli")]
 pub mod testing {
-    pub use bphelper_cli::{PreviewBuilder, PreviewFile, validate_templates};
+    pub use bphelper_cli::{PreviewBuilder, PreviewFile, validate};
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
     #[cfg(feature = "cli")]
-    fn validate_templates() {
-        ::battery_pack::testing::validate_templates(env!("CARGO_MANIFEST_DIR")).unwrap();
+    fn validate() {
+        ::battery_pack::testing::validate(env!("CARGO_MANIFEST_DIR")).unwrap();
     }
 }

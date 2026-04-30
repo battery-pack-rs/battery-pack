@@ -12,7 +12,7 @@ mod validate;
 // The only true public API
 pub use commands::main;
 pub use registry::resolve_bp_managed_content;
-pub use validate::validate_templates;
+pub use validate::validate;
 
 /// A rendered file from a template preview.
 #[non_exhaustive]
