@@ -977,6 +977,37 @@ fn validate_templates_on_disk(
                     name, template.path
                 ),
             );
+            continue;
+        }
+
+        // Cargo excludes any subdirectory containing a Cargo.toml from the
+        // published tarball (it treats them as separate crate boundaries).
+        // Template Cargo.toml files must be named _Cargo.toml instead.
+        for entry in walkdir::WalkDir::new(&template_dir) {
+            let entry = match entry {
+                Ok(e) => e,
+                Err(e) => {
+                    report.error(
+                        "format.templates.walk",
+                        format!("failed to walk template '{}': {}", name, e),
+                    );
+                    continue;
+                }
+            };
+            if entry.file_type().is_file() && entry.file_name() == "Cargo.toml" {
+                let rel = entry
+                    .path()
+                    .strip_prefix(crate_root)
+                    .unwrap_or(entry.path());
+                report.error(
+                    "format.templates.cargo-toml",
+                    format!(
+                        "{} will be excluded from the published crate. \
+                         Rename to _Cargo.toml (the template engine maps it back automatically).",
+                        rel.display()
+                    ),
+                );
+            }
         }
     }
 }
@@ -2043,6 +2074,74 @@ tokio = { version = "1", optional = true }
         assert!(template_errors.is_empty());
     }
 
+    #[test]
+    fn validate_templates_cargo_toml_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir(&src).unwrap();
+        std::fs::write(src.join("lib.rs"), "//! Doc\n").unwrap();
+
+        let spec = parse_battery_pack(
+            r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [package.metadata.battery.templates]
+            default = { path = "templates/default", description = "Basic" }
+        "#,
+        )
+        .unwrap();
+
+        let tmpl = dir.path().join("templates/default");
+        std::fs::create_dir_all(&tmpl).unwrap();
+        std::fs::write(tmpl.join("Cargo.toml"), "[package]\nname = \"x\"\n").unwrap();
+
+        let report = validate_on_disk(&spec, dir.path());
+        assert!(report.has_errors());
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|d| d.rule == "format.templates.cargo-toml"
+                    && d.message.contains("_Cargo.toml"))
+        );
+    }
+
+    #[test]
+    fn validate_templates_underscore_cargo_toml_accepted() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("src");
+        std::fs::create_dir(&src).unwrap();
+        std::fs::write(src.join("lib.rs"), "//! Doc\n").unwrap();
+
+        let spec = parse_battery_pack(
+            r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [package.metadata.battery.templates]
+            default = { path = "templates/default", description = "Basic" }
+        "#,
+        )
+        .unwrap();
+
+        let tmpl = dir.path().join("templates/default");
+        std::fs::create_dir_all(&tmpl).unwrap();
+        std::fs::write(tmpl.join("_Cargo.toml"), "[package]\nname = \"x\"\n").unwrap();
+
+        let report = validate_on_disk(&spec, dir.path());
+        let cargo_toml_errors: Vec<_> = report
+            .diagnostics
+            .iter()
+            .filter(|d| d.rule == "format.templates.cargo-toml")
+            .collect();
+        assert!(cargo_toml_errors.is_empty());
+    }
+
     // -- Repository warning tests --
 
     #[test]
@@ -2145,10 +2244,17 @@ tokio = { version = "1", optional = true }
 
         let mut report = spec.validate_spec();
         report.merge(validate_on_disk(&spec, &fixture));
+        // INVERTED: fancy-battery-pack has Cargo.toml in templates/.
+        // Flip once templates use _Cargo.toml.
         assert!(
-            report.is_clean(),
-            "fancy-battery-pack should be clean: {:?}",
-            report.diagnostics
+            report.has_errors(),
+            "fancy-battery-pack should fail: Cargo.toml in templates"
+        );
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|d| d.rule == "format.templates.cargo-toml")
         );
     }
 
@@ -2214,10 +2320,17 @@ tokio = { version = "1", optional = true }
 
         let mut report = spec.validate_spec();
         report.merge(validate_on_disk(&spec, &fixture));
+        // INVERTED: managed-battery-pack has Cargo.toml in templates/.
+        // Flip once templates use _Cargo.toml.
         assert!(
-            report.is_clean(),
-            "managed-battery-pack should be clean: {:?}",
-            report.diagnostics
+            report.has_errors(),
+            "managed-battery-pack should fail: Cargo.toml in templates"
+        );
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|d| d.rule == "format.templates.cargo-toml")
         );
     }
 
