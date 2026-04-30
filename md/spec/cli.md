@@ -125,15 +125,6 @@ Each crate MUST be added with the dependency kind matching its
 section in the battery pack's Cargo.toml (regular, dev, or build),
 unless the user overrides it.
 
-r[cli.add.target]
-`cargo bp add <pack> --target <level>` controls where the battery
-pack registration is stored. The `<level>` MUST be one of:
-- `workspace` — register in `[workspace.metadata.battery-pack]`
-- `package` — register in `[package.metadata.battery-pack]`
-- `default` — use workspace if a workspace root exists, otherwise package
-
-If `--target` is not specified, the default behavior MUST be used.
-
 r[cli.add.unknown-crate]
 When specific crates are named (`cargo bp add <pack> <crate>...`)
 and a named crate does not exist in the battery pack, `cargo bp`

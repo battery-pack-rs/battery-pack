@@ -272,52 +272,6 @@ fn add_dep_twice_with_features_no_duplicate() {
     assert_eq!(features.len(), 2);
 }
 
-// [verify cli.add.idempotent]
-#[test]
-fn metadata_registration_idempotent() {
-    // Simulating the metadata upsert: writing to
-    // [package.metadata.battery-pack] twice should produce one entry.
-    let toml_str = r#"[package]
-name = "my-app"
-version = "0.1.0"
-
-[package.metadata.battery-pack]
-cli-battery-pack = { features = ["default"] }
-"#;
-    let mut doc: toml_edit::DocumentMut = toml_str.parse().unwrap();
-
-    // "Re-add" with updated features (inline table style)
-    let mut features_array = toml_edit::Array::new();
-    features_array.push("default");
-    features_array.push("indicators");
-    let mut inline = toml_edit::InlineTable::new();
-    inline.insert("features", toml_edit::Value::Array(features_array));
-    let bp_table = doc["package"]["metadata"]["battery-pack"]
-        .as_table_mut()
-        .unwrap();
-    bp_table.insert(
-        "cli-battery-pack",
-        toml_edit::Item::Value(toml_edit::Value::InlineTable(inline)),
-    );
-
-    // Verify: should be exactly one battery-pack entry, not two
-    let bp_table = doc["package"]["metadata"]["battery-pack"]
-        .as_table()
-        .unwrap();
-    assert_eq!(
-        bp_table.len(),
-        1,
-        "should have exactly one battery pack entry"
-    );
-
-    // Verify features were updated
-    let features = crate::manifest::read_active_features(&doc.to_string(), "cli-battery-pack");
-    assert_eq!(
-        features,
-        BTreeSet::from(["default".to_string(), "indicators".to_string()])
-    );
-}
-
 // ============================================================================
 // cli.show.non-interactive / cli.list.non-interactive
 // ============================================================================
@@ -1548,6 +1502,104 @@ fn preflight_prunes_removed_managed_dep_from_state() {
             .iter()
             .all(|dep| dep.get("name").and_then(|v| v.as_str()) != Some("anyhow")),
         "anyhow should be pruned from managed-deps"
+    );
+}
+
+#[test]
+fn preflight_virtual_workspace_finds_correct_member() {
+    // Virtual workspace: root has [workspace] but no [package].
+    // sync_state_with_current_manifest called from crate-a/ must find crate-a,
+    // not crate-b.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    // Workspace root
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crate-a\", \"crate-b\"]\n",
+    )
+    .unwrap();
+
+    // crate-a
+    let a_dir = root.join("crate-a");
+    std::fs::create_dir_all(a_dir.join("src")).unwrap();
+    std::fs::write(a_dir.join("src/lib.rs"), "").unwrap();
+    std::fs::write(
+        a_dir.join("Cargo.toml"),
+        "[package]\nname = \"crate-a\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\nanyhow = \"1\"\n",
+    )
+    .unwrap();
+
+    // crate-b
+    let b_dir = root.join("crate-b");
+    std::fs::create_dir_all(b_dir.join("src")).unwrap();
+    std::fs::write(b_dir.join("src/lib.rs"), "").unwrap();
+    std::fs::write(
+        b_dir.join("Cargo.toml"),
+        "[package]\nname = \"crate-b\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+
+    // Write a battery-pack.toml for crate-a with a managed dep
+    std::fs::write(
+        a_dir.join("battery-pack.toml"),
+        "version = 1\n\n[[battery-pack]]\nname = \"basic\"\nfeatures = [\"default\"]\n\n[[battery-pack.managed-deps]]\nname = \"anyhow\"\nversion = \"1\"\n\n[[battery-pack.managed-deps]]\nname = \"gone-crate\"\nversion = \"1\"\n",
+    )
+    .unwrap();
+
+    // Prune from crate-a's directory — should find crate-a's manifest
+    let removed = super::sync_state_with_current_manifest(&a_dir).unwrap();
+    assert_eq!(removed, 1, "gone-crate should be pruned from crate-a");
+
+    // crate-b should have no battery-pack.toml at all
+    assert!(
+        !b_dir.join("battery-pack.toml").exists(),
+        "crate-b should be untouched"
+    );
+}
+
+#[test]
+fn preflight_non_virtual_workspace_finds_correct_member() {
+    // Non-virtual workspace: root has both [package] and [workspace].
+    // sync_state_with_current_manifest called from sub-crate/ must find
+    // the sub-crate, not the root package.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    // Root package + workspace
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(root.join("src/lib.rs"), "").unwrap();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"root-pkg\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[workspace]\nmembers = [\"sub-crate\"]\n",
+    )
+    .unwrap();
+
+    // sub-crate
+    let sub_dir = root.join("sub-crate");
+    std::fs::create_dir_all(sub_dir.join("src")).unwrap();
+    std::fs::write(sub_dir.join("src/lib.rs"), "").unwrap();
+    std::fs::write(
+        sub_dir.join("Cargo.toml"),
+        "[package]\nname = \"sub-crate\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\ntokio = \"1\"\n",
+    )
+    .unwrap();
+
+    // Write battery-pack.toml for sub-crate with a stale dep
+    std::fs::write(
+        sub_dir.join("battery-pack.toml"),
+        "version = 1\n\n[[battery-pack]]\nname = \"basic\"\nfeatures = [\"default\"]\n\n[[battery-pack.managed-deps]]\nname = \"tokio\"\nversion = \"1\"\n\n[[battery-pack.managed-deps]]\nname = \"removed-dep\"\nversion = \"1\"\n",
+    )
+    .unwrap();
+
+    // Prune from sub-crate's directory
+    let removed = super::sync_state_with_current_manifest(&sub_dir).unwrap();
+    assert_eq!(removed, 1, "removed-dep should be pruned from sub-crate");
+
+    // Root should have no battery-pack.toml
+    assert!(
+        !root.join("battery-pack.toml").exists(),
+        "root package should be untouched"
     );
 }
 

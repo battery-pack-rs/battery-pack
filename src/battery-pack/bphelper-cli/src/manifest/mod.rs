@@ -370,8 +370,16 @@ fn normalized_feature_set(features: &BTreeSet<String>) -> BTreeSet<String> {
     }
 }
 
+const STATE_FORMAT_VERSION: u32 = 1;
+
+fn default_version() -> u32 {
+    STATE_FORMAT_VERSION
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct BatteryPackStateFile {
+    #[serde(default = "default_version")]
+    version: u32,
     #[serde(rename = "battery-pack", default)]
     battery_pack: Vec<BatteryPackStateEntry>,
 }
@@ -391,15 +399,7 @@ struct ManagedDepEntry {
     version: String,
 }
 
-fn short_pack_name(bp_name: &str) -> String {
-    if bp_name == "battery-pack" {
-        "battery-pack".to_string()
-    } else if let Some(short) = bp_name.strip_suffix("-battery-pack") {
-        short.to_string()
-    } else {
-        bp_name.to_string()
-    }
-}
+use crate::registry::short_name;
 
 fn state_name_matches(name: &str, bp_name: &str) -> bool {
     if name == bp_name {
@@ -427,7 +427,17 @@ fn read_state_file(state_path: &Path) -> Result<BatteryPackStateFile> {
     }
     let content = std::fs::read_to_string(state_path)
         .with_context(|| format!("Failed to read {}", state_path.display()))?;
-    toml::from_str(&content).with_context(|| format!("Failed to parse {}", state_path.display()))
+    let state: BatteryPackStateFile = toml::from_str(&content)
+        .with_context(|| format!("Failed to parse {}", state_path.display()))?;
+    if state.version > STATE_FORMAT_VERSION {
+        bail!(
+            "{} has version {}, but this tool only supports version {}. Please upgrade cargo-bp.",
+            state_path.display(),
+            state.version,
+            STATE_FORMAT_VERSION,
+        );
+    }
+    Ok(state)
 }
 
 /// Return the battery-pack state file path for a user `Cargo.toml`.
@@ -436,6 +446,16 @@ pub(crate) fn state_file_path(user_manifest_path: &Path) -> PathBuf {
         .parent()
         .unwrap_or(Path::new("."))
         .join(STATE_FILE_NAME)
+}
+
+fn write_state_file(state_path: &Path, state: &BatteryPackStateFile) -> Result<()> {
+    let mut serialized =
+        toml::to_string_pretty(state).context("Failed to serialize battery-pack state")?;
+    if !serialized.ends_with('\n') {
+        serialized.push('\n');
+    }
+    std::fs::write(state_path, serialized)
+        .with_context(|| format!("Failed to write {}", state_path.display()))
 }
 
 /// Read active features for a battery pack from `battery-pack.toml` if present.
@@ -490,158 +510,22 @@ pub(crate) fn read_features_at(
         .unwrap_or_else(|| BTreeSet::from(["default".to_string()]))
 }
 
-/// Read active features for a battery pack from user's package metadata.
-///
-/// This is a legacy reader kept for backward compatibility with projects
-/// that still store state in `Cargo.toml` metadata.
-pub(crate) fn read_active_features(manifest_content: &str, bp_name: &str) -> BTreeSet<String> {
-    let raw: toml::Value = match toml::from_str(manifest_content) {
-        Ok(v) => v,
-        Err(_) => return default_feature_set(),
-    };
-    read_features_at(&raw, &["package", "metadata"], bp_name)
-}
-
-/// Read active features from `workspace.metadata.battery-pack[bp_name].features`.
-pub(crate) fn read_active_features_ws(ws_content: &str, bp_name: &str) -> BTreeSet<String> {
-    let raw: toml::Value = match toml::from_str(ws_content) {
-        Ok(v) => v,
-        Err(_) => return default_feature_set(),
-    };
-    read_features_at(&raw, &["workspace", "metadata"], bp_name)
-}
-
-// ============================================================================
-// Metadata location abstraction
-// ============================================================================
-
-/// Where battery-pack metadata (registrations, active features) is stored.
-#[derive(Debug, Clone)]
-pub(crate) enum MetadataLocation {
-    /// `package.metadata.battery-pack` in the user manifest.
-    Package,
-    /// `workspace.metadata.battery-pack` in the workspace manifest.
-    Workspace { ws_manifest_path: PathBuf },
-}
-
-/// Determine where battery-pack metadata lives for this project.
-pub(crate) fn resolve_metadata_location(user_manifest_path: &Path) -> Result<MetadataLocation> {
-    if let Some(ws_path) = find_workspace_manifest(user_manifest_path)? {
-        let ws_content =
-            std::fs::read_to_string(&ws_path).context("Failed to read workspace Cargo.toml")?;
-        let raw: toml::Value =
-            toml::from_str(&ws_content).context("Failed to parse workspace Cargo.toml")?;
-        if raw
-            .get("workspace")
-            .and_then(|w| w.get("metadata"))
-            .and_then(|m| m.get("battery-pack"))
-            .is_some()
-        {
-            return Ok(MetadataLocation::Workspace {
-                ws_manifest_path: ws_path,
-            });
-        }
-    }
-    Ok(MetadataLocation::Package)
-}
-
-/// Read active features for a battery pack, respecting metadata location.
-pub(crate) fn read_active_features_from(
-    location: &MetadataLocation,
-    user_manifest_content: &str,
-    bp_name: &str,
-) -> BTreeSet<String> {
-    match location {
-        MetadataLocation::Package => read_active_features(user_manifest_content, bp_name),
-        MetadataLocation::Workspace { ws_manifest_path } => {
-            let ws_content = match std::fs::read_to_string(ws_manifest_path) {
-                Ok(c) => c,
-                Err(_) => return default_feature_set(),
-            };
-            read_active_features_ws(&ws_content, bp_name)
-        }
-    }
-}
-
-/// Read active features for a pack in a project.
-///
-/// Source of truth is `battery-pack.toml`; metadata is fallback only.
+/// Read active features for a pack in a project from `battery-pack.toml`.
 pub(crate) fn read_active_features_for_project(
     user_manifest_path: &Path,
-    user_manifest_content: &str,
+    _user_manifest_content: &str,
     bp_name: &str,
 ) -> BTreeSet<String> {
-    if let Some(features) = read_active_features_from_state(user_manifest_path, bp_name) {
-        return features;
-    }
-
-    if let Ok(location) = resolve_metadata_location(user_manifest_path) {
-        return read_active_features_from(&location, user_manifest_content, bp_name);
-    }
-
-    default_feature_set()
+    read_active_features_from_state(user_manifest_path, bp_name).unwrap_or_else(default_feature_set)
 }
 
-/// Read managed-deps from a parsed TOML value at a given path prefix.
-///
-/// Returns `None` when the key is absent (old-format metadata).
-fn read_managed_deps_at(
-    raw: &toml::Value,
-    prefix: &[&str],
-    bp_name: &str,
-) -> Option<BTreeSet<String>> {
-    let mut node = Some(raw);
-    for key in prefix {
-        node = node.and_then(|n| n.get(key));
-    }
-    let arr = node
-        .and_then(|m| m.get("battery-pack"))
-        .and_then(|bp| bp.get(bp_name))
-        .and_then(|entry| entry.get("managed-deps"))
-        .and_then(|v| v.as_array())?;
-    Some(
-        arr.iter()
-            .filter_map(|v| v.as_str().map(String::from))
-            .collect(),
-    )
-}
-
-/// Read managed-deps for a battery pack, respecting metadata location.
-///
-/// Returns `None` when the key is absent (old-format / pre-migration metadata).
-pub(crate) fn read_managed_deps_from(
-    location: &MetadataLocation,
-    user_manifest_content: &str,
-    bp_name: &str,
-) -> Option<BTreeSet<String>> {
-    let (content, prefix): (std::borrow::Cow<'_, str>, &[&str]) = match location {
-        MetadataLocation::Package => (
-            std::borrow::Cow::Borrowed(user_manifest_content),
-            &["package", "metadata"],
-        ),
-        MetadataLocation::Workspace { ws_manifest_path } => {
-            let ws = std::fs::read_to_string(ws_manifest_path).ok()?;
-            (std::borrow::Cow::Owned(ws), &["workspace", "metadata"])
-        }
-    };
-    let raw: toml::Value = toml::from_str(&content).ok()?;
-    read_managed_deps_at(&raw, prefix, bp_name)
-}
-
-/// Read managed deps for a pack in a project.
-///
-/// Source of truth is `battery-pack.toml`; metadata is fallback only.
+/// Read managed deps for a pack in a project from `battery-pack.toml`.
 pub(crate) fn read_managed_deps_for_project(
     user_manifest_path: &Path,
-    user_manifest_content: &str,
+    _user_manifest_content: &str,
     bp_name: &str,
 ) -> Option<BTreeSet<String>> {
-    if let Some(deps) = read_managed_deps_from_state(user_manifest_path, bp_name) {
-        return Some(deps);
-    }
-
-    let location = resolve_metadata_location(user_manifest_path).ok()?;
-    read_managed_deps_from(&location, user_manifest_content, bp_name)
+    read_managed_deps_from_state(user_manifest_path, bp_name)
 }
 
 /// Upsert battery-pack state in sibling `battery-pack.toml`.
@@ -662,7 +546,7 @@ pub(crate) fn write_battery_pack_state(
         .collect::<Vec<_>>();
 
     let updated = BatteryPackStateEntry {
-        name: short_pack_name(bp_name),
+        name: short_name(bp_name).to_string(),
         features: normalized_feature_set(active_features),
         managed_deps,
     };
@@ -677,13 +561,7 @@ pub(crate) fn write_battery_pack_state(
         state.battery_pack.push(updated);
     }
 
-    let mut serialized =
-        toml::to_string_pretty(&state).context("Failed to serialize battery-pack state")?;
-    if !serialized.ends_with('\n') {
-        serialized.push('\n');
-    }
-    std::fs::write(&state_path, serialized)
-        .with_context(|| format!("Failed to write {}", state_path.display()))?;
+    write_state_file(&state_path, &state)?;
     Ok(())
 }
 
@@ -702,13 +580,7 @@ pub(crate) fn remove_battery_pack_state_entry(
         return Ok(false);
     }
 
-    let mut serialized =
-        toml::to_string_pretty(&state).context("Failed to serialize battery-pack state")?;
-    if !serialized.ends_with('\n') {
-        serialized.push('\n');
-    }
-    std::fs::write(&state_path, serialized)
-        .with_context(|| format!("Failed to write {}", state_path.display()))?;
+    write_state_file(&state_path, &state)?;
     Ok(true)
 }
 
@@ -754,13 +626,7 @@ pub(crate) fn prune_state_managed_deps_for_manifest(
         return Ok(0);
     }
 
-    let mut serialized =
-        toml::to_string_pretty(&state).context("Failed to serialize battery-pack state")?;
-    if !serialized.ends_with('\n') {
-        serialized.push('\n');
-    }
-    std::fs::write(&state_path, serialized)
-        .with_context(|| format!("Failed to write {}", state_path.display()))?;
+    write_state_file(&state_path, &state)?;
     Ok(removed)
 }
 

@@ -371,12 +371,16 @@ pub(crate) fn sync_state_with_current_manifest(project_dir: &Path) -> Result<usi
         .exec()
         .context("Failed to run `cargo metadata`")?;
 
-    // With --no-deps the resolve graph is absent; find the root package
-    // via workspace_members instead.
-    let package = metadata
-        .workspace_members
-        .first()
-        .and_then(|id| metadata.packages.iter().find(|p| &p.id == id));
+    // In a multi-package workspace, cargo metadata returns all members
+    // regardless of current_dir. Match by canonicalized path to find
+    // the package whose Cargo.toml lives in project_dir.
+    let project_dir = project_dir
+        .canonicalize()
+        .unwrap_or_else(|_| project_dir.to_path_buf());
+
+    let package = metadata.packages.iter().find(|p| {
+        p.manifest_path.parent().and_then(|d| d.canonicalize().ok()) == Some(project_dir.clone())
+    });
 
     let Some(package) = package else {
         return Ok(0);
@@ -1039,7 +1043,9 @@ fn remove_battery_pack(
     std::fs::write(&user_manifest_path, user_doc.to_string())
         .context("Failed to write Cargo.toml")?;
 
-    let _ = remove_battery_pack_state_entry(&user_manifest_path, &crate_name)?;
+    if let Err(e) = remove_battery_pack_state_entry(&user_manifest_path, &crate_name) {
+        eprintln!("warning: failed to update battery-pack.toml: {e}");
+    }
 
     // Clean up build.rs
     let build_rs_path = user_manifest_path

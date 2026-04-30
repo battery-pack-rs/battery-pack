@@ -2,48 +2,59 @@
 
 This section specifies how `cargo bp` reads and modifies Cargo.toml files.
 
-## Battery pack registration
+## Battery pack state (`battery-pack.toml`)
 
-r[manifest.register.location]
-Battery pack registrations are stored in a `[*.metadata.battery-pack]`
-table, where `*` is either `package` or `workspace`.
+> **Note:** The `battery-pack.toml` format is subject to change in future
+> versions. The file includes a `version` field to support forward
+> compatibility.
 
-r[manifest.register.format]
-Each registration is a key-value pair where the key is the battery pack
-crate name and the value is the version string:
+r[manifest.state.location]
+Battery pack state (installed packs, active features, managed
+dependencies) is stored in a `battery-pack.toml` file next to the
+crate's `Cargo.toml`. Each crate in a workspace has its own
+`battery-pack.toml`.
+
+r[manifest.state.format]
+The file uses the following structure:
 
 ```toml
-[package.metadata.battery-pack]
-error-battery-pack = "0.4.0"
-cli-battery-pack = "0.3.0"
+version = 1
+
+[[battery-pack]]
+name = "cli"
+features = ["default", "indicators"]
+
+[[battery-pack.managed-deps]]
+name = "clap"
+version = "4.5"
+
+[[battery-pack.managed-deps]]
+name = "dialoguer"
+version = "0.11"
 ```
 
-r[manifest.register.workspace-default]
-When a workspace root exists, battery pack registrations MUST default
-to `[workspace.metadata.battery-pack]` in the workspace root Cargo.toml.
+r[manifest.state.version]
+The `version` field MUST be present and set to `1`. Tools MUST
+reject files with a version higher than they support.
 
-r[manifest.register.package-level]
-The user MAY choose to register a battery pack at the package level
-using `[package.metadata.battery-pack]` in the crate's own Cargo.toml.
-This is for per-crate battery packs in a workspace.
+r[manifest.state.name]
+The `name` field uses the short form of the battery pack name
+(e.g., `"cli"` for `cli-battery-pack`).
 
-r[manifest.register.both-levels]
-`cargo bp` MUST support reading registrations from both workspace
-and package metadata. When both exist, package-level registrations
-take precedence for that crate.
+## Battery pack discovery
+
+r[manifest.register.location]
+Installed battery packs are discovered by scanning
+`[build-dependencies]` in the crate's `Cargo.toml` for entries
+whose names end in `-battery-pack` or equal `"battery-pack"`.
 
 ## Active features
 
 r[manifest.features.storage]
-The active features for a battery pack MUST be stored alongside
-the registration in one of two forms:
-
-- Full form: `cli-battery-pack = { features = ["default", "indicators"] }`
-- Short form (when only the default feature is active): `cli-battery-pack = "0.3.0"`
-
-The short form is equivalent to `{ features = ["default"] }`.
-When the `features` key is absent, the `default` feature is
-implicitly active.
+The active features for a battery pack are stored in the
+`features` array of the corresponding `[[battery-pack]]` entry
+in `battery-pack.toml`. When no `battery-pack.toml` exists or
+the pack is not listed, the `default` feature is implicitly active.
 
 ## Dependency management
 
