@@ -9,6 +9,7 @@ To see what templates a battery pack offers:
 ```bash
 cargo bp show ci                  # lists templates in the detail view
 cargo bp show ci -t spellcheck    # preview the rendered output
+cargo bp show ci -t full -d fuzzing -d repo_owner=myorg  # preview with placeholder overrides
 ```
 
 If a battery pack has multiple templates and you don't pass `-t`, you'll be prompted to pick one.

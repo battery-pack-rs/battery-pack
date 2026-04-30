@@ -1,0 +1,4 @@
+[placeholders.greeting]
+type = "string"
+prompt = "Greeting message"
+default = "Hello"

@@ -18,6 +18,13 @@ New files are written directly. For existing files, TOML and YAML are merged (ne
 
 Available standalone templates: `benchmarks`, `binary-release`, `clippy-sarif`, `fuzzing`, `mdbook`, `mutation-testing`, `spellcheck`, `stress-test`, `trusted-publishing`, `xtask`.
 
+Preview any template before applying it:
+
+```sh
+cargo bp show ci -t fuzzing
+cargo bp show ci -t full -d benchmarks -d fuzzing
+```
+
 ## Creating a new project
 
 The `full` template scaffolds a complete project (Cargo.toml, src/lib.rs, README with badges) plus CI configuration:

@@ -79,6 +79,62 @@ fn main() {
 }
 
 #[test]
+fn show_template_preview_with_define_flag() {
+    let fixture = fixtures_dir().join("fancy-battery-pack");
+
+    let output = cargo_bp()
+        .args([
+            "bp",
+            "show",
+            "fancy",
+            "-t",
+            "full",
+            "-d",
+            "greeting=Howdy",
+            "--non-interactive",
+            "--path",
+            &fixture.to_string_lossy(),
+        ])
+        .output()
+        .expect("failed to run cargo-bp");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Howdy from full template!"),
+        "define should override the default greeting, got:\n{stdout}"
+    );
+    assert_data_eq!(
+        stdout.as_ref(),
+        str![[r#"
+── Cargo.toml ──
+[package]
+name = "my-project"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+dialoguer = "0.11"
+indicatif = "0.17"
+console = "0.15"
+
+── src/main.rs ──
+fn main() {
+    println!("Howdy from full template!");
+}
+
+
+"#]]
+    );
+}
+
+#[test]
 fn show_template_preview_unknown_template_errors() {
     let fixture = fixtures_dir().join("fancy-battery-pack");
 

@@ -413,3 +413,8 @@ SHOULD be shown in the interactive TUI preview screen. With
 Placeholders without a default MUST fall back to `<name>` so the
 preview always succeeds. The project name MUST default to
 `my-project`.
+
+r[cli.show.define-flag]
+`cargo bp show <pack> -t <name> --define <key>=<value>` (or `-d`)
+MUST set the named placeholder to the given value in the rendered
+preview. Multiple `-d` flags MAY be provided.

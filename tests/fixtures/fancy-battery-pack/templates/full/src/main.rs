@@ -1,3 +1,3 @@
 fn main() {
-    println!("Hello from full template!");
+    println!("{{ greeting }} from full template!");
 }

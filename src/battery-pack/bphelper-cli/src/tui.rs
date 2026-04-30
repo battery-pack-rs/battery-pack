@@ -31,6 +31,7 @@ pub(crate) struct ShowOpts<'a> {
     pub template: Option<&'a str>,
     pub path: Option<&'a str>,
     pub source: CrateSource,
+    pub defines: BTreeMap<String, String>,
 }
 
 /// Run the TUI starting from the list view
@@ -59,6 +60,7 @@ fn run_preview(opts: ShowOpts<'_>) -> Result<()> {
             template,
             path: opts.path,
             source: &opts.source,
+            defines: opts.defines,
         })?;
     let content = highlight_preview(&files);
 

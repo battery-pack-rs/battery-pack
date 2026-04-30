@@ -670,6 +670,7 @@ pub(crate) struct PreviewOpts<'a> {
     pub template: &'a str,
     pub path: Option<&'a str>,
     pub source: &'a crate::registry::CrateSource,
+    pub defines: BTreeMap<String, String>,
 }
 
 /// Resolve a battery pack template and render a preview.
@@ -698,7 +699,7 @@ pub(crate) fn preview_template(opts: &PreviewOpts<'_>) -> Result<(String, Vec<Re
         crate_root: resolved.dir,
         template_path: tmpl.path.clone(),
         project_name: "my-project".to_string(),
-        defines: BTreeMap::new(),
+        defines: opts.defines.clone(),
         interactive_override: Some(false),
     };
     let files = preview(opts)?;

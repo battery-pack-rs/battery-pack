@@ -177,6 +177,10 @@ pub(crate) enum BpCommands {
         /// Use a local path instead of downloading from crates.io
         #[arg(long)]
         path: Option<String>,
+
+        /// Set a template placeholder value (e.g., -d description="My project")
+        #[arg(long = "define", short = 'd', value_parser = parse_define)]
+        define: Vec<(String, String)>,
     },
 
     /// Show status of installed battery packs and version warnings
@@ -322,12 +326,14 @@ pub fn main() -> Result<()> {
                     battery_pack,
                     template,
                     path,
+                    define,
                 } => {
                     let show_opts = crate::tui::ShowOpts {
                         battery_pack: &battery_pack,
                         template: template.as_deref(),
                         path: path.as_deref(),
                         source,
+                        defines: define.into_iter().collect(),
                     };
                     if interactive {
                         // [impl cli.show.interactive]
@@ -340,6 +346,7 @@ pub fn main() -> Result<()> {
                             template: tmpl,
                             path: show_opts.path,
                             source: &show_opts.source,
+                            defines: show_opts.defines,
                         })
                     } else {
                         // [impl cli.show.non-interactive]

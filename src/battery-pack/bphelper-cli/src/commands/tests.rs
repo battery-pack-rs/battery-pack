@@ -388,6 +388,75 @@ fn show_without_template_has_none() {
     }
 }
 
+#[test]
+fn show_define_short_flag_is_parsed() {
+    let cli = super::Cli::try_parse_from([
+        "cargo",
+        "bp",
+        "show",
+        "cli",
+        "-t",
+        "default",
+        "-d",
+        "key=value",
+    ])
+    .expect("-d should be accepted");
+
+    match unwrap_bp_command(cli) {
+        super::BpCommands::Show { define, .. } => {
+            assert_eq!(define, vec![("key".into(), "value".into())]);
+        }
+        other => panic!("expected Show, got {:?}", std::mem::discriminant(&other)),
+    }
+}
+
+#[test]
+fn show_define_long_flag_is_parsed() {
+    let cli = super::Cli::try_parse_from([
+        "cargo", "bp", "show", "cli", "-t", "default", "--define", "ci=true",
+    ])
+    .expect("--define should be accepted");
+
+    match unwrap_bp_command(cli) {
+        super::BpCommands::Show { define, .. } => {
+            assert_eq!(define, vec![("ci".into(), "true".into())]);
+        }
+        other => panic!("expected Show, got {:?}", std::mem::discriminant(&other)),
+    }
+}
+
+#[test]
+fn show_define_multiple_values() {
+    let cli = super::Cli::try_parse_from([
+        "cargo", "bp", "show", "cli", "-t", "default", "-d", "a=1", "-d", "b=2",
+    ])
+    .expect("repeated -d should be accepted");
+
+    match unwrap_bp_command(cli) {
+        super::BpCommands::Show { define, .. } => {
+            assert_eq!(
+                define,
+                vec![("a".into(), "1".into()), ("b".into(), "2".into())]
+            );
+        }
+        other => panic!("expected Show, got {:?}", std::mem::discriminant(&other)),
+    }
+}
+
+#[test]
+fn show_define_without_value_defaults_to_true() {
+    let cli =
+        super::Cli::try_parse_from(["cargo", "bp", "show", "cli", "-t", "default", "-d", "flag"])
+            .expect("-d flag (no =) should be accepted");
+
+    match unwrap_bp_command(cli) {
+        super::BpCommands::Show { define, .. } => {
+            assert_eq!(define, vec![("flag".into(), "true".into())]);
+        }
+        other => panic!("expected Show, got {:?}", std::mem::discriminant(&other)),
+    }
+}
+
 // [verify cli.list.non-interactive]
 #[test]
 fn list_non_interactive_flag_is_parsed() {
