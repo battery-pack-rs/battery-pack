@@ -2244,17 +2244,10 @@ tokio = { version = "1", optional = true }
 
         let mut report = spec.validate_spec();
         report.merge(validate_on_disk(&spec, &fixture));
-        // INVERTED: fancy-battery-pack has Cargo.toml in templates/.
-        // Flip once templates use _Cargo.toml.
         assert!(
-            report.has_errors(),
-            "fancy-battery-pack should fail: Cargo.toml in templates"
-        );
-        assert!(
-            report
-                .diagnostics
-                .iter()
-                .any(|d| d.rule == "format.templates.cargo-toml")
+            report.is_clean(),
+            "fancy-battery-pack should be clean: {:?}",
+            report.diagnostics
         );
     }
 
@@ -2320,17 +2313,10 @@ tokio = { version = "1", optional = true }
 
         let mut report = spec.validate_spec();
         report.merge(validate_on_disk(&spec, &fixture));
-        // INVERTED: managed-battery-pack has Cargo.toml in templates/.
-        // Flip once templates use _Cargo.toml.
         assert!(
-            report.has_errors(),
-            "managed-battery-pack should fail: Cargo.toml in templates"
-        );
-        assert!(
-            report
-                .diagnostics
-                .iter()
-                .any(|d| d.rule == "format.templates.cargo-toml")
+            report.is_clean(),
+            "managed-battery-pack should be clean: {:?}",
+            report.diagnostics
         );
     }
 

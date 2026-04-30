@@ -57,7 +57,7 @@ fn with_template_two_level_generation() {
     let bp_dir = tmp.path().join("http-battery-pack");
     assert!(bp_dir.join("Cargo.toml").exists());
     assert!(bp_dir.join("templates/default/bp-template.toml").exists());
-    assert!(bp_dir.join("templates/default/Cargo.toml").exists());
+    assert!(bp_dir.join("templates/default/_Cargo.toml").exists());
     assert!(bp_dir.join("templates/default/build.rs").exists());
     assert!(bp_dir.join("templates/default/src/main.rs").exists());
 
@@ -77,7 +77,8 @@ fn with_template_two_level_generation() {
     assert_data_eq!(bp_lib, file![_]);
 
     // Verify inner template has literal MiniJinja syntax (not rendered)
-    let inner_cargo = std::fs::read_to_string(bp_dir.join("templates/default/Cargo.toml")).unwrap();
+    let inner_cargo =
+        std::fs::read_to_string(bp_dir.join("templates/default/_Cargo.toml")).unwrap();
     assert!(inner_cargo.contains("{{ project_name }}"));
     assert!(inner_cargo.contains("http-battery-pack"));
     assert_data_eq!(
@@ -108,11 +109,10 @@ http-battery-pack = { features = ["default"] }
     // Step 2: patch deps so validate can resolve against local workspace
     write_patches(&bp_dir);
 
-    // Step 3: validate the generated battery pack
-    // INVERTED: the generated template has Cargo.toml which cargo excludes
-    // from the tarball. Flip once templates use _Cargo.toml.
+    // Step 3: validate the generated battery pack (generates from inner
+    // template, runs cargo check + cargo test on the result)
     cargo_bp()
         .args(["bp", "validate", "--path", &bp_dir.to_string_lossy()])
         .assert()
-        .failure();
+        .success();
 }

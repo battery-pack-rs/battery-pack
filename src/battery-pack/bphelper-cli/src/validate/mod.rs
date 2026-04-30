@@ -126,14 +126,35 @@ pub fn validate_templates(manifest_dir: &str) -> Result<()> {
     // Package the crate and extract the tarball so we validate what users get.
     let packaged_dir = package_and_extract(manifest_dir, &metadata)?;
 
+    // Build a hint so users can inspect the tarball manually on failure.
+    let tarball_hint = format!(
+        "To inspect the packaged tarball:\n  \
+         cargo package --allow-dirty --no-verify\n  \
+         tar tzf {}/package/{}-{}.crate",
+        metadata.target_directory,
+        crate_name,
+        metadata
+            .packages
+            .iter()
+            .find(|p| p.manifest_path == cargo_toml)
+            .map(|p| p.version.to_string())
+            .unwrap_or_else(|| "VERSION".to_string())
+    );
+
     let mut validated = 0;
     let mut skipped = 0;
 
     for (name, template) in &spec.templates {
         // Render the template from the packaged tarball. This catches missing
         // files (snippets, includes) even for partial scaffolds.
-        let files = try_render(&packaged_dir, &template.path)
-            .with_context(|| format!("template '{name}' failed to render from packaged crate"))?;
+        let files = try_render(&packaged_dir, &template.path).with_context(|| {
+            format!(
+                "template '{name}' failed to render from the packaged tarball.\n\
+                 This usually means files are missing from the published crate \
+                 (e.g. Cargo.toml in a template directory causes cargo to exclude it).\n\
+                 {tarball_hint}"
+            )
+        })?;
 
         let is_full_project = files.iter().any(|f| f.path == "Cargo.toml");
         if !is_full_project {
