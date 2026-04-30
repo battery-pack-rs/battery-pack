@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1](https://github.com/battery-pack-rs/battery-pack/compare/logging-battery-pack-v0.5.0...logging-battery-pack-v0.5.1) - 2026-04-30
+
+### Added
+
+- rename validate_templates to validate
+
 ## [0.5.0](https://github.com/battery-pack-rs/battery-pack/compare/logging-battery-pack-v0.4.3...logging-battery-pack-v0.5.0) - 2026-04-21
 
 ### Added

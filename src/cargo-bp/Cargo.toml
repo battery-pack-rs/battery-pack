@@ -1,6 +1,6 @@
 [package]
 name = "cargo-bp"
-version = "0.5.2"
+version = "0.5.3"
 edition = "2024"
 description = "CLI for creating and managing battery packs (cargo bp)"
 license = "MIT OR Apache-2.0"
@@ -23,7 +23,7 @@ name = "cargo-bp"
 path = "src/main.rs"
 
 [dependencies]
-bphelper-cli = { path = "../battery-pack/bphelper-cli", version = "0.7" }
+bphelper-cli = { path = "../battery-pack/bphelper-cli", version = "0.8" }
 anyhow.workspace = true
 
 [dev-dependencies]

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1](https://github.com/battery-pack-rs/battery-pack/compare/cli-battery-pack-v0.6.0...cli-battery-pack-v0.6.1) - 2026-04-30
+
+### Added
+
+- rename validate_templates to validate
+- validate templates from packaged tarball (inverted assertions)
+
+### Fixed
+
+- rename template Cargo.toml to _Cargo.toml, flip assertions
+
 ## [0.6.0](https://github.com/battery-pack-rs/battery-pack/compare/cli-battery-pack-v0.5.1...cli-battery-pack-v0.6.0) - 2026-04-21
 
 ### Added

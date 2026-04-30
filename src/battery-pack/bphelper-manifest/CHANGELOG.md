@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.5](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-manifest-v0.5.4...bphelper-manifest-v0.5.5) - 2026-04-30
+
+### Added
+
+- *(bp-managed)* allow features and other keys alongside bp-managed
+- *(manifest)* add format.templates.cargo-toml validation rule
+
+### Fixed
+
+- rename template Cargo.toml to _Cargo.toml, flip assertions
+
 ## [0.5.4](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-manifest-v0.5.3...bphelper-manifest-v0.5.4) - 2026-04-13
 
 ### Other
