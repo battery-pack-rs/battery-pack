@@ -1,4 +1,4 @@
---- .github/workflows/mutants.yml ---
+── .github/workflows/mutants.yml ──
 # cargo-mutants: find code not covered by tests
 # https://mutants.rs/
 name: Mutation Testing
@@ -34,5 +34,3 @@ jobs:
         with:
           name: mutants-report
           path: mutants.out/
---- end .github/workflows/mutants.yml ---
-

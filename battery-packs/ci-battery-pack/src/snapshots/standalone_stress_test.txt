@@ -1,4 +1,4 @@
---- .github/workflows/stress-test.yml ---
+── .github/workflows/stress-test.yml ──
 # https://nexte.st/ (--stress-duration)
 name: Stress Test
 
@@ -30,5 +30,3 @@ jobs:
         with:
           tool: nextest
       - run: cargo nextest run --all-features --stress-duration '${{ inputs.duration_minutes || '60' }}m'
---- end .github/workflows/stress-test.yml ---
-

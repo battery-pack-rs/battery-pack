@@ -1,4 +1,4 @@
---- .github/workflows/fuzz-nightly.yml ---
+── .github/workflows/fuzz-nightly.yml ──
 # https://github.com/rust-fuzz/cargo-fuzz
 name: Fuzz (nightly)
 
@@ -39,9 +39,7 @@ jobs:
         with:
           name: fuzz-crashes
           path: fuzz/artifacts/
---- end .github/workflows/fuzz-nightly.yml ---
-
---- .github/workflows/fuzz-pr.yml ---
+── .github/workflows/fuzz-pr.yml ──
 name: Fuzz (PR)
 
 on:
@@ -70,9 +68,7 @@ jobs:
           for target in $(cargo fuzz list); do
             cargo fuzz run "$target" -- -max_total_time=60
           done
---- end .github/workflows/fuzz-pr.yml ---
-
---- fuzz/Cargo.toml ---
+── fuzz/Cargo.toml ──
 [package]
 name = "test_project-fuzz"
 version = "0.0.0"
@@ -97,9 +93,7 @@ doc = false
 
 [package.metadata.battery-pack]
 ci-battery-pack = { features = ["fuzzing"] }
---- end fuzz/Cargo.toml ---
-
---- fuzz/fuzz_targets/fuzz_example.rs ---
+── fuzz/fuzz_targets/fuzz_example.rs ──
 #![no_main]
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
@@ -115,5 +109,3 @@ fuzz_target!(|input: FuzzInput| {
     // TODO: Replace with your crate's API.
     let _ = add(input.left, input.right);
 });
---- end fuzz/fuzz_targets/fuzz_example.rs ---
-

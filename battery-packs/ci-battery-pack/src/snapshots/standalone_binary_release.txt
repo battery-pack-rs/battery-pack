@@ -1,4 +1,4 @@
---- .github/workflows/build-binaries.yml ---
+── .github/workflows/build-binaries.yml ──
 # Builds cross-platform binaries and uploads to GitHub Releases.
 # Binaries are discoverable by cargo-binstall (https://github.com/cargo-bins/cargo-binstall).
 # Triggered automatically when release-plz publishes a release.
@@ -76,9 +76,7 @@ jobs:
         uses: softprops/action-gh-release@[..] # v[..]
         with:
           files: test-project-${{ matrix.target }}-${{ steps.version.outputs.version }}.${{ matrix.archive }}
---- end .github/workflows/build-binaries.yml ---
-
---- Cargo.toml ---
+── Cargo.toml ──
 [package]
 name = "test-project"
 version = "0.1.0"
@@ -90,9 +88,7 @@ path = "src/main.rs"
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }-v{ version }{ archive-suffix }"
---- end Cargo.toml ---
-
---- cargo-bin-section.toml ---
+── cargo-bin-section.toml ──
 
 [[bin]]
 name = "test-project"
@@ -100,11 +96,7 @@ path = "src/main.rs"
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }-v{ version }{ archive-suffix }"
---- end cargo-bin-section.toml ---
-
---- src/main.rs ---
+── src/main.rs ──
 fn main() {
     println!("Hello from {}!", env!("CARGO_PKG_NAME"));
 }
---- end src/main.rs ---
-

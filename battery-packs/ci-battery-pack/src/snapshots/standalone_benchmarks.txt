@@ -1,4 +1,4 @@
---- .github/workflows/benchmarks.yml ---
+── .github/workflows/benchmarks.yml ──
 name: Benchmarks
 
 on:
@@ -58,9 +58,7 @@ jobs:
             --error-on-alert /
             --github-actions ${{ secrets.GITHUB_TOKEN }} /
             "cargo bench --all-features"
---- end .github/workflows/benchmarks.yml ---
-
---- benches/example_bench.rs ---
+── benches/example_bench.rs ──
 use test_project::add;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
@@ -79,5 +77,3 @@ fn bench_add(c: &mut Criterion) {
 
 criterion_group!(benches, bench_add);
 criterion_main!(benches);
---- end benches/example_bench.rs ---
-

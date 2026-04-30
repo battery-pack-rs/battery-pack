@@ -1,4 +1,4 @@
---- .github/actions/rust-build/action.yml ---
+── .github/actions/rust-build/action.yml ──
 name: Rust Test
 description: Install toolchain, cache, build, and test a Rust project.
 
@@ -36,9 +36,7 @@ runs:
     - name: Doctests
       shell: bash
       run: cargo test --doc --verbose ${{ inputs.flags }}
---- end .github/actions/rust-build/action.yml ---
-
---- .github/dependabot.yml ---
+── .github/dependabot.yml ──
 # https://docs.github.com/en/code-security/dependabot
 version: 2
 updates:
@@ -55,9 +53,7 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
---- end .github/dependabot.yml ---
-
---- .github/workflows/audit.yml ---
+── .github/workflows/audit.yml ──
 # https://embarkstudios.github.io/cargo-deny/
 name: Audit
 
@@ -94,9 +90,7 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@[..] # v[..]
         with:
           command: check bans licenses sources
---- end .github/workflows/audit.yml ---
-
---- .github/workflows/ci.yml ---
+── .github/workflows/ci.yml ──
 name: CI
 
 on:
@@ -248,9 +242,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: jq --exit-status 'all(.result == "success" or .result == "skipped")' <<< '${{ toJson(needs) }}'
---- end .github/workflows/ci.yml ---
-
---- .github/workflows/release.yml ---
+── .github/workflows/release.yml ──
 # release-plz: automated releases to crates.io (https://release-plz.dev/docs)
 # Setup:
 # 1. Configure trusted publishing on crates.io
@@ -301,9 +293,7 @@ jobs:
           command: release-pr
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
---- end .github/workflows/release.yml ---
-
---- .github/workflows/rust-next.yml ---
+── .github/workflows/rust-next.yml ──
 # Non-blocking canary: checks latest dependency versions and beta/nightly Rust.
 # Failures here are informational, not blocking.
 # https://github.com/epage/_rust/blob/main/.github/workflows/rust-next.yml
@@ -346,9 +336,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo test --workspace --all-features
---- end .github/workflows/rust-next.yml ---
-
---- Cargo.toml ---
+── Cargo.toml ──
 [package]
 name = "test-project"
 version = "0.1.0"
@@ -360,9 +348,7 @@ repository = "https://github.com/test-owner/test-project"
 
 [package.metadata.battery-pack]
 ci-battery-pack = { features = [] }
---- end Cargo.toml ---
-
---- README.md ---
+── README.md ──
 # test-project
 
 [![CI](https://github.com/test-owner/test-project/actions/workflows/ci.yml/badge.svg)](https://github.com/test-owner/test-project/actions/workflows/ci.yml)
@@ -379,9 +365,7 @@ Licensed under either of:
 - MIT license ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
 
 at your option.
---- end README.md ---
-
---- deny.toml ---
+── deny.toml ──
 # https://embarkstudios.github.io/cargo-deny/
 
 [advisories]
@@ -410,17 +394,13 @@ unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = []
---- end deny.toml ---
-
---- release-plz.toml ---
+── release-plz.toml ──
 # https://release-plz.dev/docs/config
 
 [workspace]
 git_release_enable = true
 changelog_update = true
---- end release-plz.toml ---
-
---- src/lib.rs ---
+── src/lib.rs ──
 /// Stub library. Replace with your crate's code.
 pub fn add(left: u64, right: u64) -> u64 {
     left.wrapping_add(right)
@@ -435,5 +415,3 @@ mod tests {
         assert_eq!(add(2, 2), 4);
     }
 }
---- end src/lib.rs ---
-

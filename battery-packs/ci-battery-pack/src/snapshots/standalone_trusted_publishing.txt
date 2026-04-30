@@ -1,4 +1,4 @@
---- .github/workflows/release.yml ---
+── .github/workflows/release.yml ──
 # release-plz: automated releases to crates.io (https://release-plz.dev/docs)
 # Setup:
 # 1. Configure trusted publishing on crates.io
@@ -49,13 +49,9 @@ jobs:
           command: release-pr
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
---- end .github/workflows/release.yml ---
-
---- release-plz.toml ---
+── release-plz.toml ──
 # https://release-plz.dev/docs/config
 
 [workspace]
 git_release_enable = true
 changelog_update = true
---- end release-plz.toml ---
-

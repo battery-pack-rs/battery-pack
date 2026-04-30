@@ -1,9 +1,7 @@
---- .cargo/config.toml ---
+── .cargo/config.toml ──
 [alias]
 xtask = "run --package xtask --bin xtask --"
---- end .cargo/config.toml ---
-
---- .github/workflows/xtask.yml ---
+── .github/workflows/xtask.yml ──
 name: Xtask
 
 on:
@@ -28,9 +26,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo xtask codegen --check
---- end .github/workflows/xtask.yml ---
-
---- xtask/Cargo.toml ---
+── xtask/Cargo.toml ──
 [package]
 name = "xtask"
 version = "0.1.0"
@@ -43,9 +39,7 @@ xflags = "0.3"
 
 [package.metadata.battery-pack]
 ci-battery-pack = { features = ["xtask"] }
---- end xtask/Cargo.toml ---
-
---- xtask/src/main.rs ---
+── xtask/src/main.rs ──
 use std::path::{Path, PathBuf};
 use xshell::{Shell, cmd};
 
@@ -106,5 +100,3 @@ fn tidy() -> Result<()> {
     println!("tidy: no trailing whitespace found");
     Ok(())
 }
---- end xtask/src/main.rs ---
-

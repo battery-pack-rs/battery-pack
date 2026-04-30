@@ -1,4 +1,4 @@
---- .github/workflows/clippy-sarif.yml ---
+── .github/workflows/clippy-sarif.yml ──
 # Clippy with GitHub PR annotations via SARIF
 # https://github.com/psastras/sarif-rs
 # Works automatically on public repos. For private repos, enable Code Scanning
@@ -44,5 +44,3 @@ jobs:
         with:
           sarif_file: clippy-results.sarif
           wait-for-processing: true
---- end .github/workflows/clippy-sarif.yml ---
-

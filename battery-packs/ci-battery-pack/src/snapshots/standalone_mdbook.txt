@@ -1,4 +1,4 @@
---- .github/workflows/mdbook.yml ---
+── .github/workflows/mdbook.yml ──
 # https://rust-lang.github.io/mdBook/
 # Setup: enable GitHub Pages in repo Settings → Pages → Source: GitHub Actions
 name: Deploy mdBook
@@ -47,26 +47,18 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@[..] # v[..]
---- end .github/workflows/mdbook.yml ---
-
---- book.toml ---
+── book.toml ──
 [book]
 title = "test-project"
 language = "en"
 src = "md"
 
 [output.html]
---- end book.toml ---
-
---- md/SUMMARY.md ---
+── md/SUMMARY.md ──
 # Summary
 
 - [Introduction](./intro.md)
---- end md/SUMMARY.md ---
-
---- md/intro.md ---
+── md/intro.md ──
 # test-project
 
 Welcome to the test-project documentation.
---- end md/intro.md ---
-

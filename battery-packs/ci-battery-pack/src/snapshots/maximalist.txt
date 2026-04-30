@@ -1,9 +1,7 @@
---- .cargo/config.toml ---
+── .cargo/config.toml ──
 [alias]
 xtask = "run --package xtask --bin xtask --"
---- end .cargo/config.toml ---
-
---- .github/actions/rust-build/action.yml ---
+── .github/actions/rust-build/action.yml ──
 name: Rust Test
 description: Install toolchain, cache, build, and test a Rust project.
 
@@ -41,9 +39,7 @@ runs:
     - name: Doctests
       shell: bash
       run: cargo test --doc --verbose ${{ inputs.flags }}
---- end .github/actions/rust-build/action.yml ---
-
---- .github/dependabot.yml ---
+── .github/dependabot.yml ──
 # https://docs.github.com/en/code-security/dependabot
 version: 2
 updates:
@@ -60,9 +56,7 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
---- end .github/dependabot.yml ---
-
---- .github/workflows/audit.yml ---
+── .github/workflows/audit.yml ──
 # https://embarkstudios.github.io/cargo-deny/
 name: Audit
 
@@ -99,9 +93,7 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@[..] # v[..]
         with:
           command: check bans licenses sources
---- end .github/workflows/audit.yml ---
-
---- .github/workflows/build-binaries.yml ---
+── .github/workflows/build-binaries.yml ──
 # Builds cross-platform binaries and uploads to GitHub Releases.
 # Binaries are discoverable by cargo-binstall (https://github.com/cargo-bins/cargo-binstall).
 # Triggered automatically when release-plz publishes a release.
@@ -179,9 +171,7 @@ jobs:
         uses: softprops/action-gh-release@[..] # v[..]
         with:
           files: test-project-${{ matrix.target }}-${{ steps.version.outputs.version }}.${{ matrix.archive }}
---- end .github/workflows/build-binaries.yml ---
-
---- .github/workflows/ci.yml ---
+── .github/workflows/ci.yml ──
 name: CI
 
 on:
@@ -470,9 +460,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: jq --exit-status 'all(.result == "success" or .result == "skipped")' <<< '${{ toJson(needs) }}'
---- end .github/workflows/ci.yml ---
-
---- .github/workflows/fuzz-nightly.yml ---
+── .github/workflows/fuzz-nightly.yml ──
 
 # https://github.com/rust-fuzz/cargo-fuzz
 name: Fuzz (nightly)
@@ -514,9 +502,7 @@ jobs:
         with:
           name: fuzz-crashes
           path: fuzz/artifacts/
---- end .github/workflows/fuzz-nightly.yml ---
-
---- .github/workflows/mdbook.yml ---
+── .github/workflows/mdbook.yml ──
 
 # https://rust-lang.github.io/mdBook/
 # Setup: enable GitHub Pages in repo Settings → Pages → Source: GitHub Actions
@@ -566,9 +552,7 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@[..] # v[..]
---- end .github/workflows/mdbook.yml ---
-
---- .github/workflows/release.yml ---
+── .github/workflows/release.yml ──
 # release-plz: automated releases to crates.io (https://release-plz.dev/docs)
 # Setup:
 # 1. Configure trusted publishing on crates.io
@@ -623,9 +607,7 @@ jobs:
           command: release-pr
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
---- end .github/workflows/release.yml ---
-
---- .github/workflows/rust-next.yml ---
+── .github/workflows/rust-next.yml ──
 # Non-blocking canary: checks latest dependency versions and beta/nightly Rust.
 # Failures here are informational, not blocking.
 # https://github.com/epage/_rust/blob/main/.github/workflows/rust-next.yml
@@ -668,9 +650,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo test --workspace --all-features
---- end .github/workflows/rust-next.yml ---
-
---- .github/workflows/stress-test.yml ---
+── .github/workflows/stress-test.yml ──
 
 # https://nexte.st/ (--stress-duration)
 name: Stress Test
@@ -703,9 +683,7 @@ jobs:
         with:
           tool: nextest
       - run: cargo nextest run --all-features --stress-duration '${{ inputs.duration_minutes || '60' }}m'
---- end .github/workflows/stress-test.yml ---
-
---- Cargo.toml ---
+── Cargo.toml ──
 [package]
 name = "test-project"
 version = "0.1.0"
@@ -734,9 +712,7 @@ pkg-url = "{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }-
 
 [package.metadata.battery-pack]
 ci-battery-pack = { features = ["benchmarks", "fuzzing", "xtask"] }
---- end Cargo.toml ---
-
---- README.md ---
+── README.md ──
 # test-project
 
 [![CI](https://github.com/test-owner/test-project/actions/workflows/ci.yml/badge.svg)](https://github.com/test-owner/test-project/actions/workflows/ci.yml)
@@ -753,17 +729,13 @@ Licensed under either of:
 - MIT license ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
 
 at your option.
---- end README.md ---
-
---- _typos.toml ---
+── _typos.toml ──
 # https://github.com/crate-ci/typos
 [default.extend-words]
 
 [files]
 extend-exclude = ["*.lock"]
---- end _typos.toml ---
-
---- benches/example_bench.rs ---
+── benches/example_bench.rs ──
 use test_project::add;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
@@ -782,18 +754,14 @@ fn bench_add(c: &mut Criterion) {
 
 criterion_group!(benches, bench_add);
 criterion_main!(benches);
---- end benches/example_bench.rs ---
-
---- book.toml ---
+── book.toml ──
 [book]
 title = "test-project"
 language = "en"
 src = "md"
 
 [output.html]
---- end book.toml ---
-
---- deny.toml ---
+── deny.toml ──
 # https://embarkstudios.github.io/cargo-deny/
 
 [advisories]
@@ -822,9 +790,7 @@ unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 allow-git = []
---- end deny.toml ---
-
---- fuzz/Cargo.toml ---
+── fuzz/Cargo.toml ──
 [package]
 name = "test_project-fuzz"
 version = "0.0.0"
@@ -849,9 +815,7 @@ doc = false
 
 [package.metadata.battery-pack]
 ci-battery-pack = { features = ["fuzzing"] }
---- end fuzz/Cargo.toml ---
-
---- fuzz/fuzz_targets/fuzz_example.rs ---
+── fuzz/fuzz_targets/fuzz_example.rs ──
 #![no_main]
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
@@ -867,29 +831,21 @@ fuzz_target!(|input: FuzzInput| {
     // TODO: Replace with your crate's API.
     let _ = add(input.left, input.right);
 });
---- end fuzz/fuzz_targets/fuzz_example.rs ---
-
---- md/SUMMARY.md ---
+── md/SUMMARY.md ──
 # Summary
 
 - [Introduction](./intro.md)
---- end md/SUMMARY.md ---
-
---- md/intro.md ---
+── md/intro.md ──
 # test-project
 
 Welcome to the test-project documentation.
---- end md/intro.md ---
-
---- release-plz.toml ---
+── release-plz.toml ──
 # https://release-plz.dev/docs/config
 
 [workspace]
 git_release_enable = true
 changelog_update = true
---- end release-plz.toml ---
-
---- src/lib.rs ---
+── src/lib.rs ──
 /// Stub library. Replace with your crate's code.
 pub fn add(left: u64, right: u64) -> u64 {
     left.wrapping_add(right)
@@ -904,15 +860,11 @@ mod tests {
         assert_eq!(add(2, 2), 4);
     }
 }
---- end src/lib.rs ---
-
---- src/main.rs ---
+── src/main.rs ──
 fn main() {
     println!("Hello from {}!", env!("CARGO_PKG_NAME"));
 }
---- end src/main.rs ---
-
---- xtask/Cargo.toml ---
+── xtask/Cargo.toml ──
 [package]
 name = "xtask"
 version = "0.1.0"
@@ -925,9 +877,7 @@ xflags = "0.3"
 
 [package.metadata.battery-pack]
 ci-battery-pack = { features = ["xtask"] }
---- end xtask/Cargo.toml ---
-
---- xtask/src/main.rs ---
+── xtask/src/main.rs ──
 use std::path::{Path, PathBuf};
 use xshell::{Shell, cmd};
 
@@ -988,5 +938,3 @@ fn tidy() -> Result<()> {
     println!("tidy: no trailing whitespace found");
     Ok(())
 }
---- end xtask/src/main.rs ---
-

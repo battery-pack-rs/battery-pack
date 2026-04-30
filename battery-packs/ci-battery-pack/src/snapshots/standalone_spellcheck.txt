@@ -1,4 +1,4 @@
---- .github/workflows/typos.yml ---
+── .github/workflows/typos.yml ──
 name: Typos
 
 on:
@@ -19,13 +19,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: crate-ci/typos@[..] # v[..]
---- end .github/workflows/typos.yml ---
-
---- _typos.toml ---
+── _typos.toml ──
 # https://github.com/crate-ci/typos
 [default.extend-words]
 
 [files]
 extend-exclude = ["*.lock"]
---- end _typos.toml ---
-
