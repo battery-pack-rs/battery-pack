@@ -1,9 +1,10 @@
-{% raw %}[package]
-name = "{{ project_name }}"
+── Cargo.toml ──
+[package]
+name = "test-project"
 version = "0.1.0"
 edition = "2024"
-description = "{{ project_description }}"
-{% endraw %}license = "MIT OR Apache-2.0"
+description = "A new project"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 # you can declare dependencies normally, or reference
@@ -12,3 +13,10 @@ description = "{{ project_description }}"
 
 [package.metadata.battery-pack]
 {{ project_name }} = { features = ["default"] }
+
+── src/main.rs ──
+fn main() {
+    println!("Hello from test-project!");
+}
+
+

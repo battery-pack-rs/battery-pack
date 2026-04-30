@@ -10,10 +10,6 @@ src = "templates/default/build.rs"
 dest = "build.rs"
 
 [[files]]
-src = "templates/default/src/lib.rs"
-dest = "src/lib.rs"
-
-[[files]]
 src = "templates/default/README.md"
 dest = "README.md"
 

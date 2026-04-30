@@ -374,14 +374,14 @@ serde = "1"
 }
 
 #[test]
-fn resolve_bp_managed_errors_on_features_and_bp_managed() {
+fn resolve_bp_managed_errors_on_version_with_bp_managed() {
     let bp_root = fixtures_dir().join("managed-battery-pack");
     let cargo_toml = r#"[package]
 name = "my-app"
 version = "0.1.0"
 
 [dependencies]
-clap = { bp-managed = true, features = ["derive"] }
+clap = { bp-managed = true, version = "3" }
 
 [package.metadata.battery-pack]
 managed-battery-pack = { features = ["default"] }
@@ -391,13 +391,13 @@ managed-battery-pack = { features = ["default"] }
     assert_data_eq!(
         err.to_string(),
         str![
-            "dependency 'clap' in [dependencies] has `bp-managed = true` with conflicting keys: features"
+            "dependency 'clap' in [dependencies] has `bp-managed = true` with conflicting keys: version"
         ]
     );
 }
 
 #[test]
-fn resolve_bp_managed_errors_on_no_default_features_and_bp_managed() {
+fn resolve_bp_managed_preserves_default_features_false() {
     let bp_root = fixtures_dir().join("managed-battery-pack");
     let cargo_toml = r#"[package]
 name = "my-app"
@@ -410,12 +410,21 @@ clap = { bp-managed = true, default-features = false }
 managed-battery-pack = { features = ["default"] }
 "#;
 
-    let err = resolve_with_fixture(cargo_toml, &bp_root).unwrap_err();
+    let result = resolve_with_fixture(cargo_toml, &bp_root).unwrap();
     assert_data_eq!(
-        err.to_string(),
-        str![
-            "dependency 'clap' in [dependencies] has `bp-managed = true` with conflicting keys: default-features"
-        ]
+        result,
+        str![[r#"
+[package]
+name = "my-app"
+version = "0.1.0"
+
+[dependencies]
+clap = { version = "4", default-features = false , features = ["derive"] }
+
+[package.metadata.battery-pack]
+managed-battery-pack = { features = ["default"] }
+
+"#]]
     );
 }
 
@@ -462,5 +471,151 @@ managed-battery-pack = "0.2.0"
 managed-battery-pack = { features = ["default"] }
 
 "#]]
+    );
+}
+
+#[test]
+fn resolve_bp_managed_explicit_features_override() {
+    let bp_root = fixtures_dir().join("managed-battery-pack");
+    let cargo_toml = r#"[package]
+name = "my-app"
+version = "0.1.0"
+
+[dependencies]
+clap = { bp-managed = true, features = ["env", "wrap_help"] }
+
+[package.metadata.battery-pack]
+managed-battery-pack = { features = ["default"] }
+"#;
+
+    let result = resolve_with_fixture(cargo_toml, &bp_root).unwrap();
+
+    // Explicit features override spec features (spec has ["derive"])
+    assert_data_eq!(
+        result,
+        str![[r#"
+[package]
+name = "my-app"
+version = "0.1.0"
+
+[dependencies]
+clap = { version = "4", features = ["env", "wrap_help"] }
+
+[package.metadata.battery-pack]
+managed-battery-pack = { features = ["default"] }
+
+"#]]
+    );
+}
+
+#[test]
+fn resolve_bp_managed_features_on_battery_pack_itself() {
+    let bp_root = fixtures_dir().join("managed-battery-pack");
+    let cargo_toml = r#"[package]
+name = "my-app"
+version = "0.1.0"
+
+[build-dependencies]
+managed-battery-pack = { bp-managed = true, features = ["build"] }
+
+[package.metadata.battery-pack]
+managed-battery-pack = { features = ["default"] }
+"#;
+
+    let result = resolve_with_fixture(cargo_toml, &bp_root).unwrap();
+
+    assert_data_eq!(
+        result,
+        str![[r#"
+[package]
+name = "my-app"
+version = "0.1.0"
+
+[build-dependencies]
+managed-battery-pack = { version = "0.2.0", features = ["build"] }
+
+[package.metadata.battery-pack]
+managed-battery-pack = { features = ["default"] }
+
+"#]]
+    );
+}
+
+#[test]
+fn resolve_bp_managed_explicit_features_replace_spec() {
+    let bp_root = fixtures_dir().join("managed-battery-pack");
+    // clap spec has ["derive"], explicit features replace entirely
+    let cargo_toml = r#"[package]
+name = "my-app"
+version = "0.1.0"
+
+[dependencies]
+clap = { bp-managed = true, features = ["derive", "env"] }
+
+[package.metadata.battery-pack]
+managed-battery-pack = { features = ["default"] }
+"#;
+
+    let result = resolve_with_fixture(cargo_toml, &bp_root).unwrap();
+
+    assert_data_eq!(
+        result,
+        str![[r#"
+[package]
+name = "my-app"
+version = "0.1.0"
+
+[dependencies]
+clap = { version = "4", features = ["derive", "env"] }
+
+[package.metadata.battery-pack]
+managed-battery-pack = { features = ["default"] }
+
+"#]]
+    );
+}
+
+#[test]
+fn resolve_bp_managed_self_reference() {
+    // battery-pack's own templates use battery-pack.bp-managed = true.
+    // The resolution should find battery-pack in the workspace and resolve
+    // its version.
+    let bp_root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+
+    let cargo_toml = r#"[package]
+name = "my-battery-pack"
+version = "0.1.0"
+
+[dependencies]
+battery-pack.bp-managed = true
+
+[dev-dependencies]
+battery-pack = { bp-managed = true, features = ["cli"] }
+
+[build-dependencies]
+battery-pack = { bp-managed = true, features = ["build"] }
+
+[package.metadata.battery-pack]
+hidden = ["battery-pack"]
+"#;
+
+    let result = crate::resolve_bp_managed_content(cargo_toml, bp_root).unwrap();
+
+    // Version should be resolved (not bp-managed)
+    assert!(
+        !result.contains("bp-managed"),
+        "bp-managed should be resolved, got:\n{result}"
+    );
+    assert!(
+        result.contains("battery-pack = \""),
+        "should have plain version in [dependencies]"
+    );
+    assert!(
+        result.contains("features = [\"cli\"]"),
+        "should preserve cli feature"
+    );
+    assert!(
+        result.contains("features = [\"build\"]"),
+        "should preserve build feature"
     );
 }

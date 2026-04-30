@@ -22,7 +22,7 @@ mod tests {
         let mut out = String::new();
         for file in &files {
             out.push_str(&format!(
-                "── {} ──/n{}/n/n",
+                "── {} ──\n{}\n\n",
                 file.path,
                 file.content
             ));

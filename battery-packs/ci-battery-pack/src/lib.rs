@@ -6,8 +6,8 @@ mod tests {
     use snapbox::{assert_data_eq, file};
 
     #[test]
-    fn validate_templates() {
-        ::battery_pack::testing::validate_templates(env!("CARGO_MANIFEST_DIR")).unwrap();
+    fn validate() {
+        ::battery_pack::testing::validate(env!("CARGO_MANIFEST_DIR")).unwrap();
     }
 
     fn snapshot(template: &str, defines: &[(&str, &str)]) -> String {

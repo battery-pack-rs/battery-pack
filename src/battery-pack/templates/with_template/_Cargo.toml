@@ -1,4 +1,32 @@
-{% include "templates/default/_Cargo.toml" %}
+[package]
+name = "{{ project_name }}"
+version = "0.1.0"
+edition = "2024"
+description = "{{ description }}"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["battery-pack"]
+
+[dependencies]
+battery-pack.bp-managed = true
+# Add your curated dependencies here:
+# clap = { version = "4", features = ["derive"] }
+# serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+battery-pack = { bp-managed = true, features = ["cli"] }
+snapbox = "1"
+
+[build-dependencies]
+battery-pack = { bp-managed = true, features = ["build"] }
+
+# Optional: narrow the default set and define named features
+# [features]
+# default = ["clap", "serde"]
+# json = ["serde_json"]
+
+[package.metadata.battery-pack]
+hidden = ["battery-pack", "snapbox"]
 
 [package.metadata.battery.templates]
 default = { path = "templates/default", description = "Starter template" }

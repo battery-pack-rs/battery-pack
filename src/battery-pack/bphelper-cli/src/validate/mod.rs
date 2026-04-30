@@ -3,6 +3,18 @@
 use anyhow::{Context, Result, bail};
 use std::path::Path;
 
+/// Sentinel error: template validation was skipped (not a real failure).
+#[derive(Debug)]
+struct SkipValidation;
+
+impl std::fmt::Display for SkipValidation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("template validation skipped")
+    }
+}
+
+impl std::error::Error for SkipValidation {}
+
 // ============================================================================
 // Validate command
 // ============================================================================
@@ -48,7 +60,7 @@ pub(crate) fn validate_battery_pack_cmd(path: Option<&str>) -> Result<()> {
 
     // [impl cli.validate.clean]
     if report.is_clean() {
-        validate_templates(crate_root.to_str().unwrap_or("."))?;
+        validate(crate_root.to_str().unwrap_or("."))?;
         println!("{} is valid", spec.name);
         return Ok(());
     }
@@ -81,7 +93,7 @@ pub(crate) fn validate_battery_pack_cmd(path: Option<&str>) -> Result<()> {
 
     // [impl cli.validate.warnings-only]
     // Warnings only — still succeeds
-    validate_templates(crate_root.to_str().unwrap_or("."))?;
+    validate(crate_root.to_str().unwrap_or("."))?;
     println!("{} is valid ({} warning(s))", spec.name, warnings);
     Ok(())
 }
@@ -97,7 +109,7 @@ pub(crate) fn validate_battery_pack_cmd(path: Option<&str>) -> Result<()> {
 ///
 /// Compiled artifacts are cached in `<target_dir>/bp-validate/` so that
 /// subsequent runs are faster.
-pub fn validate_templates(manifest_dir: &str) -> Result<()> {
+pub fn validate(manifest_dir: &str) -> Result<()> {
     let manifest_dir = Path::new(manifest_dir);
     let cargo_toml = manifest_dir.join("Cargo.toml");
     let content = std::fs::read_to_string(&cargo_toml)
@@ -124,7 +136,21 @@ pub fn validate_templates(manifest_dir: &str) -> Result<()> {
     let shared_target_dir = metadata.target_directory.join("bp-validate");
 
     // Package the crate and extract the tarball so we validate what users get.
-    let packaged_dir = package_and_extract(manifest_dir, &metadata)?;
+    // During multi-crate releases, path dependency versions may not yet be
+    // published, causing cargo package to fail. Fall back to validating
+    // directly from the source tree (less precise, but still catches
+    // template render and build errors).
+    let (packaged_dir, from_tarball) = match package_and_extract(manifest_dir, &metadata) {
+        Ok(dir) => (dir, true),
+        Err(e) if e.downcast_ref::<SkipValidation>().is_some() => {
+            println!(
+                "note: cargo package failed (path dependency not yet published), \
+                 validating from source tree"
+            );
+            (manifest_dir.to_path_buf(), false)
+        }
+        Err(e) => return Err(e),
+    };
 
     // Build a hint so users can inspect the tarball manually on failure.
     let tarball_hint = format!(
@@ -148,12 +174,16 @@ pub fn validate_templates(manifest_dir: &str) -> Result<()> {
         // Render the template from the packaged tarball. This catches missing
         // files (snippets, includes) even for partial scaffolds.
         let files = try_render(&packaged_dir, &template.path).with_context(|| {
-            format!(
-                "template '{name}' failed to render from the packaged tarball.\n\
-                 This usually means files are missing from the published crate \
-                 (e.g. Cargo.toml in a template directory causes cargo to exclude it).\n\
-                 {tarball_hint}"
-            )
+            if from_tarball {
+                format!(
+                    "template '{name}' failed to render from the packaged tarball.\n\
+                     This usually means files are missing from the published crate \
+                     (e.g. Cargo.toml in a template directory causes cargo to exclude it).\n\
+                     {tarball_hint}"
+                )
+            } else {
+                format!("template '{name}' failed to render from the source tree")
+            }
         })?;
 
         let is_full_project = files.iter().any(|f| f.path == "Cargo.toml");
@@ -244,17 +274,28 @@ fn package_and_extract(
         .join("package")
         .join(format!("{}-{}.crate", pkg.name, pkg.version));
 
-    // Run cargo package
+    // --no-verify: skip the redundant build; we validate the tarball ourselves.
     let output = std::process::Command::new("cargo")
         .args(["package", "--allow-dirty", "--no-verify"])
         .current_dir(crate_root)
         .output()
         .context("failed to run cargo package")?;
-    anyhow::ensure!(
-        output.status.success(),
-        "cargo package failed:\n{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let workspace_names: Vec<_> = metadata
+            .workspace_packages()
+            .iter()
+            .map(|p| p.name.to_string())
+            .collect();
+        if is_unpublished_workspace_dep(&stderr, &workspace_names) {
+            println!(
+                "note: cargo package failed (workspace dependency not yet \
+                 published), falling back to source tree validation"
+            );
+            return Err(SkipValidation.into());
+        }
+        bail!("cargo package failed:\n{stderr}");
+    }
 
     // Extract the tarball
     let temp_dir = tempfile::tempdir().context("failed to create temp directory")?;
@@ -335,6 +376,19 @@ fn write_crates_io_patches(project_dir: &Path, metadata: &cargo_metadata::Metada
     std::fs::write(cargo_dir.join("config.toml"), patches)
         .context("failed to write .cargo/config.toml")?;
     Ok(())
+}
+
+/// Check whether a `cargo package` failure is caused by a workspace path
+/// dependency whose version hasn't been published to crates.io yet.
+/// During a multi-crate release (e.g. release-plz), workspace dependencies
+/// may be bumped to versions not yet published. This is expected and not
+/// something template validation can or should catch. A missing external
+/// crate is still a real error.
+fn is_unpublished_workspace_dep(stderr: &str, workspace_names: &[String]) -> bool {
+    stderr.contains("failed to select a version for the requirement")
+        && workspace_names
+            .iter()
+            .any(|name| stderr.contains(&format!("`{name} = ")))
 }
 
 #[cfg(test)]

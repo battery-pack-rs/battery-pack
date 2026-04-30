@@ -174,7 +174,7 @@ fn validate_template_test_failure_includes_stdout() {
     )
     .unwrap();
 
-    let err = super::validate_templates(bp.to_str().unwrap()).unwrap_err();
+    let err = super::validate(bp.to_str().unwrap()).unwrap_err();
     let msg = format!("{err:#}");
 
     snapbox::assert_data_eq!(
@@ -209,4 +209,79 @@ test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; 
 ...
 "#]]
     );
+}
+
+#[test]
+fn validate_catches_excluded_template_file() {
+    // A template file excluded from the tarball via `package.exclude` should
+    // cause validate to fail, proving the packaging round-trip
+    // actually catches missing files.
+    let tmp = tempfile::tempdir().unwrap();
+    let bp = tmp.path().join("test-bp");
+
+    std::fs::create_dir_all(bp.join("src")).unwrap();
+    std::fs::create_dir_all(bp.join("templates/default/src")).unwrap();
+
+    std::fs::write(
+        bp.join("Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            edition = "2021"
+            description = "test"
+            keywords = ["battery-pack"]
+            exclude = ["templates/default/src/main.rs"]
+
+            [package.metadata.battery.templates]
+            default = { path = "templates/default", description = "test" }
+        "#},
+    )
+    .unwrap();
+    std::fs::write(bp.join("src/lib.rs"), "").unwrap();
+
+    std::fs::write(
+        bp.join("templates/default/_Cargo.toml"),
+        indoc! {r#"
+            [package]
+            name = "{{ project_name }}"
+            version = "0.1.0"
+            edition = "2021"
+        "#},
+    )
+    .unwrap();
+    std::fs::write(bp.join("templates/default/src/main.rs"), "fn main() {}\n").unwrap();
+
+    let err = super::validate(bp.to_str().unwrap()).unwrap_err();
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("cargo check failed"),
+        "expected build failure from excluded file, got: {msg}"
+    );
+}
+
+#[test]
+fn unpublished_workspace_dep_is_detected() {
+    let stderr = r#"error: failed to prepare local package for uploading
+
+Caused by:
+  failed to select a version for the requirement `bphelper-build = "^0.4.7"`
+  candidate versions found which didn't match: 0.4.6, 0.4.5, 0.4.4, ...
+  location searched: crates.io index
+  required by package `battery-pack v0.5.2`"#;
+    let workspace = vec!["bphelper-build".to_string(), "battery-pack".to_string()];
+    assert!(super::is_unpublished_workspace_dep(stderr, &workspace));
+}
+
+#[test]
+fn unpublished_external_dep_is_not_skipped() {
+    let stderr = r#"error: failed to prepare local package for uploading
+
+Caused by:
+  failed to select a version for the requirement `serde = "^99.0.0"`
+  candidate versions found which didn't match: 1.0.219, ...
+  location searched: crates.io index
+  required by package `battery-pack v0.5.2`"#;
+    let workspace = vec!["bphelper-build".to_string(), "battery-pack".to_string()];
+    assert!(!super::is_unpublished_workspace_dep(stderr, &workspace));
 }

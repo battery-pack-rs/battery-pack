@@ -242,7 +242,10 @@ fn render(
     // Resolve bp-managed dependencies in all rendered Cargo.toml files.
     // Resolution can fail for nested templates (e.g. battery-pack-of-battery-packs)
     // that reference battery packs not yet published, so we warn instead of failing.
-    for file in files.iter_mut().filter(|f| f.path.ends_with("Cargo.toml")) {
+    for file in files
+        .iter_mut()
+        .filter(|f| std::path::Path::new(&f.path).file_name() == Some("Cargo.toml".as_ref()))
+    {
         match crate::resolve_bp_managed_content(&file.content, crate_root) {
             Ok(resolved) => file.content = resolved,
             Err(e) => eprintln!(

@@ -270,6 +270,7 @@ dependencies = [
  "bphelper-build",
  "bphelper-cli",
  "bphelper-manifest",
+ "snapbox",
 ]
 
 [[package]]

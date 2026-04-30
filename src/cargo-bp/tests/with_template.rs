@@ -18,7 +18,7 @@ fn battery_pack_root() -> std::path::PathBuf {
 
 /// Patch crates-io deps so the generated battery pack resolves against local
 /// workspace packages instead of published versions. This is similar to how our
-/// `validate_templates` helper works.
+/// `validate` helper works.
 fn write_patches(bp_dir: &Path) {
     let cargo_dir = bp_dir.join(".cargo");
     std::fs::create_dir_all(&cargo_dir).unwrap();
@@ -58,7 +58,6 @@ fn with_template_two_level_generation() {
     assert!(bp_dir.join("Cargo.toml").exists());
     assert!(bp_dir.join("templates/default/bp-template.toml").exists());
     assert!(bp_dir.join("templates/default/_Cargo.toml").exists());
-    assert!(bp_dir.join("templates/default/build.rs").exists());
     assert!(bp_dir.join("templates/default/src/main.rs").exists());
 
     // Verify outer battery pack content
@@ -92,19 +91,14 @@ description = "{{ project_description }}"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-# Add the curated dependencies your battery pack provides
-
-[build-dependencies]
-http-battery-pack.bp-managed = true
+# you can declare dependencies normally, or reference
+# versions managed by your battery pack:
+# clap.bp-managed = true
 
 [package.metadata.battery-pack]
 http-battery-pack = { features = ["default"] }
 "#]]
     );
-
-    let inner_build = std::fs::read_to_string(bp_dir.join("templates/default/build.rs")).unwrap();
-    assert!(inner_build.contains("fn main()"));
-    assert_data_eq!(inner_build, str!["fn main() {}"]);
 
     // Step 2: patch deps so validate can resolve against local workspace
     write_patches(&bp_dir);

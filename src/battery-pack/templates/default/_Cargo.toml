@@ -8,16 +8,16 @@ readme = "README.md"
 keywords = ["battery-pack"]
 
 [dependencies]
-battery-pack = "0.4"
+battery-pack.bp-managed = true
 # Add your curated dependencies here:
 # clap = { version = "4", features = ["derive"] }
 # serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
-battery-pack = { version = "0.4", features = ["cli"] }
+battery-pack = { bp-managed = true, features = ["cli"] }
 
 [build-dependencies]
-battery-pack = { version = "0.4", features = ["build"] }
+battery-pack = { bp-managed = true, features = ["build"] }
 
 # Optional: narrow the default set and define named features
 # [features]

@@ -28,3 +28,4 @@ anyhow.workspace = true
 
 [dev-dependencies]
 battery-pack = { path = ".", features = ["build", "cli"] }
+snapbox.workspace = true

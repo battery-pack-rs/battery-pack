@@ -8,16 +8,17 @@ readme = "README.md"
 keywords = ["battery-pack"]
 
 [dependencies]
-battery-pack = "0.4"
+battery-pack = "[..]"
 # Add your curated dependencies here:
 # clap = { version = "4", features = ["derive"] }
 # serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
-battery-pack = { version = "0.4", features = ["cli"] }
+battery-pack = { version = "[..]", features = ["cli"] }
+snapbox = "1"
 
 [build-dependencies]
-battery-pack = { version = "0.4", features = ["build"] }
+battery-pack = { version = "[..]", features = ["build"] }
 
 # Optional: narrow the default set and define named features
 # [features]
@@ -25,7 +26,7 @@ battery-pack = { version = "0.4", features = ["build"] }
 # json = ["serde_json"]
 
 [package.metadata.battery-pack]
-hidden = ["battery-pack"]  # globs are supported (["battery-pack", "serde*"])
+hidden = ["battery-pack", "snapbox"]
 
 [package.metadata.battery.templates]
 default = { path = "templates/default", description = "Starter template" }

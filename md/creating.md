@@ -288,18 +288,23 @@ cli-battery-pack = { features = ["default"] }
 This way you don't need to update template files when you bump
 dependency versions. The template always picks up the current spec.
 
-`bp-managed = true` replaces the entire dependency entry with the
-version and features from the spec. If you need to pin a specific
-version or customize features for a dependency, use an explicit
-entry instead:
+`bp-managed = true` resolves the version from the spec. If no explicit
+features are given, the spec's features are used. You can override
+features or add other keys like `optional` alongside `bp-managed`:
 
 ```toml
 # Managed: version and features come from the spec:
 anyhow.bp-managed = true
 
-# Explicit: left as-is during resolution:
-clap = { version = "4", features = ["derive", "color"] }
+# Managed version, explicit features (overrides spec features):
+clap = { bp-managed = true, features = ["derive", "env"] }
+
+# Managed version with optional:
+serde = { bp-managed = true, optional = true }
 ```
+
+The only key that conflicts with `bp-managed` is `version` (since
+`bp-managed` provides the version).
 
 ### Validating templates
 
@@ -313,8 +318,8 @@ To run template validation in your CI tests, add a test in your `src/lib.rs`:
 #[cfg(test)]
 mod tests {
     #[test]
-    fn validate_templates() {
-        ::battery_pack::testing::validate_templates(env!("CARGO_MANIFEST_DIR")).unwrap();
+    fn validate() {
+        ::battery_pack::testing::validate(env!("CARGO_MANIFEST_DIR")).unwrap();
     }
 }
 ```
