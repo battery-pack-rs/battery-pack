@@ -1,0 +1,46 @@
+── .github/workflows/clippy-sarif.yml ──
+# Clippy with GitHub PR annotations via SARIF
+# https://github.com/psastras/sarif-rs
+# Works automatically on public repos. For private repos, enable Code Scanning
+# at Settings → Security → Code security.
+name: Clippy SARIF
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  # Clippy with GitHub PR annotations via SARIF (https://github.com/psastras/sarif-rs)
+  # For private repos, enable Code Scanning at Settings → Security → Code security.
+  clippy-sarif:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo install clippy-sarif --locked
+      - run: cargo install sarif-fmt --locked
+      - name: Run clippy with SARIF output
+        run: >
+          cargo clippy --workspace --all-features --all-targets --message-format=json
+          | clippy-sarif | tee clippy-results.sarif | sarif-fmt
+        continue-on-error: true
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@[..] # v[..]
+        with:
+          sarif_file: clippy-results.sarif
+          wait-for-processing: true

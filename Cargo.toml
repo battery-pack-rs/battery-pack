@@ -27,6 +27,7 @@ serde_json = "1"
 thiserror = "2"
 toml = "0.8"
 snapbox = { version = "1.2.1", features = ["debug"] }
+walkdir = "2"
 
 [workspace.dependencies.clap]
 version = "4"

@@ -1,0 +1,57 @@
+── .github/workflows/release.yml ──
+# release-plz: automated releases to crates.io (https://release-plz.dev/docs)
+# Setup:
+# 1. Configure trusted publishing on crates.io
+#    https://doc.rust-lang.org/cargo/reference/registry-authentication.html#trusted-publishing
+# 2. In repo Settings → Actions → General, enable
+#    "Allow GitHub Actions to create and approve pull requests"
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  release-plz-release:
+    if: ${{ github.repository_owner == 'test-owner' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: rust-lang/crates-io-auth-action@[..] # v[..]
+      - uses: release-plz/action@[..] # v[..]
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release-plz-pr:
+    if: ${{ !failure() && github.repository_owner == 'test-owner' }}
+    needs: release-plz-release
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: release-plz/action@[..] # v[..]
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+── release-plz.toml ──
+# https://release-plz.dev/docs/config
+
+[workspace]
+git_release_enable = true
+changelog_update = true

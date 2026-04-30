@@ -6,12 +6,12 @@ rust-version = "{{ rust_stable_version() }}"
 description = "{{ description }}"
 license = "MIT OR Apache-2.0"
 repository = "{% if repository %}{{ repository }}{% else %}https://github.com/{{ repo_owner }}/{{ project_name }}{% endif %}"
-{% if all or xtask %}
+{%- if all or xtask %}
 
 [workspace]
 members = [".", "xtask"]
-{% endif %}
-{% if all or benchmarks %}
+{%- endif %}
+{%- if all or benchmarks %}
 
 [dev-dependencies]
 criterion.bp-managed = true
@@ -19,10 +19,10 @@ criterion.bp-managed = true
 [[bench]]
 name = "example_bench"
 harness = false
-{% endif %}
-{% if all or binary_release %}
+{%- endif %}
+{%- if all or binary_release %}
 {% include "templates/binary-release/cargo-bin-section.toml" %}
-{% endif %}
+{%- endif %}
 
 [package.metadata.battery-pack]
-ci-battery-pack = { features = ["benchmarks"] }
+ci-battery-pack = { features = [{% if all or benchmarks %}"benchmarks", {% endif %}{% if all or fuzzing %}"fuzzing", {% endif %}{% if all or xtask %}"xtask"{% endif %}] }

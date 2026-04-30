@@ -1,0 +1,79 @@
+── .github/workflows/benchmarks.yml ──
+name: Benchmarks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  # Bencher regression detection. Requires:
+  # - BENCHER_API_TOKEN repo secret (https://bencher.dev/docs)
+  # - BENCHER_PROJECT repo variable (your Bencher project slug)
+  bench:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.BENCHER_PROJECT != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: bencherdev/bencher@[..] # v[..]
+      - run: |
+          bencher run /
+            --project ${{ vars.BENCHER_PROJECT }} /
+            --token ${{ secrets.BENCHER_API_TOKEN }} /
+            --branch main /
+            --adapter rust_criterion /
+            "cargo bench --all-features"
+  bench-pr:
+    if: ${{ github.event_name == 'pull_request' && vars.BENCHER_PROJECT != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: bencherdev/bencher@[..] # v[..]
+      - run: |
+          bencher run /
+            --project ${{ vars.BENCHER_PROJECT }} /
+            --token ${{ secrets.BENCHER_API_TOKEN }} /
+            --branch ${{ github.head_ref }} /
+            --start-point main /
+            --start-point-reset /
+            --adapter rust_criterion /
+            --error-on-alert /
+            --github-actions ${{ secrets.GITHUB_TOKEN }} /
+            "cargo bench --all-features"
+── benches/example_bench.rs ──
+use test_project::add;
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
+
+fn bench_add(c: &mut Criterion) {
+    let mut group = c.benchmark_group("add");
+    for (left, right) in [(1, 2), (100, 200), (u64::MAX / 2, u64::MAX / 2)] {
+        group.bench_with_input(
+            BenchmarkId::new("add", format!("{left}+{right}")),
+            &(left, right),
+            |b, &(l, r)| b.iter(|| add(black_box(l), black_box(r))),
+        );
+    }
+    group.finish();
+}
+
+criterion_group!(benches, bench_add);
+criterion_main!(benches);

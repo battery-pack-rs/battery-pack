@@ -1,0 +1,111 @@
+── .github/workflows/fuzz-nightly.yml ──
+# https://github.com/rust-fuzz/cargo-fuzz
+name: Fuzz (nightly)
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: "Fuzz duration per target in seconds"
+        default: "300"
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz-nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: fuzz -> target
+      - uses: dtolnay/install@cargo-fuzz
+      - name: Extended fuzz run
+        run: |
+          duration=${{ inputs.duration || '300' }}
+          for target in $(cargo fuzz list); do
+            cargo fuzz run "$target" -- -max_total_time="$duration"
+          done
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@[..] # v[..]
+        with:
+          name: fuzz-crashes
+          path: fuzz/artifacts/
+── .github/workflows/fuzz-pr.yml ──
+name: Fuzz (PR)
+
+on:
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  # https://github.com/rust-fuzz/cargo-fuzz
+  fuzz-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: fuzz -> target
+      - uses: dtolnay/install@cargo-fuzz
+      - name: Smoke test fuzz targets (60s each)
+        run: |
+          for target in $(cargo fuzz list); do
+            cargo fuzz run "$target" -- -max_total_time=60
+          done
+── fuzz/Cargo.toml ──
+[package]
+name = "test_project-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+test-project = { path = ".." }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_example"
+path = "fuzz_targets/fuzz_example.rs"
+doc = false
+
+[package.metadata.battery-pack]
+ci-battery-pack = { features = ["fuzzing"] }
+── fuzz/fuzz_targets/fuzz_example.rs ──
+#![no_main]
+use arbitrary::Arbitrary;
+use libfuzzer_sys::fuzz_target;
+use test_project::add;
+
+#[derive(Debug, Arbitrary)]
+struct FuzzInput {
+    left: u64,
+    right: u64,
+}
+
+fuzz_target!(|input: FuzzInput| {
+    // TODO: Replace with your crate's API.
+    let _ = add(input.left, input.right);
+});

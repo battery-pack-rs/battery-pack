@@ -32,7 +32,7 @@ my-battery-pack/
 └── templates/
     └── default/
         ├── bp-template.toml
-        ├── Cargo.toml
+        ├── _Cargo.toml
         └── src/
             └── main.rs
 ```
@@ -172,10 +172,16 @@ A template lives in a subdirectory under `templates/`:
 templates/
 └── default/
     ├── bp-template.toml
-    ├── Cargo.toml
+    ├── _Cargo.toml
     └── src/
         └── main.rs
 ```
+
+> **Note:** Template `Cargo.toml` files must be named `_Cargo.toml`.
+> `cargo package` treats any subdirectory containing a `Cargo.toml` as a
+> separate crate and excludes it from the published tarball. The template
+> engine automatically maps `_Cargo.toml` back to `Cargo.toml` in the
+> generated output.
 
 The `bp-template.toml` configures template variables:
 
@@ -263,7 +269,7 @@ cargo bp new my-pack --template subcmds
 
 ### Managed dependencies
 
-Use `bp-managed = true` on dependencies in your template's Cargo.toml
+Use `bp-managed = true` on dependencies in your template's `_Cargo.toml`
 instead of hardcoding versions. When someone generates a project from
 your template, `cargo bp` resolves the actual versions from your
 battery pack's spec:

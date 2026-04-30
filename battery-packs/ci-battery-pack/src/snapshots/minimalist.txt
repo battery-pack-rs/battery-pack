@@ -1,0 +1,417 @@
+── .github/actions/rust-build/action.yml ──
+name: Rust Test
+description: Install toolchain, cache, build, and test a Rust project.
+
+inputs:
+  toolchain:
+    description: Rust toolchain to install (e.g. stable, nightly, 1.80.0)
+    required: true
+  flags:
+    description: Cargo flags (e.g. --all-features, --no-default-features)
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@[..] # master
+      with:
+        toolchain: ${{ inputs.toolchain }}
+
+    - uses: Swatinem/rust-cache@[..] # v[..]
+      with:
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+
+    - name: Build
+      shell: bash
+      run: cargo test --no-run --verbose ${{ inputs.flags }}
+
+    - name: Test
+      shell: bash
+      # For faster parallel test execution, consider nextest (https://nexte.st/).
+      # Note: nextest has non-standard behaviors. Review before adopting.
+      run: cargo test --verbose ${{ inputs.flags }}
+
+    # cargo test doesn't run doctests with --no-run, run them separately
+    - name: Doctests
+      shell: bash
+      run: cargo test --doc --verbose ${{ inputs.flags }}
+── .github/dependabot.yml ──
+# https://docs.github.com/en/code-security/dependabot
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    ignore:
+      # Cargo resolves compatible versions automatically.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch", "version-update:semver-minor"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+── .github/workflows/audit.yml ──
+# https://embarkstudios.github.io/cargo-deny/
+name: Audit
+
+on:
+  push:
+    paths: ["**/Cargo.toml", "**/Cargo.lock"]
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Advisories are non-blocking: new advisories shouldn't break CI for unrelated PRs
+  advisories:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: EmbarkStudios/cargo-deny-action@[..] # v[..]
+        with:
+          command: check advisories
+
+  # Licenses, bans, and sources are blocking: these are the user's responsibility
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: EmbarkStudios/cargo-deny-action@[..] # v[..]
+        with:
+          command: check bans licenses sources
+── .github/workflows/ci.yml ──
+name: CI
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # https://github.com/rust-lang/rustfmt
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+  # https://doc.rust-lang.org/clippy/
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo clippy --workspace --all-targets --all-features --keep-going -- -D warnings
+  # Dedicated warnings check so test failures are visible even with warnings
+  warnings:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-Dwarnings"
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo check --all-targets --all-features --keep-going
+  # Validate docs build with docsrs cfg on nightly
+  docsrs:
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: "-D warnings --cfg docsrs"
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo doc --no-deps --all-features
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [stable, nightly]
+        flags: ["--all-features", "--no-default-features"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-build
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          flags: ${{ matrix.flags }}
+  # https://github.com/taiki-e/cargo-hack
+  features:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@[..] # v[..]
+        with:
+          tool: cargo-hack
+      - run: cargo hack check --feature-powerset --depth 2 --no-dev-deps
+  # https://github.com/taiki-e/cargo-hack (--rust-version)
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@[..] # v[..]
+        with:
+          tool: cargo-hack
+      - run: cargo hack check --rust-version --workspace --all-targets --ignore-private --locked
+  # Ensure Cargo.lock is in sync with Cargo.toml
+  lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo update --workspace --locked
+  # Ensure minimum dependency versions work (https://doc.rust-lang.org/cargo/reference/resolver.html)
+  minimal-versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo +nightly generate-lockfile -Z minimal-versions
+      - run: cargo +stable check --workspace --all-features --locked --keep-going
+  # https://github.com/obi1kenobi/cargo-semver-checks
+  semver:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: obi1kenobi/cargo-semver-checks-action@[..] # v2
+  ci-pass:
+    needs: [fmt, clippy, warnings, docsrs, build, features, msrv, lockfile, minimal-versions, semver]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: jq --exit-status 'all(.result == "success" or .result == "skipped")' <<< '${{ toJson(needs) }}'
+── .github/workflows/release.yml ──
+# release-plz: automated releases to crates.io (https://release-plz.dev/docs)
+# Setup:
+# 1. Configure trusted publishing on crates.io
+#    https://doc.rust-lang.org/cargo/reference/registry-authentication.html#trusted-publishing
+# 2. In repo Settings → Actions → General, enable
+#    "Allow GitHub Actions to create and approve pull requests"
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  release-plz-release:
+    if: ${{ github.repository_owner == 'test-owner' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: rust-lang/crates-io-auth-action@[..] # v[..]
+      - uses: release-plz/action@[..] # v[..]
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release-plz-pr:
+    if: ${{ !failure() && github.repository_owner == 'test-owner' }}
+    needs: release-plz-release
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: release-plz/action@[..] # v[..]
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+── .github/workflows/rust-next.yml ──
+# Non-blocking canary: checks latest dependency versions and beta/nightly Rust.
+# Failures here are informational, not blocking.
+# https://github.com/epage/_rust/blob/main/.github/workflows/rust-next.yml
+name: rust-next
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  latest-deps:
+    name: Latest dependencies
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo update
+      - run: cargo test --workspace --all-features
+
+  beta:
+    name: Beta Rust
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@beta
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo test --workspace --all-features
+── Cargo.toml ──
+[package]
+name = "test-project"
+version = "0.1.0"
+edition = "2024"
+rust-version = "[..]"
+description = "TODO: add description"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/test-owner/test-project"
+
+[package.metadata.battery-pack]
+ci-battery-pack = { features = [] }
+── README.md ──
+# test-project
+
+[![CI](https://github.com/test-owner/test-project/actions/workflows/ci.yml/badge.svg)](https://github.com/test-owner/test-project/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/test-project.svg)](https://crates.io/crates/test-project)
+[![docs.rs](https://docs.rs/test-project/badge.svg)](https://docs.rs/test-project)
+
+TODO: add description
+
+## License
+
+Licensed under either of:
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
+
+at your option.
+── deny.toml ──
+# https://embarkstudios.github.io/cargo-deny/
+
+[advisories]
+unmaintained = "workspace"
+yanked = "warn"
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "Zlib",
+    "MPL-2.0",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+── release-plz.toml ──
+# https://release-plz.dev/docs/config
+
+[workspace]
+git_release_enable = true
+changelog_update = true
+── src/lib.rs ──
+/// Stub library. Replace with your crate's code.
+pub fn add(left: u64, right: u64) -> u64 {
+    left.wrapping_add(right)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_works() {
+        assert_eq!(add(2, 2), 4);
+    }
+}

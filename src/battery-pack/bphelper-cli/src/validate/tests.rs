@@ -153,7 +153,7 @@ fn validate_template_test_failure_includes_stdout() {
     std::fs::write(bp.join("src/lib.rs"), "").unwrap();
 
     std::fs::write(
-        bp.join("templates/default/Cargo.toml"),
+        bp.join("templates/default/_Cargo.toml"),
         indoc! {r#"
             [package]
             name = "{{ project_name }}"

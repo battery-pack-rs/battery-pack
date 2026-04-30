@@ -1,0 +1,27 @@
+── .github/workflows/typos.yml ──
+name: Typos
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  # https://github.com/crate-ci/typos
+  spellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: crate-ci/typos@[..] # v[..]
+── _typos.toml ──
+# https://github.com/crate-ci/typos
+[default.extend-words]
+
+[files]
+extend-exclude = ["*.lock"]

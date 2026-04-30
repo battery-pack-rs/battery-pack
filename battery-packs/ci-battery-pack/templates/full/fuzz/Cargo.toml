@@ -1,3 +1,0 @@
-{%- if all or fuzzing -%}
-{% include "templates/fuzzing/fuzz/Cargo.toml" %}
-{% endif %}

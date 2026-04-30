@@ -12,7 +12,7 @@ bphelper-manifest = { path = "../bphelper-manifest", version = "0.5.4" }
 clap.workspace = true
 clap_complete = { workspace = true, features = ["unstable-dynamic"] }
 minijinja.workspace = true
-walkdir = "2"
+walkdir.workspace = true
 cargo_metadata.workspace = true
 anyhow.workspace = true
 reqwest.workspace = true

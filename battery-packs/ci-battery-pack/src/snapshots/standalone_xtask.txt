@@ -1,0 +1,102 @@
+── .cargo/config.toml ──
+[alias]
+xtask = "run --package xtask --bin xtask --"
+── .github/workflows/xtask.yml ──
+name: Xtask
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # https://github.com/matklad/cargo-xtask
+  xtask:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo xtask codegen --check
+── xtask/Cargo.toml ──
+[package]
+name = "xtask"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+xshell = "0.2"
+xflags = "0.3"
+
+[package.metadata.battery-pack]
+ci-battery-pack = { features = ["xtask"] }
+── xtask/src/main.rs ──
+use std::path::{Path, PathBuf};
+use xshell::{Shell, cmd};
+
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+fn main() -> Result<()> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(|s| s.as_str()) {
+        Some("codegen") => {
+            let check = args.iter().any(|a| a == "--check");
+            codegen(check)
+        }
+        Some("tidy") => tidy(),
+        Some(cmd) => {
+            eprintln!("unknown command: {cmd}");
+            eprintln!("usage: cargo xtask <codegen [--check] | tidy>");
+            std::process::exit(1);
+        }
+        None => {
+            eprintln!("usage: cargo xtask <codegen [--check] | tidy>");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn project_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("xtask should be in a subdirectory")
+        .to_path_buf()
+}
+
+/// TODO: Replace with your codegen logic.
+fn codegen(check: bool) -> Result<()> {
+    let _sh = Shell::new()?;
+
+    // TODO: Add your codegen logic here.
+
+    if check {
+        println!("codegen --check: all generated files are up to date");
+    } else {
+        println!("codegen: nothing to generate (add your logic here)");
+    }
+    Ok(())
+}
+
+/// Check for trailing whitespace across the repo.
+fn tidy() -> Result<()> {
+    let sh = Shell::new()?;
+    let root = project_root();
+    let _dir = sh.push_dir(&root);
+    let output = cmd!(sh, "grep -rn --include=*.rs [[:space:]]$$ src/")
+        .ignore_status()
+        .read()?;
+    if !output.is_empty() {
+        return Err(format!("trailing whitespace found:/n{output}").into());
+    }
+    println!("tidy: no trailing whitespace found");
+    Ok(())
+}

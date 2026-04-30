@@ -1,4 +1,4 @@
-//! Battery pack validation: structure checks and template compilation.
+//! Battery pack validation: structure checks, packaging, and template compilation.
 
 use anyhow::{Context, Result, bail};
 use std::path::Path;
@@ -86,18 +86,17 @@ pub(crate) fn validate_battery_pack_cmd(path: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-/// Validate that each template in a battery pack generates a project that compiles
-/// and passes tests.
+/// Validate a battery pack by packaging it and building templates from the tarball.
 ///
-/// For each template declared in the battery pack's metadata:
-/// 1. Generates a project into a temporary directory
-/// 2. Runs `cargo check` to verify it compiles
-/// 3. Runs `cargo test` to verify tests pass
+/// This ensures that what users download from crates.io actually works:
+/// 1. Runs `cargo package` to produce the `.crate` tarball
+/// 2. Extracts it to a temp directory
+/// 3. For each template that produces a `Cargo.toml` (i.e., a full project),
+///    generates a project and runs `cargo check` + `cargo test`
+/// 4. Templates without a `Cargo.toml` (partial scaffolds) are skipped
 ///
 /// Compiled artifacts are cached in `<target_dir>/bp-validate/` so that
 /// subsequent runs are faster.
-// [impl cli.validate.templates]
-// [impl cli.validate.templates.cache]
 pub fn validate_templates(manifest_dir: &str) -> Result<()> {
     let manifest_dir = Path::new(manifest_dir);
     let cargo_toml = manifest_dir.join("Cargo.toml");
@@ -112,7 +111,6 @@ pub fn validate_templates(manifest_dir: &str) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("failed to parse {}: {e}", cargo_toml.display()))?;
 
     if spec.templates.is_empty() {
-        // [impl cli.validate.templates.none]
         println!("no templates to validate");
         return Ok(());
     }
@@ -125,16 +123,54 @@ pub fn validate_templates(manifest_dir: &str) -> Result<()> {
         .context("failed to run cargo metadata")?;
     let shared_target_dir = metadata.target_directory.join("bp-validate");
 
+    // Package the crate and extract the tarball so we validate what users get.
+    let packaged_dir = package_and_extract(manifest_dir, &metadata)?;
+
+    // Build a hint so users can inspect the tarball manually on failure.
+    let tarball_hint = format!(
+        "To inspect the packaged tarball:\n  \
+         cargo package --allow-dirty --no-verify\n  \
+         tar tzf {}/package/{}-{}.crate",
+        metadata.target_directory,
+        crate_name,
+        metadata
+            .packages
+            .iter()
+            .find(|p| p.manifest_path == cargo_toml)
+            .map(|p| p.version.to_string())
+            .unwrap_or_else(|| "VERSION".to_string())
+    );
+
+    let mut validated = 0;
+    let mut skipped = 0;
+
     for (name, template) in &spec.templates {
+        // Render the template from the packaged tarball. This catches missing
+        // files (snippets, includes) even for partial scaffolds.
+        let files = try_render(&packaged_dir, &template.path).with_context(|| {
+            format!(
+                "template '{name}' failed to render from the packaged tarball.\n\
+                 This usually means files are missing from the published crate \
+                 (e.g. Cargo.toml in a template directory causes cargo to exclude it).\n\
+                 {tarball_hint}"
+            )
+        })?;
+
+        let is_full_project = files.iter().any(|f| f.path == "Cargo.toml");
+        if !is_full_project {
+            println!("template '{name}' renders ok (partial scaffold, skipping build)");
+            skipped += 1;
+            continue;
+        }
+
         println!("validating template '{name}'...");
 
         let tmp = tempfile::tempdir().context("failed to create temp directory")?;
-
         let project_name = format!("bp-validate-{name}");
 
         let opts = crate::template_engine::GenerateOpts {
             render: crate::template_engine::RenderOpts {
-                crate_root: manifest_dir.to_path_buf(),
+                crate_root: packaged_dir.clone(),
                 template_path: template.path.clone(),
                 project_name,
                 defines: std::collections::BTreeMap::new(),
@@ -179,14 +215,86 @@ pub fn validate_templates(manifest_dir: &str) -> Result<()> {
         );
 
         println!("template '{name}' ok");
+        validated += 1;
     }
 
     println!(
-        "all {} template(s) for '{}' validated successfully",
-        spec.templates.len(),
-        crate_name
+        "{} template(s) validated, {} skipped for '{}'",
+        validated, skipped, crate_name
     );
     Ok(())
+}
+
+/// Package the crate into a tarball and extract it to a temp directory.
+/// Returns the path to the extracted crate root.
+fn package_and_extract(
+    crate_root: &Path,
+    metadata: &cargo_metadata::Metadata,
+) -> Result<std::path::PathBuf> {
+    // Find the package name and version from metadata
+    let manifest_path = crate_root.join("Cargo.toml");
+    let pkg = metadata
+        .packages
+        .iter()
+        .find(|p| p.manifest_path == manifest_path)
+        .context("could not find package in cargo metadata")?;
+
+    let target_dir = &metadata.target_directory;
+    let crate_file = target_dir
+        .join("package")
+        .join(format!("{}-{}.crate", pkg.name, pkg.version));
+
+    // Run cargo package
+    let output = std::process::Command::new("cargo")
+        .args(["package", "--allow-dirty", "--no-verify"])
+        .current_dir(crate_root)
+        .output()
+        .context("failed to run cargo package")?;
+    anyhow::ensure!(
+        output.status.success(),
+        "cargo package failed:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Extract the tarball
+    let temp_dir = tempfile::tempdir().context("failed to create temp directory")?;
+    let crate_bytes =
+        std::fs::read(&crate_file).with_context(|| format!("failed to read {crate_file}"))?;
+    let decoder = flate2::read::GzDecoder::new(&crate_bytes[..]);
+    let mut archive = tar::Archive::new(decoder);
+    archive
+        .unpack(temp_dir.path())
+        .context("failed to extract crate tarball")?;
+
+    let extracted = temp_dir
+        .path()
+        .join(format!("{}-{}", pkg.name, pkg.version));
+    anyhow::ensure!(
+        extracted.is_dir(),
+        "extracted crate directory not found: {}",
+        extracted.display()
+    );
+
+    // Leak the temp dir so it lives long enough for validation
+    let path = extracted.to_path_buf();
+    std::mem::forget(temp_dir);
+    Ok(path)
+}
+
+/// Render a template from the packaged crate. Returns the rendered file list.
+/// Fails if any file or include is missing from the tarball.
+fn try_render(
+    crate_root: &Path,
+    template_path: &str,
+) -> Result<Vec<crate::template_engine::RenderedFile>> {
+    let opts = crate::template_engine::RenderOpts {
+        crate_root: crate_root.to_path_buf(),
+        template_path: template_path.to_string(),
+        project_name: "bp-validate-probe".to_string(),
+        defines: std::collections::BTreeMap::new(),
+        interactive_override: Some(false),
+    };
+    crate::template_engine::preview(opts)
 }
 
 /// Write a `.cargo/config.toml` that patches crates-io dependencies with local

@@ -1,0 +1,36 @@
+── .github/workflows/mutants.yml ──
+# cargo-mutants: find code not covered by tests
+# https://mutants.rs/
+name: Mutation Testing
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # cargo-mutants: find code not covered by tests (https://mutants.rs/)
+  mutants:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@[..] # v[..]
+        with:
+          tool: cargo-mutants
+      - run: cargo mutants --no-shuffle -vV
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@[..] # v[..]
+        with:
+          name: mutants-report
+          path: mutants.out/

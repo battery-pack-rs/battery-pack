@@ -1,0 +1,64 @@
+── .github/workflows/mdbook.yml ──
+# https://rust-lang.github.io/mdBook/
+# Setup: enable GitHub Pages in repo Settings → Pages → Source: GitHub Actions
+name: Deploy mdBook
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: ${{ github.repository_owner == 'test-owner' }}
+    runs-on: ubuntu-latest
+    env:
+      MDBOOK_VERSION: "0.4.40"
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - name: Install mdBook
+        run: |
+          curl -sSL "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz" /
+            | tar -xz -C /usr/local/bin
+      - uses: actions/configure-pages@[..] # v[..]
+      - run: mdbook build
+      - uses: actions/upload-pages-artifact@[..] # v[..]
+        with:
+          path: ./book
+
+  deploy:
+    if: ${{ github.repository_owner == 'test-owner' }}
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@[..] # v[..]
+── book.toml ──
+[book]
+title = "test-project"
+language = "en"
+src = "md"
+
+[output.html]
+── md/SUMMARY.md ──
+# Summary
+
+- [Introduction](./intro.md)
+── md/intro.md ──
+# test-project
+
+Welcome to the test-project documentation.

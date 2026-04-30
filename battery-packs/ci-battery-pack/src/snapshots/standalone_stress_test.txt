@@ -1,0 +1,32 @@
+── .github/workflows/stress-test.yml ──
+# https://nexte.st/ (--stress-duration)
+name: Stress Test
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: "Stress test duration in minutes"
+        default: "60"
+
+permissions:
+  contents: read
+
+jobs:
+  stress-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@[..] # v[..]
+        with:
+          tool: nextest
+      - run: cargo nextest run --all-features --stress-duration '${{ inputs.duration_minutes || '60' }}m'

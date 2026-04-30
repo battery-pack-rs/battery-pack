@@ -189,6 +189,16 @@ fn render(
         }
 
         let rendered_path = env.render_str(&rel_path.to_string_lossy(), minijinja::context! {})?;
+        // Map _Cargo.toml → Cargo.toml so templates can ship Cargo.toml files
+        // without cargo treating the directory as a separate crate boundary
+        // during `cargo package`. Skip paths under templates/ so that battery
+        // packs which generate other battery packs (e.g. with_template)
+        // preserve _Cargo.toml in their scaffolded template directories.
+        let rendered_path = if rendered_path.starts_with("templates/") {
+            rendered_path
+        } else {
+            rendered_path.replace("_Cargo.toml", "Cargo.toml")
+        };
         let content = std::fs::read_to_string(entry.path())
             .with_context(|| format!("failed to read {}", entry.path().display()))?;
         let rendered = env

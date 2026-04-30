@@ -1,0 +1,940 @@
+── .cargo/config.toml ──
+[alias]
+xtask = "run --package xtask --bin xtask --"
+── .github/actions/rust-build/action.yml ──
+name: Rust Test
+description: Install toolchain, cache, build, and test a Rust project.
+
+inputs:
+  toolchain:
+    description: Rust toolchain to install (e.g. stable, nightly, 1.80.0)
+    required: true
+  flags:
+    description: Cargo flags (e.g. --all-features, --no-default-features)
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@[..] # master
+      with:
+        toolchain: ${{ inputs.toolchain }}
+
+    - uses: Swatinem/rust-cache@[..] # v[..]
+      with:
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+
+    - name: Build
+      shell: bash
+      run: cargo test --no-run --verbose ${{ inputs.flags }}
+
+    - name: Test
+      shell: bash
+      # For faster parallel test execution, consider nextest (https://nexte.st/).
+      # Note: nextest has non-standard behaviors. Review before adopting.
+      run: cargo test --verbose ${{ inputs.flags }}
+
+    # cargo test doesn't run doctests with --no-run, run them separately
+    - name: Doctests
+      shell: bash
+      run: cargo test --doc --verbose ${{ inputs.flags }}
+── .github/dependabot.yml ──
+# https://docs.github.com/en/code-security/dependabot
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    ignore:
+      # Cargo resolves compatible versions automatically.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch", "version-update:semver-minor"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+── .github/workflows/audit.yml ──
+# https://embarkstudios.github.io/cargo-deny/
+name: Audit
+
+on:
+  push:
+    paths: ["**/Cargo.toml", "**/Cargo.lock"]
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Advisories are non-blocking: new advisories shouldn't break CI for unrelated PRs
+  advisories:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: EmbarkStudios/cargo-deny-action@[..] # v[..]
+        with:
+          command: check advisories
+
+  # Licenses, bans, and sources are blocking: these are the user's responsibility
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: EmbarkStudios/cargo-deny-action@[..] # v[..]
+        with:
+          command: check bans licenses sources
+── .github/workflows/build-binaries.yml ──
+# Builds cross-platform binaries and uploads to GitHub Releases.
+# Binaries are discoverable by cargo-binstall (https://github.com/cargo-bins/cargo-binstall).
+# Triggered automatically when release-plz publishes a release.
+# Requires the trusted-publishing template. Add a RELEASE_PLZ_TOKEN PAT
+# (contents:write + pull-requests:write) as a repo secret so release events
+# trigger this workflow.
+# https://github.com/settings/personal-access-tokens/new
+name: Build Binaries
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    if: ${{ github.repository_owner == 'test-owner' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+            archive: tar.gz
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            archive: zip
+
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - run: cargo build --release --target ${{ matrix.target }} -p test-project
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          # Strip package name prefix (e.g. "my-crate-v0.1.0" -> "v0.1.0")
+          VERSION="${TAG##*-v}"
+          echo "version=v${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Package (Unix)
+        if: ${{ matrix.archive == 'tar.gz' }}
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          tar -czvf ../../../test-project-${{ matrix.target }}-${{ steps.version.outputs.version }}.tar.gz test-project
+
+      - name: Package (Windows)
+        if: ${{ matrix.archive == 'zip' }}
+        shell: pwsh
+        run: |
+          cd target/${{ matrix.target }}/release
+          Compress-Archive -Path test-project.exe -DestinationPath ../../../test-project-${{ matrix.target }}-${{ steps.version.outputs.version }}.zip
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@[..] # v[..]
+        with:
+          files: test-project-${{ matrix.target }}-${{ steps.version.outputs.version }}.${{ matrix.archive }}
+── .github/workflows/ci.yml ──
+name: CI
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # https://github.com/rust-lang/rustfmt
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+  # Dedicated warnings check so test failures are visible even with warnings
+  warnings:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-Dwarnings"
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo check --all-targets --all-features --keep-going
+  # Validate docs build with docsrs cfg on nightly
+  docsrs:
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: "-D warnings --cfg docsrs"
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo doc --no-deps --all-features
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [stable, nightly]
+        flags: ["--all-features", "--no-default-features"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-build
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          flags: ${{ matrix.flags }}
+  # https://github.com/taiki-e/cargo-hack
+  features:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@[..] # v[..]
+        with:
+          tool: cargo-hack
+      - run: cargo hack check --feature-powerset --depth 2 --no-dev-deps
+  # https://github.com/taiki-e/cargo-hack (--rust-version)
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@[..] # v[..]
+        with:
+          tool: cargo-hack
+      - run: cargo hack check --rust-version --workspace --all-targets --ignore-private --locked
+  # Ensure Cargo.lock is in sync with Cargo.toml
+  lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo update --workspace --locked
+  # Ensure minimum dependency versions work (https://doc.rust-lang.org/cargo/reference/resolver.html)
+  minimal-versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo +nightly generate-lockfile -Z minimal-versions
+      - run: cargo +stable check --workspace --all-features --locked --keep-going
+  # https://github.com/obi1kenobi/cargo-semver-checks
+  semver:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: obi1kenobi/cargo-semver-checks-action@[..] # v2
+  # Bencher regression detection. Requires:
+  # - BENCHER_API_TOKEN repo secret (https://bencher.dev/docs)
+  # - BENCHER_PROJECT repo variable (your Bencher project slug)
+  bench:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.BENCHER_PROJECT != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: bencherdev/bencher@[..] # v[..]
+      - run: |
+          bencher run /
+            --project ${{ vars.BENCHER_PROJECT }} /
+            --token ${{ secrets.BENCHER_API_TOKEN }} /
+            --branch main /
+            --adapter rust_criterion /
+            "cargo bench --all-features"
+  bench-pr:
+    if: ${{ github.event_name == 'pull_request' && vars.BENCHER_PROJECT != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: bencherdev/bencher@[..] # v[..]
+      - run: |
+          bencher run /
+            --project ${{ vars.BENCHER_PROJECT }} /
+            --token ${{ secrets.BENCHER_API_TOKEN }} /
+            --branch ${{ github.head_ref }} /
+            --start-point main /
+            --start-point-reset /
+            --adapter rust_criterion /
+            --error-on-alert /
+            --github-actions ${{ secrets.GITHUB_TOKEN }} /
+            "cargo bench --all-features"
+  # https://github.com/rust-fuzz/cargo-fuzz
+  fuzz-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: fuzz -> target
+      - uses: dtolnay/install@cargo-fuzz
+      - name: Smoke test fuzz targets (60s each)
+        run: |
+          for target in $(cargo fuzz list); do
+            cargo fuzz run "$target" -- -max_total_time=60
+          done
+  # https://nexte.st/ (--stress-duration)
+  stress-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@[..] # v[..]
+        with:
+          tool: nextest
+      # nextest is used here for --stress-duration (not available in cargo test)
+      - run: cargo nextest run --all-features --stress-duration '5m'
+        timeout-minutes: 10
+  # https://github.com/crate-ci/typos
+  spellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: crate-ci/typos@[..] # v[..]
+  # https://github.com/matklad/cargo-xtask
+  xtask:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo xtask codegen --check
+  # cargo-mutants: find code not covered by tests (https://mutants.rs/)
+  mutants:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@[..] # v[..]
+        with:
+          tool: cargo-mutants
+      - run: cargo mutants --no-shuffle -vV
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@[..] # v[..]
+        with:
+          name: mutants-report
+          path: mutants.out/
+  # Clippy with GitHub PR annotations via SARIF (https://github.com/psastras/sarif-rs)
+  # For private repos, enable Code Scanning at Settings → Security → Code security.
+  clippy-sarif:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo install clippy-sarif --locked
+      - run: cargo install sarif-fmt --locked
+      - name: Run clippy with SARIF output
+        run: >
+          cargo clippy --workspace --all-features --all-targets --message-format=json
+          | clippy-sarif | tee clippy-results.sarif | sarif-fmt
+        continue-on-error: true
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@[..] # v[..]
+        with:
+          sarif_file: clippy-results.sarif
+          wait-for-processing: true
+  ci-pass:
+    needs: [fmt, clippy-sarif, warnings, docsrs, build, features, msrv, lockfile, minimal-versions, semver, bench, bench-pr, fuzz-smoke, stress-test, spellcheck, xtask, mutants]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: jq --exit-status 'all(.result == "success" or .result == "skipped")' <<< '${{ toJson(needs) }}'
+── .github/workflows/fuzz-nightly.yml ──
+
+# https://github.com/rust-fuzz/cargo-fuzz
+name: Fuzz (nightly)
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: "Fuzz duration per target in seconds"
+        default: "300"
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz-nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: fuzz -> target
+      - uses: dtolnay/install@cargo-fuzz
+      - name: Extended fuzz run
+        run: |
+          duration=${{ inputs.duration || '300' }}
+          for target in $(cargo fuzz list); do
+            cargo fuzz run "$target" -- -max_total_time="$duration"
+          done
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@[..] # v[..]
+        with:
+          name: fuzz-crashes
+          path: fuzz/artifacts/
+── .github/workflows/mdbook.yml ──
+
+# https://rust-lang.github.io/mdBook/
+# Setup: enable GitHub Pages in repo Settings → Pages → Source: GitHub Actions
+name: Deploy mdBook
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: ${{ github.repository_owner == 'test-owner' }}
+    runs-on: ubuntu-latest
+    env:
+      MDBOOK_VERSION: "0.4.40"
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - name: Install mdBook
+        run: |
+          curl -sSL "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz" /
+            | tar -xz -C /usr/local/bin
+      - uses: actions/configure-pages@[..] # v[..]
+      - run: mdbook build
+      - uses: actions/upload-pages-artifact@[..] # v[..]
+        with:
+          path: ./book
+
+  deploy:
+    if: ${{ github.repository_owner == 'test-owner' }}
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@[..] # v[..]
+── .github/workflows/release.yml ──
+# release-plz: automated releases to crates.io (https://release-plz.dev/docs)
+# Setup:
+# 1. Configure trusted publishing on crates.io
+#    https://doc.rust-lang.org/cargo/reference/registry-authentication.html#trusted-publishing
+# 2. In repo Settings → Actions → General, enable
+#    "Allow GitHub Actions to create and approve pull requests"
+# 3. Create a fine-grained PAT (contents:write + pull-requests:write) and add
+#    it as a RELEASE_PLZ_TOKEN repo secret so release events trigger binary builds
+#    https://github.com/settings/personal-access-tokens/new
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  release-plz-release:
+    if: ${{ github.repository_owner == 'test-owner' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PLZ_TOKEN }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: rust-lang/crates-io-auth-action@[..] # v[..]
+      - uses: release-plz/action@[..] # v[..]
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+
+  release-plz-pr:
+    if: ${{ !failure() && github.repository_owner == 'test-owner' }}
+    needs: release-plz-release
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: release-plz/action@[..] # v[..]
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+── .github/workflows/rust-next.yml ──
+# Non-blocking canary: checks latest dependency versions and beta/nightly Rust.
+# Failures here are informational, not blocking.
+# https://github.com/epage/_rust/blob/main/.github/workflows/rust-next.yml
+name: rust-next
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  latest-deps:
+    name: Latest dependencies
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo update
+      - run: cargo test --workspace --all-features
+
+  beta:
+    name: Beta Rust
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@beta
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo test --workspace --all-features
+── .github/workflows/stress-test.yml ──
+
+# https://nexte.st/ (--stress-duration)
+name: Stress Test
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: "Stress test duration in minutes"
+        default: "60"
+
+permissions:
+  contents: read
+
+jobs:
+  stress-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@[..] # v[..]
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@[..] # v[..]
+        with:
+          tool: nextest
+      - run: cargo nextest run --all-features --stress-duration '${{ inputs.duration_minutes || '60' }}m'
+── Cargo.toml ──
+[package]
+name = "test-project"
+version = "0.1.0"
+edition = "2024"
+rust-version = "[..]"
+description = "TODO: add description"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/test-owner/test-project"
+
+[workspace]
+members = [".", "xtask"]
+
+[dev-dependencies]
+criterion = { version = "0.8", features = ["html_reports"] }
+
+[[bench]]
+name = "example_bench"
+harness = false
+
+[[bin]]
+name = "test-project"
+path = "src/main.rs"
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }-v{ version }{ archive-suffix }"
+
+[package.metadata.battery-pack]
+ci-battery-pack = { features = ["benchmarks", "fuzzing", "xtask"] }
+── README.md ──
+# test-project
+
+[![CI](https://github.com/test-owner/test-project/actions/workflows/ci.yml/badge.svg)](https://github.com/test-owner/test-project/actions/workflows/ci.yml)
+[![crates.io](https://img.shields.io/crates/v/test-project.svg)](https://crates.io/crates/test-project)
+[![docs.rs](https://docs.rs/test-project/badge.svg)](https://docs.rs/test-project)
+
+TODO: add description
+
+## License
+
+Licensed under either of:
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
+
+at your option.
+── _typos.toml ──
+# https://github.com/crate-ci/typos
+[default.extend-words]
+
+[files]
+extend-exclude = ["*.lock"]
+── benches/example_bench.rs ──
+use test_project::add;
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
+
+fn bench_add(c: &mut Criterion) {
+    let mut group = c.benchmark_group("add");
+    for (left, right) in [(1, 2), (100, 200), (u64::MAX / 2, u64::MAX / 2)] {
+        group.bench_with_input(
+            BenchmarkId::new("add", format!("{left}+{right}")),
+            &(left, right),
+            |b, &(l, r)| b.iter(|| add(black_box(l), black_box(r))),
+        );
+    }
+    group.finish();
+}
+
+criterion_group!(benches, bench_add);
+criterion_main!(benches);
+── book.toml ──
+[book]
+title = "test-project"
+language = "en"
+src = "md"
+
+[output.html]
+── deny.toml ──
+# https://embarkstudios.github.io/cargo-deny/
+
+[advisories]
+unmaintained = "workspace"
+yanked = "warn"
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "Zlib",
+    "MPL-2.0",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+── fuzz/Cargo.toml ──
+[package]
+name = "test_project-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+test-project = { path = ".." }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_example"
+path = "fuzz_targets/fuzz_example.rs"
+doc = false
+
+[package.metadata.battery-pack]
+ci-battery-pack = { features = ["fuzzing"] }
+── fuzz/fuzz_targets/fuzz_example.rs ──
+#![no_main]
+use arbitrary::Arbitrary;
+use libfuzzer_sys::fuzz_target;
+use test_project::add;
+
+#[derive(Debug, Arbitrary)]
+struct FuzzInput {
+    left: u64,
+    right: u64,
+}
+
+fuzz_target!(|input: FuzzInput| {
+    // TODO: Replace with your crate's API.
+    let _ = add(input.left, input.right);
+});
+── md/SUMMARY.md ──
+# Summary
+
+- [Introduction](./intro.md)
+── md/intro.md ──
+# test-project
+
+Welcome to the test-project documentation.
+── release-plz.toml ──
+# https://release-plz.dev/docs/config
+
+[workspace]
+git_release_enable = true
+changelog_update = true
+── src/lib.rs ──
+/// Stub library. Replace with your crate's code.
+pub fn add(left: u64, right: u64) -> u64 {
+    left.wrapping_add(right)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_works() {
+        assert_eq!(add(2, 2), 4);
+    }
+}
+── src/main.rs ──
+fn main() {
+    println!("Hello from {}!", env!("CARGO_PKG_NAME"));
+}
+── xtask/Cargo.toml ──
+[package]
+name = "xtask"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+xshell = "0.2"
+xflags = "0.3"
+
+[package.metadata.battery-pack]
+ci-battery-pack = { features = ["xtask"] }
+── xtask/src/main.rs ──
+use std::path::{Path, PathBuf};
+use xshell::{Shell, cmd};
+
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+fn main() -> Result<()> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(|s| s.as_str()) {
+        Some("codegen") => {
+            let check = args.iter().any(|a| a == "--check");
+            codegen(check)
+        }
+        Some("tidy") => tidy(),
+        Some(cmd) => {
+            eprintln!("unknown command: {cmd}");
+            eprintln!("usage: cargo xtask <codegen [--check] | tidy>");
+            std::process::exit(1);
+        }
+        None => {
+            eprintln!("usage: cargo xtask <codegen [--check] | tidy>");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn project_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("xtask should be in a subdirectory")
+        .to_path_buf()
+}
+
+/// TODO: Replace with your codegen logic.
+fn codegen(check: bool) -> Result<()> {
+    let _sh = Shell::new()?;
+
+    // TODO: Add your codegen logic here.
+
+    if check {
+        println!("codegen --check: all generated files are up to date");
+    } else {
+        println!("codegen: nothing to generate (add your logic here)");
+    }
+    Ok(())
+}
+
+/// Check for trailing whitespace across the repo.
+fn tidy() -> Result<()> {
+    let sh = Shell::new()?;
+    let root = project_root();
+    let _dir = sh.push_dir(&root);
+    let output = cmd!(sh, "grep -rn --include=*.rs [[:space:]]$$ src/")
+        .ignore_status()
+        .read()?;
+    if !output.is_empty() {
+        return Err(format!("trailing whitespace found:/n{output}").into());
+    }
+    println!("tidy: no trailing whitespace found");
+    Ok(())
+}

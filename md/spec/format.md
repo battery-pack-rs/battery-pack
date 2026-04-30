@@ -123,8 +123,21 @@ Templates use [MiniJinja](https://github.com/mitsuhiko/minijinja)
 for rendering. Each template directory MAY contain a `bp-template.toml`
 to configure placeholders and ignored paths.
 
+r[format.templates.cargo-toml]
+Template `Cargo.toml` files MUST be named `_Cargo.toml`. `cargo package`
+treats any subdirectory containing a `Cargo.toml` as a separate crate
+boundary and excludes it from the published tarball. The template engine
+automatically maps `_Cargo.toml` back to `Cargo.toml` in the generated
+output. `cargo bp validate` rejects templates containing `Cargo.toml`.
+
+r[format.templates.cargo-toml-passthrough]
+The `_Cargo.toml` → `Cargo.toml` mapping is suppressed for output paths
+under `templates/`. This allows battery packs that scaffold other battery
+packs (e.g. the `with_template` authoring template) to preserve
+`_Cargo.toml` in their generated template directories.
+
 r[format.templates.managed-deps]
-Template Cargo.toml files SHOULD use `bp-managed = true` on dependencies
+Template `_Cargo.toml` files SHOULD use `bp-managed = true` on dependencies
 instead of hardcoding versions. This ensures generated projects always
 get the versions from the battery pack's current spec. See
 [Managed dependencies in templates](./manifest.md#managed-dependencies-in-templates)

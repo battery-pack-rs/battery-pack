@@ -1,4 +1,4 @@
-{% include "templates/default/Cargo.toml" %}
+{% include "templates/default/_Cargo.toml" %}
 
 [package.metadata.battery.templates]
 default = { path = "templates/default", description = "Starter template" }
