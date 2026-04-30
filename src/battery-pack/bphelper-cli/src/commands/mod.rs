@@ -10,10 +10,10 @@ use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use crate::manifest::{
-    MetadataLocation, add_dep_to_table, dep_kind_section, find_installed_bp_names,
-    find_user_manifest, find_workspace_manifest, read_active_features_from, read_managed_deps_from,
-    remove_deps_by_kind, resolve_metadata_location, should_upgrade_version, sync_dep_in_table,
-    write_bp_features_to_doc, write_deps_by_kind, write_workspace_refs_by_kind,
+    add_dep_to_table, dep_kind_section, find_installed_bp_names, find_user_manifest,
+    find_workspace_manifest, read_active_features_for_project, read_managed_deps_for_project,
+    remove_battery_pack_state_entry, remove_deps_by_kind, should_upgrade_version,
+    sync_dep_in_table, write_battery_pack_state, write_deps_by_kind, write_workspace_refs_by_kind,
 };
 use crate::registry::{
     CrateSource, InstalledPack, TemplateConfig, fetch_battery_pack_detail,
@@ -107,12 +107,6 @@ pub(crate) enum BpCommands {
         /// Add every crate the battery pack offers
         #[arg(long)]
         all_features: bool,
-
-        // [impl cli.add.target]
-        /// Where to store the battery pack registration
-        /// (workspace, package, or default)
-        #[arg(long)]
-        target: Option<AddTarget>,
 
         /// Use a local path instead of downloading from crates.io
         #[arg(long)]
@@ -212,17 +206,6 @@ pub(crate) enum BpCommands {
     UpdateCache,
 }
 
-// [impl cli.add.target]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
-pub(crate) enum AddTarget {
-    /// Register in `workspace.metadata.battery-pack`.
-    Workspace,
-    /// Register in `package.metadata.battery-pack`.
-    Package,
-    /// Use workspace if a workspace root exists, otherwise package
-    Default,
-}
-
 pub fn main() -> Result<()> {
     clap_complete::env::CompleteEnv::with_factory(Cli::command).complete();
     let cli = Cli::parse();
@@ -235,6 +218,9 @@ pub fn main() -> Result<()> {
             non_interactive,
             command,
         } => {
+            if let Err(err) = sync_state_with_current_manifest(&project_dir) {
+                eprintln!("warning: failed to prune battery-pack state: {err}");
+            }
             let source = match crate_source {
                 Some(path) => CrateSource::Local(path),
                 None => CrateSource::Registry,
@@ -262,7 +248,6 @@ pub fn main() -> Result<()> {
                     features,
                     no_default_features,
                     all_features,
-                    target,
                     path,
                     template,
                     define,
@@ -286,7 +271,6 @@ pub fn main() -> Result<()> {
                         no_default_features,
                         all_features,
                         &crates,
-                        target,
                         path.as_deref(),
                         &source,
                         &project_dir,
@@ -377,6 +361,38 @@ pub fn main() -> Result<()> {
             }
         }
     }
+}
+
+/// Preflight: keep `battery-pack.toml` managed-deps aligned with current Cargo.toml.
+pub(crate) fn sync_state_with_current_manifest(project_dir: &Path) -> Result<usize> {
+    let metadata = cargo_metadata::MetadataCommand::new()
+        .current_dir(project_dir)
+        .no_deps()
+        .exec()
+        .context("Failed to run `cargo metadata`")?;
+
+    // In a multi-package workspace, cargo metadata returns all members
+    // regardless of current_dir. Match by canonicalized path to find
+    // the package whose Cargo.toml lives in project_dir.
+    let project_dir = project_dir
+        .canonicalize()
+        .unwrap_or_else(|_| project_dir.to_path_buf());
+
+    let package = metadata.packages.iter().find(|p| {
+        p.manifest_path.parent().and_then(|d| d.canonicalize().ok()) == Some(project_dir.clone())
+    });
+
+    let Some(package) = package else {
+        return Ok(0);
+    };
+
+    let user_manifest_path: PathBuf = package.manifest_path.clone().into();
+    let user_manifest_content =
+        std::fs::read_to_string(&user_manifest_path).context("Failed to read Cargo.toml")?;
+    crate::manifest::prune_state_managed_deps_for_manifest(
+        &user_manifest_path,
+        &user_manifest_content,
+    )
 }
 
 // ============================================================================
@@ -697,7 +713,6 @@ pub(crate) fn add_battery_pack(
     no_default_features: bool,
     all_features: bool,
     specific_crates: &[String],
-    target: Option<AddTarget>,
     path: Option<&str>,
     source: &CrateSource,
     project_dir: &Path,
@@ -818,14 +833,9 @@ pub(crate) fn add_battery_pack(
         write_deps_by_kind(&mut user_doc, &crates_to_sync, false);
     }
 
-    // [impl manifest.register.location]
-    // [impl manifest.register.format]
-    // [impl manifest.features.storage]
-    // [impl cli.add.target]
     // Edit semantics: remove deselected crates from previous installation
-    let metadata_location = resolve_metadata_location(&user_manifest_path)?;
     let prev_managed =
-        read_managed_deps_from(&metadata_location, &user_manifest_content, &crate_name);
+        read_managed_deps_for_project(&user_manifest_path, &user_manifest_content, &crate_name);
     let new_crate_names: BTreeSet<String> = crates_to_sync.keys().cloned().collect();
     let mut removed_count = 0;
 
@@ -856,37 +866,7 @@ pub(crate) fn add_battery_pack(
         }
     }
 
-    // Record active features — location depends on --target flag
-    let managed_deps = new_crate_names;
-    let use_workspace_metadata = match target {
-        Some(AddTarget::Workspace) => true,
-        Some(AddTarget::Package) => false,
-        Some(AddTarget::Default) | None => workspace_manifest.is_some(),
-    };
-
-    if use_workspace_metadata {
-        if let Some(ref mut doc) = ws_doc {
-            write_bp_features_to_doc(
-                doc,
-                &["workspace", "metadata"],
-                &crate_name,
-                &active_features,
-                Some(&managed_deps),
-            );
-        } else {
-            bail!("--target=workspace requires a workspace, but none was found");
-        }
-    } else {
-        write_bp_features_to_doc(
-            &mut user_doc,
-            &["package", "metadata"],
-            &crate_name,
-            &active_features,
-            Some(&managed_deps),
-        );
-    }
-
-    // Write workspace Cargo.toml once (deps + metadata combined)
+    // Write workspace Cargo.toml once (deps combined)
     if let (Some(ws_path), Some(doc)) = (&workspace_manifest, &ws_doc) {
         // [impl manifest.toml.preserve]
         std::fs::write(ws_path, doc.to_string()).context("Failed to write workspace Cargo.toml")?;
@@ -896,6 +876,13 @@ pub(crate) fn add_battery_pack(
     // [impl manifest.toml.preserve]
     std::fs::write(&user_manifest_path, user_doc.to_string())
         .context("Failed to write Cargo.toml")?;
+
+    write_battery_pack_state(
+        &user_manifest_path,
+        &crate_name,
+        &active_features,
+        &crates_to_sync,
+    )?;
 
     println!(
         "Added {} with {} crate(s)",
@@ -918,7 +905,7 @@ pub(crate) fn deps_safe_to_remove(
     managed_deps: &BTreeSet<String>,
     all_bp_names: &[String],
     current_bp: &str,
-    metadata_location: &MetadataLocation,
+    user_manifest_path: &Path,
     user_manifest_content: &str,
 ) -> BTreeSet<String> {
     let mut shared = BTreeSet::new();
@@ -927,7 +914,7 @@ pub(crate) fn deps_safe_to_remove(
             continue;
         }
         if let Some(other_managed) =
-            read_managed_deps_from(metadata_location, user_manifest_content, other_bp)
+            read_managed_deps_for_project(user_manifest_path, user_manifest_content, other_bp)
         {
             shared.extend(other_managed.intersection(managed_deps).cloned());
         }
@@ -953,9 +940,8 @@ fn remove_battery_pack(
         bail!("Battery pack '{}' is not installed", crate_name);
     }
 
-    let metadata_location = resolve_metadata_location(&user_manifest_path)?;
     let managed_deps =
-        read_managed_deps_from(&metadata_location, &user_manifest_content, &crate_name);
+        read_managed_deps_for_project(&user_manifest_path, &user_manifest_content, &crate_name);
 
     // Determine which deps to remove
     let should_remove_deps = if let Some(ref managed) = managed_deps {
@@ -968,7 +954,7 @@ fn remove_battery_pack(
                 managed,
                 &bp_names,
                 &crate_name,
-                &metadata_location,
+                &user_manifest_path,
                 &user_manifest_content,
             );
             if safe.is_empty() {
@@ -1012,7 +998,7 @@ fn remove_battery_pack(
             managed,
             &bp_names,
             &crate_name,
-            &metadata_location,
+            &user_manifest_path,
             &user_manifest_content,
         );
 
@@ -1045,17 +1031,6 @@ fn remove_battery_pack(
                 ws_table.remove(&crate_name);
             }
 
-            // Remove metadata from workspace if that's where it lives
-            if matches!(metadata_location, MetadataLocation::Workspace { .. })
-                && let Some(bp_table) = ws_doc
-                    .get_mut("workspace")
-                    .and_then(|w| w.get_mut("metadata"))
-                    .and_then(|m| m.get_mut("battery-pack"))
-                    .and_then(|bp| bp.as_table_mut())
-            {
-                bp_table.remove(&crate_name);
-            }
-
             std::fs::write(ws_path, ws_doc.to_string())
                 .context("Failed to write workspace Cargo.toml")?;
         }
@@ -1065,19 +1040,12 @@ fn remove_battery_pack(
         }
     }
 
-    // Remove metadata from package if that's where it lives
-    if matches!(metadata_location, MetadataLocation::Package)
-        && let Some(bp_table) = user_doc
-            .get_mut("package")
-            .and_then(|p| p.get_mut("metadata"))
-            .and_then(|m| m.get_mut("battery-pack"))
-            .and_then(|bp| bp.as_table_mut())
-    {
-        bp_table.remove(&crate_name);
-    }
-
     std::fs::write(&user_manifest_path, user_doc.to_string())
         .context("Failed to write Cargo.toml")?;
+
+    if let Err(e) = remove_battery_pack_state_entry(&user_manifest_path, &crate_name) {
+        eprintln!("warning: failed to update battery-pack.toml: {e}");
+    }
 
     // Clean up build.rs
     let build_rs_path = user_manifest_path
@@ -1175,31 +1143,17 @@ fn sync_battery_packs(project_dir: &Path, path: Option<&str>, source: &CrateSour
         .context("Failed to parse Cargo.toml")?;
 
     let workspace_manifest = find_workspace_manifest(&user_manifest_path)?;
-    let metadata_location = resolve_metadata_location(&user_manifest_path)?;
     let mut total_changes = 0;
 
     for bp_name in &bp_names {
         // Get the battery pack spec
         let bp_spec = load_installed_bp_spec(bp_name, path, source)?;
 
-        // Read active features from the correct metadata location
         let active_features =
-            read_active_features_from(&metadata_location, &user_manifest_content, bp_name);
+            read_active_features_for_project(&user_manifest_path, &user_manifest_content, bp_name);
 
         // [impl format.hidden.effect]
         let expected = bp_spec.resolve_for_features(&active_features);
-
-        // Compute managed-deps: migrate old-format or merge new crates
-        let existing_managed =
-            read_managed_deps_from(&metadata_location, &user_manifest_content, bp_name);
-        let expected_names: BTreeSet<String> = expected.keys().cloned().collect();
-        let managed_deps = match existing_managed {
-            None => expected_names, // migration: populate from resolved crates
-            Some(mut set) => {
-                set.extend(expected_names);
-                set
-            }
-        };
 
         // [impl manifest.deps.workspace]
         // Sync each crate
@@ -1220,17 +1174,6 @@ fn sync_battery_packs(project_dir: &Path, path: Option<&str>, source: &CrateSour
                         println!("  ~ {} (updated in workspace)", dep_name);
                     }
                 }
-            }
-
-            // Write managed-deps to workspace metadata if that's where it lives
-            if matches!(metadata_location, MetadataLocation::Workspace { .. }) {
-                write_bp_features_to_doc(
-                    &mut ws_doc,
-                    &["workspace", "metadata"],
-                    bp_name,
-                    &active_features,
-                    Some(&managed_deps),
-                );
             }
 
             // [impl manifest.toml.preserve]
@@ -1260,17 +1203,7 @@ fn sync_battery_packs(project_dir: &Path, path: Option<&str>, source: &CrateSour
                 }
             }
         }
-
-        // Write managed-deps to package metadata if that's where it lives
-        if matches!(metadata_location, MetadataLocation::Package) {
-            write_bp_features_to_doc(
-                &mut user_doc,
-                &["package", "metadata"],
-                bp_name,
-                &active_features,
-                Some(&managed_deps),
-            );
-        }
+        write_battery_pack_state(&user_manifest_path, bp_name, &active_features, &expected)?;
     }
 
     // [impl manifest.toml.preserve]
@@ -1759,11 +1692,9 @@ fn read_installed_state(
     let Ok(content) = std::fs::read_to_string(&manifest_path) else {
         return empty;
     };
-    let Ok(location) = resolve_metadata_location(&manifest_path) else {
-        return empty;
-    };
-    let managed = read_managed_deps_from(&location, &content, crate_name).unwrap_or_default();
-    let features = read_active_features_from(&location, &content, crate_name);
+    let managed =
+        read_managed_deps_for_project(&manifest_path, &content, crate_name).unwrap_or_default();
+    let features = read_active_features_for_project(&manifest_path, &content, crate_name);
     (managed, features)
 }
 
@@ -1940,13 +1871,15 @@ fn status_battery_packs(
 
     // Inline the load_installed_packs logic to avoid re-reading the manifest.
     let bp_names = find_installed_bp_names(&user_manifest_content)?;
-    let metadata_location = resolve_metadata_location(&user_manifest_path)?;
     let packs: Vec<InstalledPack> = bp_names
         .into_iter()
         .map(|bp_name| {
             let spec = load_installed_bp_spec(&bp_name, path, source)?;
-            let active_features =
-                read_active_features_from(&metadata_location, &user_manifest_content, &bp_name);
+            let active_features = read_active_features_for_project(
+                &user_manifest_path,
+                &user_manifest_content,
+                &bp_name,
+            );
             Ok(InstalledPack {
                 short_name: short_name(&bp_name).to_string(),
                 version: spec.version.clone(),

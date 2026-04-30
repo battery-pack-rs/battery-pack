@@ -272,52 +272,6 @@ fn add_dep_twice_with_features_no_duplicate() {
     assert_eq!(features.len(), 2);
 }
 
-// [verify cli.add.idempotent]
-#[test]
-fn metadata_registration_idempotent() {
-    // Simulating the metadata upsert: writing to
-    // [package.metadata.battery-pack] twice should produce one entry.
-    let toml_str = r#"[package]
-name = "my-app"
-version = "0.1.0"
-
-[package.metadata.battery-pack]
-cli-battery-pack = { features = ["default"] }
-"#;
-    let mut doc: toml_edit::DocumentMut = toml_str.parse().unwrap();
-
-    // "Re-add" with updated features (inline table style)
-    let mut features_array = toml_edit::Array::new();
-    features_array.push("default");
-    features_array.push("indicators");
-    let mut inline = toml_edit::InlineTable::new();
-    inline.insert("features", toml_edit::Value::Array(features_array));
-    let bp_table = doc["package"]["metadata"]["battery-pack"]
-        .as_table_mut()
-        .unwrap();
-    bp_table.insert(
-        "cli-battery-pack",
-        toml_edit::Item::Value(toml_edit::Value::InlineTable(inline)),
-    );
-
-    // Verify: should be exactly one battery-pack entry, not two
-    let bp_table = doc["package"]["metadata"]["battery-pack"]
-        .as_table()
-        .unwrap();
-    assert_eq!(
-        bp_table.len(),
-        1,
-        "should have exactly one battery pack entry"
-    );
-
-    // Verify features were updated
-    let features = crate::manifest::read_active_features(&doc.to_string(), "cli-battery-pack");
-    assert_eq!(
-        features,
-        BTreeSet::from(["default".to_string(), "indicators".to_string()])
-    );
-}
-
 // ============================================================================
 // cli.show.non-interactive / cli.list.non-interactive
 // ============================================================================
@@ -478,7 +432,6 @@ fn new_non_interactive_requires_name() {
 //   - cli.add.no-default-features — --no-default-features skips defaults
 //   - cli.add.all-features      — --all-features selects every crate
 //   - cli.add.specific-crates   — positional crate args after pack name
-//   - cli.add.target            — --target={workspace,package,default}
 //   - cli.add.unknown-crate     — error for unknown crate, valid ones proceed
 
 use std::path::PathBuf;
@@ -527,7 +480,6 @@ struct ParsedAdd {
     features: Vec<String>,
     _no_default_features: bool,
     _all_features: bool,
-    target: Option<super::AddTarget>,
     _path: Option<String>,
     _template: Option<String>,
     _define: Vec<(String, String)>,
@@ -545,7 +497,6 @@ fn parse_add_command(args: &[&str]) -> ParsedAdd {
             features,
             no_default_features,
             all_features,
-            target,
             path,
             template,
             define,
@@ -556,7 +507,6 @@ fn parse_add_command(args: &[&str]) -> ParsedAdd {
             features,
             _no_default_features: no_default_features,
             _all_features: all_features,
-            target,
             _path: path,
             _template: template,
             _define: define,
@@ -932,37 +882,6 @@ fn resolve_all_unknown_crates_yields_empty() {
     assert!(crate_names.is_empty());
 }
 
-// ============================================================================
-// cli.add.target — flag parsing
-// ============================================================================
-
-// [verify cli.add.target]
-#[test]
-fn target_values_parsed() {
-    for (arg, expected) in [
-        ("workspace", super::AddTarget::Workspace),
-        ("package", super::AddTarget::Package),
-        ("default", super::AddTarget::Default),
-    ] {
-        let add = parse_add_command(&["cargo", "bp", "add", "cli", "--target", arg]);
-        assert_eq!(add.target, Some(expected), "for --target {arg}");
-    }
-}
-
-// [verify cli.add.target]
-#[test]
-fn target_omitted_is_none() {
-    let add = parse_add_command(&["cargo", "bp", "add", "cli"]);
-    assert!(add.target.is_none());
-}
-
-// [verify cli.add.target]
-#[test]
-fn target_invalid_value_rejected() {
-    let result = super::Cli::try_parse_from(["cargo", "bp", "add", "cli", "--target", "invalid"]);
-    assert!(result.is_err());
-}
-
 // --- from group2_add_integration.rs ---
 
 // Group 2 integration tests: full `add_battery_pack` flow with real fixtures.
@@ -978,7 +897,6 @@ fn target_invalid_value_rejected() {
 //   - cli.add.all-features      — all crates appear
 //   - cli.add.specific-crates   — only named crates appear
 //   - cli.add.unknown-crate     — unknown skipped, valid written
-//   - cli.add.target            — metadata lands in package vs workspace
 //   - cli.add.register          — battery pack in build-dependencies
 //   - cli.add.dep-kind          — dev-deps land in [dev-dependencies]
 
@@ -1006,6 +924,10 @@ fn read_cargo_toml(tmp: &tempfile::TempDir) -> String {
     std::fs::read_to_string(tmp.path().join("Cargo.toml")).unwrap()
 }
 
+fn read_bp_state_toml(tmp: &tempfile::TempDir) -> String {
+    std::fs::read_to_string(tmp.path().join("battery-pack.toml")).unwrap()
+}
+
 /// Extract a TOML section by header name (e.g. "[dependencies]") from raw text.
 /// Returns the section contents including the header, or an empty string if absent.
 fn extract_section(toml_text: &str, section: &str) -> String {
@@ -1031,26 +953,27 @@ fn extract_section(toml_text: &str, section: &str) -> String {
     result
 }
 
-/// Extract dotted-table sections like [package.metadata.battery-pack.X].
-/// Since toml_edit may write these in different styles, we parse and re-format.
-fn extract_metadata(toml_text: &str, bp_name: &str) -> String {
-    let doc: toml::Value = toml::from_str(toml_text).unwrap();
-    let bp_meta = doc
-        .get("package")
-        .and_then(|p| p.get("metadata"))
-        .and_then(|m| m.get("battery-pack"))
-        .and_then(|bp| bp.get(bp_name));
+/// Extract one `[[battery-pack]]` entry from `battery-pack.toml` by matching
+/// either full crate name or short name.
+fn extract_state_entry(state_text: &str, bp_name: &str) -> Option<toml::Value> {
+    let doc: toml::Value = toml::from_str(state_text).unwrap();
+    let short = bp_name
+        .strip_suffix("-battery-pack")
+        .unwrap_or(bp_name)
+        .to_string();
 
-    match bp_meta {
-        Some(val) => {
-            // Pretty-print the metadata value
-            format!(
-                "[package.metadata.battery-pack.{bp_name}]\n{}",
-                toml::to_string_pretty(val).unwrap()
-            )
-        }
-        None => String::new(),
-    }
+    doc.get("battery-pack")
+        .and_then(|v| v.as_array())
+        .and_then(|entries| {
+            entries.iter().find(|entry| {
+                entry
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .map(|name| name == bp_name || name == short)
+                    .unwrap_or(false)
+            })
+        })
+        .cloned()
 }
 
 #[derive(Clone, Copy)]
@@ -1067,7 +990,6 @@ fn add(
     features: &[&str],
     feature_mode: FeatureMode,
     specific_crates: &[&str],
-    target: Option<super::AddTarget>,
     project_dir: &std::path::Path,
 ) {
     let (no_default_features, all_features) = match feature_mode {
@@ -1084,7 +1006,6 @@ fn add(
         no_default_features,
         all_features,
         &specific,
-        target,
         Some(fixture_path.to_str().unwrap()),
         &crate::registry::CrateSource::Registry,
         project_dir,
@@ -1106,7 +1027,6 @@ fn add_registers_build_dep() {
         &["default"],
         FeatureMode::Default,
         &[],
-        None,
         tmp.path(),
     );
 
@@ -1114,6 +1034,26 @@ fn add_registers_build_dep() {
     let build_deps = extract_section(&content, "[build-dependencies]");
 
     assert_data_eq!(build_deps, str![""]);
+}
+
+#[test]
+fn add_creates_battery_pack_toml() {
+    let tmp = make_temp_project();
+    add(
+        "basic",
+        "basic-battery-pack",
+        &["default"],
+        FeatureMode::Default,
+        &[],
+        tmp.path(),
+    );
+
+    let state_path = tmp.path().join("battery-pack.toml");
+    assert!(state_path.exists(), "battery-pack.toml should be created");
+
+    let state = read_bp_state_toml(&tmp);
+    let entry = extract_state_entry(&state, "basic-battery-pack").expect("state entry exists");
+    assert_eq!(entry.get("name").and_then(|v| v.as_str()), Some("basic"));
 }
 
 // ============================================================================
@@ -1130,7 +1070,6 @@ fn add_default_crates_basic() {
         &["default"],
         FeatureMode::Default,
         &[],
-        None,
         tmp.path(),
     );
 
@@ -1163,7 +1102,6 @@ fn add_default_includes_dev_and_build_deps() {
         &["default"],
         FeatureMode::Default,
         &[],
-        None,
         tmp.path(),
     );
 
@@ -1212,7 +1150,6 @@ fn add_with_named_feature_writes_deps() {
         &["indicators"],
         FeatureMode::Default,
         &[],
-        None,
         tmp.path(),
     );
 
@@ -1244,37 +1181,18 @@ fn add_with_named_feature_records_metadata() {
         &["indicators"],
         FeatureMode::Default,
         &[],
-        None,
         tmp.path(),
     );
 
-    let content = read_cargo_toml(&tmp);
-    let meta = extract_metadata(&content, "fancy-battery-pack");
-
-    assert!(
-        meta.contains("fancy-battery-pack"),
-        "Expected battery pack name in metadata"
-    );
-    assert!(meta.contains("indicators"), "Expected indicators feature");
-    assert_data_eq!(
-        meta,
-        str![[r#"
-[package.metadata.battery-pack.fancy-battery-pack]
-features = [
-    "default",
-    "indicators",
-]
-managed-deps = [
-    "assert_cmd",
-    "clap",
-    "console",
-    "dialoguer",
-    "indicatif",
-    "predicates",
-]
-
-"#]]
-    )
+    let state = read_bp_state_toml(&tmp);
+    let entry = extract_state_entry(&state, "fancy-battery-pack").expect("state entry exists");
+    let features = entry
+        .get("features")
+        .and_then(|v| v.as_array())
+        .expect("features array");
+    let names: Vec<&str> = features.iter().map(|v| v.as_str().unwrap()).collect();
+    assert!(names.contains(&"default"));
+    assert!(names.contains(&"indicators"));
 }
 
 // ============================================================================
@@ -1291,7 +1209,6 @@ fn add_no_default_features_with_feature() {
         &["indicators"],
         FeatureMode::NoDefault,
         &[],
-        None,
         tmp.path(),
     );
 
@@ -1322,7 +1239,6 @@ fn add_no_default_features_alone_writes_no_deps() {
         &[],
         FeatureMode::NoDefault,
         &[],
-        None,
         tmp.path(),
     );
 
@@ -1346,7 +1262,6 @@ fn add_all_features_basic() {
         &[],
         FeatureMode::All,
         &[],
-        None,
         tmp.path(),
     );
 
@@ -1378,31 +1293,18 @@ fn add_all_features_records_metadata() {
         &[],
         FeatureMode::All,
         &[],
-        None,
         tmp.path(),
     );
 
-    let content = read_cargo_toml(&tmp);
-    let meta = extract_metadata(&content, "basic-battery-pack");
-
+    let state = read_bp_state_toml(&tmp);
+    let entry = extract_state_entry(&state, "basic-battery-pack").expect("state entry exists");
+    let features = entry
+        .get("features")
+        .and_then(|v| v.as_array())
+        .expect("features array");
     assert!(
-        meta.contains("basic-battery-pack"),
-        "Expected battery pack name in metadata"
-    );
-    assert!(meta.contains("features"), "Expected features key");
-    assert!(meta.contains("all"), "Expected all feature");
-    assert_data_eq!(
-        meta,
-        str![[r#"
-[package.metadata.battery-pack.basic-battery-pack]
-features = ["all"]
-managed-deps = [
-    "anyhow",
-    "eyre",
-    "thiserror",
-]
-
-"#]]
+        features.iter().any(|v| v.as_str() == Some("all")),
+        "expected all feature in state"
     );
 }
 
@@ -1416,7 +1318,6 @@ fn add_all_features_fancy() {
         &[],
         FeatureMode::All,
         &[],
-        None,
         tmp.path(),
     );
 
@@ -1482,7 +1383,6 @@ fn add_specific_crates_writes_only_named() {
         &[],
         FeatureMode::Default,
         &["clap"],
-        None,
         tmp.path(),
     );
 
@@ -1514,7 +1414,6 @@ fn add_unknown_crate_writes_valid_ones() {
         &[],
         FeatureMode::Default,
         &["nonexistent", "clap"],
-        None,
         tmp.path(),
     );
 
@@ -1537,12 +1436,11 @@ clap = { version = "4", features = ["derive"] }
 }
 
 // ============================================================================
-// cli.add.target — metadata location
+// cli.add — metadata written to battery-pack.toml
 // ============================================================================
 
-// [verify cli.add.target]
 #[test]
-fn add_target_package_writes_metadata() {
+fn add_writes_metadata() {
     let tmp = make_temp_project();
     add(
         "basic",
@@ -1550,30 +1448,158 @@ fn add_target_package_writes_metadata() {
         &["default"],
         FeatureMode::Default,
         &[],
-        Some(super::AddTarget::Package),
         tmp.path(),
     );
 
-    let content = read_cargo_toml(&tmp);
-    let meta = extract_metadata(&content, "basic-battery-pack");
+    let state = read_bp_state_toml(&tmp);
+    let entry = extract_state_entry(&state, "basic-battery-pack").expect("state entry exists");
+    let features = entry
+        .get("features")
+        .and_then(|v| v.as_array())
+        .expect("features array");
+    assert!(
+        features.iter().any(|v| v.as_str() == Some("default")),
+        "expected default feature in state"
+    );
+}
+#[test]
+fn preflight_prunes_removed_managed_dep_from_state() {
+    let tmp = make_temp_project();
+    add(
+        "basic",
+        "basic-battery-pack",
+        &["default"],
+        FeatureMode::Default,
+        &[],
+        tmp.path(),
+    );
+
+    let cargo_path = tmp.path().join("Cargo.toml");
+    let content = std::fs::read_to_string(&cargo_path).unwrap();
+    let updated = content
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("anyhow"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    std::fs::write(&cargo_path, updated).unwrap();
+
+    let removed = super::sync_state_with_current_manifest(tmp.path()).unwrap();
+    assert!(
+        removed >= 1,
+        "expected at least one managed dep to be pruned"
+    );
+
+    let state = read_bp_state_toml(&tmp);
+    let entry = extract_state_entry(&state, "basic-battery-pack").expect("state entry exists");
+    let managed = entry
+        .get("managed-deps")
+        .and_then(|v| v.as_array())
+        .expect("managed deps array");
 
     assert!(
-        meta.contains("basic-battery-pack"),
-        "Expected battery pack name in metadata"
+        managed
+            .iter()
+            .all(|dep| dep.get("name").and_then(|v| v.as_str()) != Some("anyhow")),
+        "anyhow should be pruned from managed-deps"
     );
-    assert!(meta.contains("features"), "Expected features key");
-    assert!(meta.contains("default"), "Expected default feature");
-    assert_data_eq!(
-        meta,
-        str![[r#"
-[package.metadata.battery-pack.basic-battery-pack]
-features = ["default"]
-managed-deps = [
-    "anyhow",
-    "thiserror",
-]
+}
 
-"#]]
+#[test]
+fn preflight_virtual_workspace_finds_correct_member() {
+    // Virtual workspace: root has [workspace] but no [package].
+    // sync_state_with_current_manifest called from crate-a/ must find crate-a,
+    // not crate-b.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    // Workspace root
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crate-a\", \"crate-b\"]\n",
+    )
+    .unwrap();
+
+    // crate-a
+    let a_dir = root.join("crate-a");
+    std::fs::create_dir_all(a_dir.join("src")).unwrap();
+    std::fs::write(a_dir.join("src/lib.rs"), "").unwrap();
+    std::fs::write(
+        a_dir.join("Cargo.toml"),
+        "[package]\nname = \"crate-a\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\nanyhow = \"1\"\n",
+    )
+    .unwrap();
+
+    // crate-b
+    let b_dir = root.join("crate-b");
+    std::fs::create_dir_all(b_dir.join("src")).unwrap();
+    std::fs::write(b_dir.join("src/lib.rs"), "").unwrap();
+    std::fs::write(
+        b_dir.join("Cargo.toml"),
+        "[package]\nname = \"crate-b\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+
+    // Write a battery-pack.toml for crate-a with a managed dep
+    std::fs::write(
+        a_dir.join("battery-pack.toml"),
+        "version = 1\n\n[[battery-pack]]\nname = \"basic\"\nfeatures = [\"default\"]\n\n[[battery-pack.managed-deps]]\nname = \"anyhow\"\nversion = \"1\"\n\n[[battery-pack.managed-deps]]\nname = \"gone-crate\"\nversion = \"1\"\n",
+    )
+    .unwrap();
+
+    // Prune from crate-a's directory — should find crate-a's manifest
+    let removed = super::sync_state_with_current_manifest(&a_dir).unwrap();
+    assert_eq!(removed, 1, "gone-crate should be pruned from crate-a");
+
+    // crate-b should have no battery-pack.toml at all
+    assert!(
+        !b_dir.join("battery-pack.toml").exists(),
+        "crate-b should be untouched"
+    );
+}
+
+#[test]
+fn preflight_non_virtual_workspace_finds_correct_member() {
+    // Non-virtual workspace: root has both [package] and [workspace].
+    // sync_state_with_current_manifest called from sub-crate/ must find
+    // the sub-crate, not the root package.
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    // Root package + workspace
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(root.join("src/lib.rs"), "").unwrap();
+    std::fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"root-pkg\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[workspace]\nmembers = [\"sub-crate\"]\n",
+    )
+    .unwrap();
+
+    // sub-crate
+    let sub_dir = root.join("sub-crate");
+    std::fs::create_dir_all(sub_dir.join("src")).unwrap();
+    std::fs::write(sub_dir.join("src/lib.rs"), "").unwrap();
+    std::fs::write(
+        sub_dir.join("Cargo.toml"),
+        "[package]\nname = \"sub-crate\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\ntokio = \"1\"\n",
+    )
+    .unwrap();
+
+    // Write battery-pack.toml for sub-crate with a stale dep
+    std::fs::write(
+        sub_dir.join("battery-pack.toml"),
+        "version = 1\n\n[[battery-pack]]\nname = \"basic\"\nfeatures = [\"default\"]\n\n[[battery-pack.managed-deps]]\nname = \"tokio\"\nversion = \"1\"\n\n[[battery-pack.managed-deps]]\nname = \"removed-dep\"\nversion = \"1\"\n",
+    )
+    .unwrap();
+
+    // Prune from sub-crate's directory
+    let removed = super::sync_state_with_current_manifest(&sub_dir).unwrap();
+    assert_eq!(removed, 1, "removed-dep should be pruned from sub-crate");
+
+    // Root should have no battery-pack.toml
+    assert!(
+        !root.join("battery-pack.toml").exists(),
+        "root package should be untouched"
     );
 }
 
@@ -1587,7 +1613,6 @@ fn add_creates_build_rs() {
         &["default"],
         FeatureMode::Default,
         &[],
-        None,
         tmp.path(),
     );
 
@@ -1609,7 +1634,6 @@ fn add_twice_is_idempotent() {
         &["default"],
         FeatureMode::Default,
         &[],
-        None,
         tmp.path(),
     );
     let first_content = read_cargo_toml(&tmp);
@@ -1620,7 +1644,6 @@ fn add_twice_is_idempotent() {
         &["default"],
         FeatureMode::Default,
         &[],
-        None,
         tmp.path(),
     );
     let second_content = read_cargo_toml(&tmp);

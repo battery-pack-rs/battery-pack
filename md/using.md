@@ -171,15 +171,12 @@ Sync is non-destructive — it only adds and upgrades, never removes.
 
 When your crate is part of a Cargo workspace, `cargo bp` is workspace-aware:
 
-- Battery pack registrations go in `[workspace.metadata.battery-pack]`
-  by default (you can toggle this in the TUI to use per-crate metadata instead)
+- A `battery-pack.toml` is created next to each crate's `Cargo.toml`
+  to track installed packs, active features, and managed dependencies
 - Dependencies are added to `[workspace.dependencies]` and referenced
   as `crate = { workspace = true }` in the crate's `[dependencies]`
 
 This keeps versions centralized and consistent across workspace members.
-
-For per-crate battery packs (where only one workspace member uses a pack),
-you can store the registration and dependencies at the crate level instead.
 
 ## Local sources
 
@@ -214,19 +211,31 @@ cargo bp add my-pack --path ../my-battery-pack
 
 ## Multiple battery packs
 
-A project can use multiple battery packs:
+A project can use multiple battery packs. State is tracked in
+`battery-pack.toml` next to your `Cargo.toml`:
 
 ```toml
-[package.metadata.battery-pack]
-error-battery-pack = "0.4.0"
-cli-battery-pack = "0.3.0"
-async-battery-pack = "0.2.0"
+version = 1
 
-[dependencies]
-anyhow = "1"
-thiserror = "2"
-clap = { version = "4", features = ["derive"] }
-tokio = { version = "1", features = ["full"] }
+[[battery-pack]]
+name = "error"
+features = ["default"]
+
+[[battery-pack.managed-deps]]
+name = "anyhow"
+version = "1"
+
+[[battery-pack.managed-deps]]
+name = "thiserror"
+version = "2"
+
+[[battery-pack]]
+name = "cli"
+features = ["default"]
+
+[[battery-pack.managed-deps]]
+name = "clap"
+version = "4"
 ```
 
 Each battery pack tracks its own metadata. If two battery packs

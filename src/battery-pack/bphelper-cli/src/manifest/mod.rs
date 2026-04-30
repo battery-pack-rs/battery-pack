@@ -1,10 +1,11 @@
-//! Cargo.toml manipulation helpers and metadata location abstraction.
+//! Cargo.toml and battery-pack.toml manipulation helpers.
 //!
 //! This module handles reading and writing battery pack registrations,
-//! feature storage, and dependency management in user Cargo.toml files.
+//! feature storage, and dependency management in user manifests.
 //! No dependencies on other internal modules.
 
 use anyhow::{Context, Result, bail};
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
@@ -355,6 +356,134 @@ pub(crate) fn sync_dep_in_table(
 // Feature reading / writing
 // ============================================================================
 
+const STATE_FILE_NAME: &str = "battery-pack.toml";
+
+fn default_feature_set() -> BTreeSet<String> {
+    BTreeSet::from(["default".to_string()])
+}
+
+fn normalized_feature_set(features: &BTreeSet<String>) -> BTreeSet<String> {
+    if features.is_empty() {
+        default_feature_set()
+    } else {
+        features.clone()
+    }
+}
+
+const STATE_FORMAT_VERSION: u32 = 1;
+
+fn default_version() -> u32 {
+    STATE_FORMAT_VERSION
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct BatteryPackStateFile {
+    #[serde(default = "default_version")]
+    version: u32,
+    #[serde(rename = "battery-pack", default)]
+    battery_pack: Vec<BatteryPackStateEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BatteryPackStateEntry {
+    name: String,
+    #[serde(default = "default_feature_set")]
+    features: BTreeSet<String>,
+    #[serde(rename = "managed-deps", default)]
+    managed_deps: Vec<ManagedDepEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ManagedDepEntry {
+    name: String,
+    version: String,
+}
+
+use crate::registry::short_name;
+
+fn state_name_matches(name: &str, bp_name: &str) -> bool {
+    if name == bp_name {
+        return true;
+    }
+    if name == "battery-pack" {
+        return bp_name == "battery-pack";
+    }
+    format!("{name}-battery-pack") == bp_name
+}
+
+fn state_entry_for<'a>(
+    state: &'a BatteryPackStateFile,
+    bp_name: &str,
+) -> Option<&'a BatteryPackStateEntry> {
+    state
+        .battery_pack
+        .iter()
+        .find(|entry| state_name_matches(&entry.name, bp_name))
+}
+
+fn read_state_file(state_path: &Path) -> Result<BatteryPackStateFile> {
+    if !state_path.exists() {
+        return Ok(BatteryPackStateFile::default());
+    }
+    let content = std::fs::read_to_string(state_path)
+        .with_context(|| format!("Failed to read {}", state_path.display()))?;
+    let state: BatteryPackStateFile = toml::from_str(&content)
+        .with_context(|| format!("Failed to parse {}", state_path.display()))?;
+    if state.version > STATE_FORMAT_VERSION {
+        bail!(
+            "{} has version {}, but this tool only supports version {}. Please upgrade cargo-bp.",
+            state_path.display(),
+            state.version,
+            STATE_FORMAT_VERSION,
+        );
+    }
+    Ok(state)
+}
+
+/// Return the battery-pack state file path for a user `Cargo.toml`.
+pub(crate) fn state_file_path(user_manifest_path: &Path) -> PathBuf {
+    user_manifest_path
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join(STATE_FILE_NAME)
+}
+
+fn write_state_file(state_path: &Path, state: &BatteryPackStateFile) -> Result<()> {
+    let mut serialized =
+        toml::to_string_pretty(state).context("Failed to serialize battery-pack state")?;
+    if !serialized.ends_with('\n') {
+        serialized.push('\n');
+    }
+    std::fs::write(state_path, serialized)
+        .with_context(|| format!("Failed to write {}", state_path.display()))
+}
+
+/// Read active features for a battery pack from `battery-pack.toml` if present.
+pub(crate) fn read_active_features_from_state(
+    user_manifest_path: &Path,
+    bp_name: &str,
+) -> Option<BTreeSet<String>> {
+    let state_path = state_file_path(user_manifest_path);
+    let state = read_state_file(&state_path).ok()?;
+    state_entry_for(&state, bp_name).map(|entry| normalized_feature_set(&entry.features))
+}
+
+/// Read managed dependency names for a battery pack from `battery-pack.toml` if present.
+pub(crate) fn read_managed_deps_from_state(
+    user_manifest_path: &Path,
+    bp_name: &str,
+) -> Option<BTreeSet<String>> {
+    let state_path = state_file_path(user_manifest_path);
+    let state = read_state_file(&state_path).ok()?;
+    state_entry_for(&state, bp_name).map(|entry| {
+        entry
+            .managed_deps
+            .iter()
+            .map(|dep| dep.name.clone())
+            .collect::<BTreeSet<_>>()
+    })
+}
+
 /// Read active features from a parsed TOML value at a given path prefix.
 ///
 /// `prefix` is `&["package", "metadata"]` for package metadata or
@@ -381,198 +510,124 @@ pub(crate) fn read_features_at(
         .unwrap_or_else(|| BTreeSet::from(["default".to_string()]))
 }
 
-/// Read active features for a battery pack from user's package metadata.
-pub(crate) fn read_active_features(manifest_content: &str, bp_name: &str) -> BTreeSet<String> {
-    let raw: toml::Value = match toml::from_str(manifest_content) {
-        Ok(v) => v,
-        Err(_) => return BTreeSet::from(["default".to_string()]),
-    };
-    read_features_at(&raw, &["package", "metadata"], bp_name)
-}
-
-/// Read active features from `workspace.metadata.battery-pack[bp_name].features`.
-pub(crate) fn read_active_features_ws(ws_content: &str, bp_name: &str) -> BTreeSet<String> {
-    let raw: toml::Value = match toml::from_str(ws_content) {
-        Ok(v) => v,
-        Err(_) => return BTreeSet::from(["default".to_string()]),
-    };
-    read_features_at(&raw, &["workspace", "metadata"], bp_name)
-}
-
-// ============================================================================
-// Metadata location abstraction
-// ============================================================================
-
-/// Where battery-pack metadata (registrations, active features) is stored.
-///
-/// `add_battery_pack` writes to either `package.metadata` or `workspace.metadata`
-/// depending on the `--target` flag. All other commands (sync, enable, load) must
-/// read from the same location, so they use `resolve_metadata_location` to detect
-/// where metadata currently lives.
-#[derive(Debug, Clone)]
-pub(crate) enum MetadataLocation {
-    /// `package.metadata.battery-pack` in the user manifest.
-    Package,
-    /// `workspace.metadata.battery-pack` in the workspace manifest.
-    Workspace { ws_manifest_path: PathBuf },
-}
-
-/// Determine where battery-pack metadata lives for this project.
-///
-/// If a workspace manifest exists AND already contains
-/// `workspace.metadata.battery-pack`, returns `Workspace`.
-/// Otherwise returns `Package`.
-pub(crate) fn resolve_metadata_location(user_manifest_path: &Path) -> Result<MetadataLocation> {
-    if let Some(ws_path) = find_workspace_manifest(user_manifest_path)? {
-        let ws_content =
-            std::fs::read_to_string(&ws_path).context("Failed to read workspace Cargo.toml")?;
-        let raw: toml::Value =
-            toml::from_str(&ws_content).context("Failed to parse workspace Cargo.toml")?;
-        if raw
-            .get("workspace")
-            .and_then(|w| w.get("metadata"))
-            .and_then(|m| m.get("battery-pack"))
-            .is_some()
-        {
-            return Ok(MetadataLocation::Workspace {
-                ws_manifest_path: ws_path,
-            });
-        }
-    }
-    Ok(MetadataLocation::Package)
-}
-
-/// Read active features for a battery pack, respecting metadata location.
-pub(crate) fn read_active_features_from(
-    location: &MetadataLocation,
-    user_manifest_content: &str,
+/// Read active features for a pack in a project from `battery-pack.toml`.
+pub(crate) fn read_active_features_for_project(
+    user_manifest_path: &Path,
+    _user_manifest_content: &str,
     bp_name: &str,
 ) -> BTreeSet<String> {
-    match location {
-        MetadataLocation::Package => read_active_features(user_manifest_content, bp_name),
-        MetadataLocation::Workspace { ws_manifest_path } => {
-            let ws_content = match std::fs::read_to_string(ws_manifest_path) {
-                Ok(c) => c,
-                Err(_) => return BTreeSet::from(["default".to_string()]),
-            };
-            read_active_features_ws(&ws_content, bp_name)
-        }
-    }
+    read_active_features_from_state(user_manifest_path, bp_name).unwrap_or_else(default_feature_set)
 }
 
-/// Read managed-deps from a parsed TOML value at a given path prefix.
-///
-/// Returns `None` when the key is absent (old-format metadata).
-fn read_managed_deps_at(
-    raw: &toml::Value,
-    prefix: &[&str],
+/// Read managed deps for a pack in a project from `battery-pack.toml`.
+pub(crate) fn read_managed_deps_for_project(
+    user_manifest_path: &Path,
+    _user_manifest_content: &str,
     bp_name: &str,
 ) -> Option<BTreeSet<String>> {
-    let mut node = Some(raw);
-    for key in prefix {
-        node = node.and_then(|n| n.get(key));
-    }
-    let arr = node
-        .and_then(|m| m.get("battery-pack"))
-        .and_then(|bp| bp.get(bp_name))
-        .and_then(|entry| entry.get("managed-deps"))
-        .and_then(|v| v.as_array())?;
-    Some(
-        arr.iter()
-            .filter_map(|v| v.as_str().map(String::from))
-            .collect(),
-    )
+    read_managed_deps_from_state(user_manifest_path, bp_name)
 }
 
-/// Read managed-deps for a battery pack, respecting metadata location.
-///
-/// Returns `None` when the key is absent (old-format / pre-migration metadata).
-pub(crate) fn read_managed_deps_from(
-    location: &MetadataLocation,
-    user_manifest_content: &str,
-    bp_name: &str,
-) -> Option<BTreeSet<String>> {
-    let (content, prefix): (std::borrow::Cow<'_, str>, &[&str]) = match location {
-        MetadataLocation::Package => (
-            std::borrow::Cow::Borrowed(user_manifest_content),
-            &["package", "metadata"],
-        ),
-        MetadataLocation::Workspace { ws_manifest_path } => {
-            let ws = std::fs::read_to_string(ws_manifest_path).ok()?;
-            (std::borrow::Cow::Owned(ws), &["workspace", "metadata"])
-        }
-    };
-    let raw: toml::Value = toml::from_str(&content).ok()?;
-    read_managed_deps_at(&raw, prefix, bp_name)
-}
-
-/// Write features and optional managed-deps into a `toml_edit::DocumentMut`.
-///
-/// `path_prefix` is `["package", "metadata"]` for package metadata or
-/// `["workspace", "metadata"]` for workspace metadata.
-///
-/// Writes as a regular TOML table:
-/// ```toml
-/// [package.metadata.battery-pack.cli-battery-pack]
-/// features = ["default", "indicators"]
-/// managed-deps = ["clap", "dialoguer", "console"]
-/// ```
-pub(crate) fn write_bp_features_to_doc(
-    doc: &mut toml_edit::DocumentMut,
-    path_prefix: &[&str],
+/// Upsert battery-pack state in sibling `battery-pack.toml`.
+pub(crate) fn write_battery_pack_state(
+    user_manifest_path: &Path,
     bp_name: &str,
     active_features: &BTreeSet<String>,
-    managed_deps: Option<&BTreeSet<String>>,
-) {
-    let mut features_array = toml_edit::Array::new();
-    for feature in active_features {
-        features_array.push(feature.as_str());
-    }
-
-    doc[path_prefix[0]].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
-    doc[path_prefix[0]][path_prefix[1]].or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
-    doc[path_prefix[0]][path_prefix[1]]["battery-pack"]
-        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
-
-    let bp_table = doc[path_prefix[0]][path_prefix[1]]["battery-pack"]
-        .as_table_mut()
-        .expect("battery-pack table must exist");
-
-    // Preserve existing managed-deps when caller passes None.
-    let existing_managed_deps: Option<toml_edit::Array> = bp_table
-        .get(bp_name)
-        .and_then(|item| {
-            let val = if let Some(t) = item.as_table() {
-                t.get("managed-deps").and_then(|i| i.as_value())
-            } else {
-                item.as_inline_table().and_then(|t| t.get("managed-deps"))
-            };
-            val.and_then(|v| v.as_array())
+    managed_crates: &BTreeMap<String, bphelper_manifest::CrateSpec>,
+) -> Result<()> {
+    let state_path = state_file_path(user_manifest_path);
+    let mut state = read_state_file(&state_path)?;
+    let managed_deps = managed_crates
+        .iter()
+        .map(|(name, spec)| ManagedDepEntry {
+            name: name.clone(),
+            version: spec.version.clone(),
         })
-        .cloned();
+        .collect::<Vec<_>>();
 
-    let mut entry_table = toml_edit::Table::new();
-    entry_table.insert(
-        "features",
-        toml_edit::Item::Value(toml_edit::Value::Array(features_array)),
-    );
-    if let Some(deps) = managed_deps {
-        let mut deps_array = toml_edit::Array::new();
-        for dep in deps {
-            deps_array.push(dep.as_str());
-        }
-        entry_table.insert(
-            "managed-deps",
-            toml_edit::Item::Value(toml_edit::Value::Array(deps_array)),
-        );
-    } else if let Some(arr) = existing_managed_deps {
-        entry_table.insert(
-            "managed-deps",
-            toml_edit::Item::Value(toml_edit::Value::Array(arr)),
-        );
+    let updated = BatteryPackStateEntry {
+        name: short_name(bp_name).to_string(),
+        features: normalized_feature_set(active_features),
+        managed_deps,
+    };
+
+    if let Some(entry) = state
+        .battery_pack
+        .iter_mut()
+        .find(|entry| state_name_matches(&entry.name, bp_name))
+    {
+        *entry = updated;
+    } else {
+        state.battery_pack.push(updated);
     }
-    entry_table.set_implicit(true);
-    bp_table.insert(bp_name, toml_edit::Item::Table(entry_table));
+
+    write_state_file(&state_path, &state)?;
+    Ok(())
+}
+
+/// Remove one pack entry from `battery-pack.toml` if it exists.
+pub(crate) fn remove_battery_pack_state_entry(
+    user_manifest_path: &Path,
+    bp_name: &str,
+) -> Result<bool> {
+    let state_path = state_file_path(user_manifest_path);
+    let mut state = read_state_file(&state_path)?;
+    let original_len = state.battery_pack.len();
+    state
+        .battery_pack
+        .retain(|e| !state_name_matches(&e.name, bp_name));
+    if state.battery_pack.len() == original_len {
+        return Ok(false);
+    }
+
+    write_state_file(&state_path, &state)?;
+    Ok(true)
+}
+
+/// Remove managed deps from `battery-pack.toml` when they no longer exist in
+/// the current `Cargo.toml` dependency sections.
+///
+/// Returns the number of managed-dep entries removed across all packs.
+pub(crate) fn prune_state_managed_deps_for_manifest(
+    user_manifest_path: &Path,
+    user_manifest_content: &str,
+) -> Result<usize> {
+    let state_path = state_file_path(user_manifest_path);
+    if !state_path.exists() {
+        return Ok(0);
+    }
+
+    let raw: toml::Value =
+        toml::from_str(user_manifest_content).context("Failed to parse Cargo.toml")?;
+    let mut present_deps: BTreeSet<String> = BTreeSet::new();
+    for section in ["dependencies", "dev-dependencies", "build-dependencies"] {
+        if let Some(table) = raw.get(section).and_then(|v| v.as_table()) {
+            present_deps.extend(table.keys().cloned());
+        }
+    }
+
+    let mut state = read_state_file(&state_path)?;
+    let mut removed = 0usize;
+    let mut changed = false;
+
+    for entry in &mut state.battery_pack {
+        let before = entry.managed_deps.len();
+        entry
+            .managed_deps
+            .retain(|dep| present_deps.contains(&dep.name));
+        let after = entry.managed_deps.len();
+        if after != before {
+            removed += before - after;
+            changed = true;
+        }
+    }
+
+    if !changed {
+        return Ok(0);
+    }
+
+    write_state_file(&state_path, &state)?;
+    Ok(removed)
 }
 
 /// Resolve the manifest path for a battery pack using `cargo metadata`.
