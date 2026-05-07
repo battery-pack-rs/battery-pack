@@ -1,0 +1,11 @@
+name = "battery-pack"
+crates = ["anyhow", "thiserror", "eyre", "color-eyre", "miette", "snafu", "displaydoc", "error-stack", "error-battery-pack"]
+
+[[skills]]
+source.path = "battery-packs/error-battery-pack/skills/error-handling-basics"
+
+[[skills]]
+source.path = "battery-packs/error-battery-pack/skills/library-errors"
+
+[[skills]]
+source.path = "battery-packs/error-battery-pack/skills/application-errors"

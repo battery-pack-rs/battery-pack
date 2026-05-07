@@ -39,6 +39,10 @@ cargo run --example custom-errors -p error-battery-pack
 cargo run --example context-chain -p error-battery-pack
 ```
 
+## Acknowledgments
+
+The skill files in `skills/` are adapted from an error handling guide originally authored by [@terminalwitchcraft](https://github.com/terminalwitchcraft).
+
 ## License
 
 Licensed under either of:
