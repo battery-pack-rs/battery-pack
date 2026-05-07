@@ -376,12 +376,21 @@ fn default_version() -> u32 {
     STATE_FORMAT_VERSION
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct BatteryPackStateFile {
     #[serde(default = "default_version")]
     version: u32,
     #[serde(rename = "battery-pack", default)]
     battery_pack: Vec<BatteryPackStateEntry>,
+}
+
+impl Default for BatteryPackStateFile {
+    fn default() -> Self {
+        Self {
+            version: STATE_FORMAT_VERSION,
+            battery_pack: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -402,13 +411,7 @@ struct ManagedDepEntry {
 use crate::registry::short_name;
 
 fn state_name_matches(name: &str, bp_name: &str) -> bool {
-    if name == bp_name {
-        return true;
-    }
-    if name == "battery-pack" {
-        return bp_name == "battery-pack";
-    }
-    format!("{name}-battery-pack") == bp_name
+    short_name(name) == short_name(bp_name)
 }
 
 fn state_entry_for<'a>(

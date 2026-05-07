@@ -386,6 +386,10 @@ pub(crate) fn sync_state_with_current_manifest(project_dir: &Path) -> Result<usi
     });
 
     let Some(package) = package else {
+        eprintln!(
+            "warning: no package found matching {}",
+            project_dir.display()
+        );
         return Ok(0);
     };
 
