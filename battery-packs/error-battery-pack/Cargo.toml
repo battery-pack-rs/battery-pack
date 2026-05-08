@@ -6,7 +6,7 @@ description = "Error handling done well — anyhow for apps, thiserror for libra
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/battery-pack-rs/battery-pack"
 readme = "README.md"
-keywords = ["battery-pack", "error-handling", "anyhow", "thiserror"]
+keywords = ["battery-pack", "error-handling", "anyhow", "thiserror", "symposium"]
 
 [dependencies]
 battery-pack = { workspace = true }
