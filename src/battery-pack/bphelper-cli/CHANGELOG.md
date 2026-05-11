@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-cli-v0.8.0...bphelper-cli-v0.8.1) - 2026-05-11
+
+### Fixed
+
+- symmetric state_name_matches, correct Default, and warn on unmatched package
+
+### Other
+
+- Merge pull request #118 from nikomatsakis/battery-pack-toml
+- address round 2 review feedback
+- address PR #118 review comments
+- store the data in battery-pack.toml
+
 ## [0.8.0](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-cli-v0.7.6...bphelper-cli-v0.8.0) - 2026-04-30
 
 ### Added
