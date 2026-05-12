@@ -23,8 +23,6 @@ The PR job runs after the release job (`needs: release-plz-release`) with `if: $
 
 ## What the agent can do
 
-Set `CARGO_BP_NON_INTERACTIVE=true` before running any `cargo bp` commands (the TUI cannot run in agent context).
-
 - Run `cargo bp add ci -t trusted-publishing` to generate the workflow and config
 - Edit `release-plz.toml` to customize release behavior
 - Add the repository owner guard value to the workflow

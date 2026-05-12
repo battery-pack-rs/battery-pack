@@ -39,6 +39,5 @@ For comprehensive patterns (opaque library errors, internal error composition, s
 
 ```sh
 cargo install cargo-bp
-export CARGO_BP_NON_INTERACTIVE=true  # required in agent context
 cargo bp add error
 ```

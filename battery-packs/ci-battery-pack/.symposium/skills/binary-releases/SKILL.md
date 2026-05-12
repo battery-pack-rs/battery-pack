@@ -49,8 +49,6 @@ This tells cargo-binstall where to find pre-built binaries. The URL pattern must
 
 ## What the agent can do
 
-Set `CARGO_BP_NON_INTERACTIVE=true` before running any `cargo bp` commands (the TUI cannot run in agent context).
-
 - Run `cargo bp add ci -t binary-release` to generate the workflow and Cargo.toml metadata
 - Edit the build matrix (add/remove targets, change runners)
 - Add or update `[[bin]]` and `[package.metadata.binstall]` in Cargo.toml

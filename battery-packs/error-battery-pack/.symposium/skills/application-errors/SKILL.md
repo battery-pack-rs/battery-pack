@@ -10,7 +10,6 @@ Propagating and formatting errors in binaries, CLI tools, and services.
 > **Prerequisites:** This skill references examples from the error battery pack.
 > ```sh
 > cargo install cargo-bp   # install the battery-pack CLI
-> export CARGO_BP_NON_INTERACTIVE=true  # required in agent context
 > cargo bp add error       # add anyhow + thiserror to your project
 > ```
 

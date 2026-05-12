@@ -85,8 +85,6 @@ YAML and TOML files are merged additively (new keys added, existing preserved). 
 
 ## What the agent can do
 
-Set `CARGO_BP_NON_INTERACTIVE=true` before running any `cargo bp` commands (the TUI cannot run in agent context).
-
 - Run `cargo bp new ci --name <project>` or `cargo bp add ci -t <template>` to generate files
 - Edit generated workflow YAML, `deny.toml`, `_typos.toml`, `release-plz.toml`
 - Add or modify Cargo.toml sections (features, metadata, dependencies)
