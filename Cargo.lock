@@ -352,6 +352,7 @@ version = "0.8.1"
 dependencies = [
  "anyhow",
  "bphelper-manifest",
+ "cargo-bp-script",
  "cargo_metadata",
  "clap",
  "clap_complete",
@@ -438,9 +439,20 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "bphelper-cli",
+ "cargo-bp-script",
+ "serde_json",
  "snapbox",
  "tempfile",
  "toml 0.8.23",
+]
+
+[[package]]
+name = "cargo-bp-script"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

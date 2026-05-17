@@ -9,6 +9,7 @@ keywords = ["battery-pack", "cli", "cargo"]
 
 [dependencies]
 bphelper-manifest = { path = "../bphelper-manifest", version = "0.5.5" }
+cargo-bp-script.workspace = true
 clap.workspace = true
 clap_complete = { workspace = true, features = ["unstable-dynamic"] }
 minijinja.workspace = true

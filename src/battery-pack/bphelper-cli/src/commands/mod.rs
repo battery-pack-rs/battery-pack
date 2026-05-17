@@ -184,6 +184,11 @@ pub(crate) enum BpCommands {
         /// Use a local path instead of downloading from crates.io
         #[arg(long)]
         path: Option<String>,
+
+        /// Emit machine-readable JSON instead of the default text output
+        // [impl cli.status.json]
+        #[arg(long)]
+        json: bool,
     },
 
     /// Check that installed battery packs match project dependencies
@@ -342,8 +347,8 @@ pub fn main() -> Result<()> {
                         )
                     }
                 }
-                BpCommands::Status { path } => {
-                    status_battery_packs(&project_dir, path.as_deref(), &source)
+                BpCommands::Status { path, json } => {
+                    status_battery_packs(&project_dir, path.as_deref(), &source, json)
                 }
                 BpCommands::Check { path } => {
                     check_battery_packs(&project_dir, path.as_deref(), &source)
@@ -1871,15 +1876,82 @@ fn print_template_preview(opts: &crate::template_engine::PreviewOpts<'_>) -> Res
 // [impl cli.status.list]
 // [impl cli.status.version-warn]
 // [impl cli.status.no-project]
+// [impl cli.status.json]
 // [impl cli.source.subcommands]
 // [impl cli.path.subcommands]
 fn status_battery_packs(
     project_dir: &Path,
     path: Option<&str>,
     source: &CrateSource,
+    json: bool,
 ) -> Result<()> {
     use console::style;
 
+    // --- Build the structured report once; both renderers consume it.
+    let report = build_status_report(project_dir, path, source)?;
+
+    // --- JSON path: emit only the schema payload on stdout.
+    if json {
+        let stdout = std::io::stdout();
+        let mut handle = stdout.lock();
+        serde_json::to_writer(&mut handle, &report).context("Failed to serialize status JSON")?;
+        // Trailing newline so consumers can `read_to_string()` and tools play nice.
+        use std::io::Write as _;
+        writeln!(handle).context("Failed to write status JSON")?;
+        return Ok(());
+    }
+
+    // --- Text path: preserve the existing human-readable rendering.
+    if report.packs.is_empty() {
+        println!("No battery packs installed.");
+        return Ok(());
+    }
+
+    let mut any_warnings = false;
+    for pack in &report.packs {
+        // [impl cli.status.list]
+        println!(
+            "{} ({})",
+            style(&pack.short_name).bold(),
+            style(&pack.version).dim(),
+        );
+
+        if pack.warnings.is_empty() {
+            println!("  {} all dependencies up to date", style("✓").green());
+        } else {
+            any_warnings = true;
+            for warning in &pack.warnings {
+                // [impl cli.status.version-warn]
+                println!(
+                    "  {} {}: {} → {} recommended",
+                    style("⚠").yellow(),
+                    warning.crate_name,
+                    style(&warning.current_version).red(),
+                    style(&warning.recommended_version).green(),
+                );
+            }
+        }
+    }
+
+    if any_warnings {
+        println!();
+        println!("Run {} to update.", style("cargo bp sync").bold());
+    }
+
+    Ok(())
+}
+
+/// Build a [`cargo_bp_script::StatusReport`] for the project rooted at
+/// `project_dir`. Pure data — no terminal output. Both the text renderer
+/// and the `--json` mode consume the same report.
+// [impl cli.status.list]
+// [impl cli.status.version-warn]
+// [impl cli.status.no-project]
+fn build_status_report(
+    project_dir: &Path,
+    path: Option<&str>,
+    source: &CrateSource,
+) -> Result<cargo_bp_script::StatusReport> {
     // [impl cli.status.no-project]
     let user_manifest_path =
         find_user_manifest(project_dir).context("are you inside a Rust project?")?;
@@ -1906,66 +1978,47 @@ fn status_battery_packs(
         })
         .collect::<Result<_>>()?;
 
-    if packs.is_empty() {
-        println!("No battery packs installed.");
-        return Ok(());
-    }
-
     // Build a map of the user's actual dependency versions so we can compare.
+    // (Cheap to compute even when packs is empty; keeps the structure simple.)
     let user_versions = collect_user_dep_versions(&user_manifest_path, &user_manifest_content)?;
 
-    let mut any_warnings = false;
+    // --- Map each installed pack into its `InstalledPackStatus`.
+    let pack_statuses: Vec<cargo_bp_script::InstalledPackStatus> = packs
+        .iter()
+        .map(|pack| {
+            // Resolve which crates are expected for this pack's active features.
+            let expected = pack.spec.resolve_for_features(&pack.active_features);
 
-    for pack in &packs {
-        // [impl cli.status.list]
-        println!(
-            "{} ({})",
-            style(&pack.short_name).bold(),
-            style(&pack.version).dim(),
-        );
-
-        // Resolve which crates are expected for this pack's active features.
-        let expected = pack.spec.resolve_for_features(&pack.active_features);
-
-        let mut pack_warnings = Vec::new();
-        for (dep_name, dep_spec) in &expected {
-            if dep_spec.version.is_empty() {
-                continue;
-            }
-            if let Some(user_version) = user_versions.get(dep_name.as_str()) {
-                // [impl cli.status.version-warn]
-                if should_upgrade_version(user_version, &dep_spec.version) {
-                    pack_warnings.push((
-                        dep_name.as_str(),
-                        user_version.as_str(),
-                        dep_spec.version.as_str(),
-                    ));
+            // [impl cli.status.version-warn]
+            let warnings = expected.iter().filter_map(|(dep_name, dep_spec)| {
+                if dep_spec.version.is_empty() {
+                    return None;
                 }
-            }
-        }
+                let user_version = user_versions.get(dep_name.as_str())?;
+                if !should_upgrade_version(user_version, &dep_spec.version) {
+                    return None;
+                }
+                Some(cargo_bp_script::DependencyWarning::new(
+                    dep_name.clone(),
+                    user_version.clone(),
+                    dep_spec.version.clone(),
+                ))
+            });
 
-        if pack_warnings.is_empty() {
-            println!("  {} all dependencies up to date", style("✓").green());
-        } else {
-            any_warnings = true;
-            for (dep, current, recommended) in &pack_warnings {
-                println!(
-                    "  {} {}: {} → {} recommended",
-                    style("⚠").yellow(),
-                    dep,
-                    style(current).red(),
-                    style(recommended).green(),
-                );
-            }
-        }
-    }
+            cargo_bp_script::InstalledPackStatus::new(
+                &pack.short_name,
+                &pack.spec.name,
+                &pack.version,
+            )
+            .with_active_features(pack.active_features.iter().cloned())
+            .with_warnings(warnings)
+        })
+        .collect();
 
-    if any_warnings {
-        println!();
-        println!("Run {} to update.", style("cargo bp sync").bold());
-    }
-
-    Ok(())
+    Ok(
+        cargo_bp_script::StatusReport::new(cargo_bp_script::ProjectInfo::new(user_manifest_path))
+            .with_packs(pack_statuses),
+    )
 }
 
 fn check_battery_packs(

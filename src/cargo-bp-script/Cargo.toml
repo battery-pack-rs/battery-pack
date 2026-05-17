@@ -1,0 +1,14 @@
+[package]
+name = "cargo-bp-script"
+version = "0.1.0"
+edition = "2024"
+description = "Schema and process runner for scripting `cargo bp` commands (e.g. `cargo bp status --json`)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/battery-pack-rs/battery-pack"
+keywords = ["battery-pack", "cargo", "scripting"]
+readme = "README.md"
+
+[dependencies]
+serde = { workspace = true }
+serde_json.workspace = true
+thiserror.workspace = true

@@ -259,6 +259,16 @@ r[cli.status.no-project]
 If run outside a Rust project, `cargo bp status` MUST report
 that no project was found.
 
+r[cli.status.json]
+`cargo bp status --json` MUST emit a machine-readable JSON
+document on stdout that conforms to the schema published in
+the [`cargo-bp-script`](https://crates.io/crates/cargo-bp-script)
+crate. The document MUST contain a top-level `schema_version`
+field. With `--json`, no human-readable text MUST be emitted on
+stdout. The same set of installed packs and dependency warnings
+that the text mode shows MUST be represented in the JSON
+payload.
+
 ## `cargo bp sync`
 
 r[cli.sync.update-versions]

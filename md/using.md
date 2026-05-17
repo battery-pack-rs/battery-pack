@@ -153,6 +153,17 @@ This shows your installed battery packs and highlights any mismatches.
 If a battery pack recommends `clap 4.5` but you have `clap 4.3`, you'll
 see a warning. Having a *newer* version than recommended is fine.
 
+#### Machine-readable output
+
+```bash
+cargo bp status --json
+```
+
+Emits the same information as a JSON document. The schema is provided
+by the [`cargo-bp-script`](https://crates.io/crates/cargo-bp-script)
+crate, which also includes a small library that can spawn `cargo bp`
+and parse the output for you — useful for agent and CI scripting.
+
 ### Syncing
 
 ```bash
