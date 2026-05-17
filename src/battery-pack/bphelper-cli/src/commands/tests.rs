@@ -1971,3 +1971,113 @@ fn load_template_hints_returns_hints() {
     assert_eq!(hints[0], "Add mod errors;");
     assert_eq!(hints[1], "Run cargo install cargo-fuzz");
 }
+
+// ============================================================================
+// render_status_json / render_status_text
+// ============================================================================
+//
+// Both renderers share `cargo_bp_script::StatusReport` as their input,
+// so these tests pin the contract between the schema struct and each
+// output mode. Any future schema change forces both renderers to be
+// updated coherently.
+
+/// Build a small report with one pack, one feature, and one warning.
+fn sample_report() -> cargo_bp_script::StatusReport {
+    cargo_bp_script::StatusReport::new(cargo_bp_script::ProjectInfo::new("/proj/Cargo.toml"))
+        .with_pack(
+            cargo_bp_script::InstalledPackStatus::new("cli", "cli-battery-pack", "0.3.0")
+                .with_active_feature("default")
+                .with_warning(cargo_bp_script::DependencyWarning::new(
+                    "clap", "4.4.0", "4.5.0",
+                )),
+        )
+}
+
+#[test]
+fn render_status_json_round_trips_through_parse_status() {
+    let report = sample_report();
+
+    let mut buf = Vec::new();
+    super::render_status_json(&report, &mut buf).unwrap();
+
+    // Last byte should be a newline so consumers can read until EOF safely.
+    assert_eq!(
+        buf.last(),
+        Some(&b'\n'),
+        "JSON output must end with newline"
+    );
+
+    let parsed = cargo_bp_script::parse_status(&buf).expect("parse_status round-trip");
+    assert_eq!(parsed, report);
+}
+
+#[test]
+// [verify cli.status.list]
+// [verify cli.status.version-warn]
+fn render_status_text_includes_pack_and_warning() {
+    // Strip ANSI styling so the assertions don't depend on TTY detection.
+    console::set_colors_enabled(false);
+
+    let report = sample_report();
+
+    let mut buf = Vec::new();
+    super::render_status_text(&report, &mut buf).unwrap();
+    let text = String::from_utf8(buf).expect("renderer emits UTF-8");
+
+    // Pack header + version
+    assert!(text.contains("cli"), "missing pack short_name in:\n{text}");
+    assert!(text.contains("0.3.0"), "missing pack version in:\n{text}");
+
+    // Warning row
+    assert!(text.contains("clap"), "missing crate name in:\n{text}");
+    assert!(
+        text.contains("4.4.0"),
+        "missing current version in:\n{text}"
+    );
+    assert!(
+        text.contains("4.5.0"),
+        "missing recommended version in:\n{text}"
+    );
+
+    // Trailing hint when warnings are present
+    assert!(
+        text.contains("cargo bp sync"),
+        "missing sync hint in:\n{text}"
+    );
+}
+
+#[test]
+fn render_status_text_no_packs_emits_friendly_message() {
+    console::set_colors_enabled(false);
+
+    let report =
+        cargo_bp_script::StatusReport::new(cargo_bp_script::ProjectInfo::new("/proj/Cargo.toml"));
+
+    let mut buf = Vec::new();
+    super::render_status_text(&report, &mut buf).unwrap();
+    let text = String::from_utf8(buf).unwrap();
+
+    assert!(text.starts_with("No battery packs installed."));
+    // No sync hint when there's nothing to sync.
+    assert!(!text.contains("cargo bp sync"));
+}
+
+#[test]
+fn render_status_text_no_warnings_omits_sync_hint() {
+    console::set_colors_enabled(false);
+
+    let report =
+        cargo_bp_script::StatusReport::new(cargo_bp_script::ProjectInfo::new("/proj/Cargo.toml"))
+            .with_pack(cargo_bp_script::InstalledPackStatus::new(
+                "cli",
+                "cli-battery-pack",
+                "0.3.0",
+            ));
+
+    let mut buf = Vec::new();
+    super::render_status_text(&report, &mut buf).unwrap();
+    let text = String::from_utf8(buf).unwrap();
+
+    assert!(text.contains("all dependencies up to date"));
+    assert!(!text.contains("cargo bp sync"));
+}

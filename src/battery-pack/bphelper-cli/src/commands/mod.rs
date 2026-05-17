@@ -1872,6 +1872,13 @@ fn print_template_preview(opts: &crate::template_engine::PreviewOpts<'_>) -> Res
 // ============================================================================
 // Status command
 // ============================================================================
+//
+// Status is split into three pieces so that the text and JSON outputs are
+// guaranteed to read from the same data:
+//   1. `build_status_report` — pure data, returns a `StatusReport`.
+//   2. `render_status_json`  — serializes the report to a writer.
+//   3. `render_status_text`  — pretty-prints the report to a writer.
+// `status_battery_packs` is a thin dispatcher that picks one renderer.
 
 // [impl cli.status.list]
 // [impl cli.status.version-warn]
@@ -1885,57 +1892,79 @@ fn status_battery_packs(
     source: &CrateSource,
     json: bool,
 ) -> Result<()> {
+    let report = build_status_report(project_dir, path, source)?;
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    if json {
+        render_status_json(&report, &mut out).context("Failed to write status JSON")?;
+    } else {
+        render_status_text(&report, &mut out).context("Failed to render status")?;
+    }
+    Ok(())
+}
+
+/// Serialize a [`StatusReport`] as JSON to `w`, with a trailing newline.
+///
+/// Used for `cargo bp status --json`. Stable, machine-consumable output;
+/// the schema lives in `cargo-bp-script`.
+// [impl cli.status.json]
+fn render_status_json(
+    report: &cargo_bp_script::StatusReport,
+    w: &mut impl std::io::Write,
+) -> std::io::Result<()> {
+    serde_json::to_writer(&mut *w, report)?;
+    writeln!(w)?;
+    Ok(())
+}
+
+/// Pretty-print a [`StatusReport`] for human consumption to `w`.
+///
+/// Reads the same data the JSON renderer reads, so JSON and text output
+/// are guaranteed to be consistent at the data layer.
+// [impl cli.status.list]
+// [impl cli.status.version-warn]
+fn render_status_text(
+    report: &cargo_bp_script::StatusReport,
+    w: &mut impl std::io::Write,
+) -> std::io::Result<()> {
     use console::style;
 
-    // --- Build the structured report once; both renderers consume it.
-    let report = build_status_report(project_dir, path, source)?;
-
-    // --- JSON path: emit only the schema payload on stdout.
-    if json {
-        let stdout = std::io::stdout();
-        let mut handle = stdout.lock();
-        serde_json::to_writer(&mut handle, &report).context("Failed to serialize status JSON")?;
-        // Trailing newline so consumers can `read_to_string()` and tools play nice.
-        use std::io::Write as _;
-        writeln!(handle).context("Failed to write status JSON")?;
-        return Ok(());
-    }
-
-    // --- Text path: preserve the existing human-readable rendering.
     if report.packs.is_empty() {
-        println!("No battery packs installed.");
+        writeln!(w, "No battery packs installed.")?;
         return Ok(());
     }
 
     let mut any_warnings = false;
     for pack in &report.packs {
         // [impl cli.status.list]
-        println!(
+        writeln!(
+            w,
             "{} ({})",
             style(&pack.short_name).bold(),
             style(&pack.version).dim(),
-        );
+        )?;
 
         if pack.warnings.is_empty() {
-            println!("  {} all dependencies up to date", style("✓").green());
+            writeln!(w, "  {} all dependencies up to date", style("✓").green())?;
         } else {
             any_warnings = true;
             for warning in &pack.warnings {
                 // [impl cli.status.version-warn]
-                println!(
+                writeln!(
+                    w,
                     "  {} {}: {} → {} recommended",
                     style("⚠").yellow(),
                     warning.crate_name,
                     style(&warning.current_version).red(),
                     style(&warning.recommended_version).green(),
-                );
+                )?;
             }
         }
     }
 
     if any_warnings {
-        println!();
-        println!("Run {} to update.", style("cargo bp sync").bold());
+        writeln!(w)?;
+        writeln!(w, "Run {} to update.", style("cargo bp sync").bold())?;
     }
 
     Ok(())
