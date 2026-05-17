@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-cli-v0.8.1...bphelper-cli-v0.8.2) - 2026-05-17
+
+### Added
+
+- add cargo bp status --json + cargo-bp-script schema crate
+
+### Other
+
+- *(status)* split text/JSON output into render_status_* fns
+- Merge pull request #132 from nikomatsakis/cargo-bp-status-json
+
 ## [0.8.1](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-cli-v0.8.0...bphelper-cli-v0.8.1) - 2026-05-11
 
 ### Fixed

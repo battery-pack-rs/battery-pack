@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.4](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.5.3...battery-pack-v0.5.4) - 2026-05-17
+
+### Added
+
+- add cargo bp status --json + cargo-bp-script schema crate
+
+### Other
+
+- *(status)* split text/JSON output into render_status_* fns
+- Merge pull request #132 from nikomatsakis/cargo-bp-status-json
+- Merge pull request #127 from jlizen/error-bp-cleanup-symposium
+- remove SYMPOSIUM.toml manifests
+
 ## [0.5.3](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.5.2...battery-pack-v0.5.3) - 2026-05-11
 
 ### Added

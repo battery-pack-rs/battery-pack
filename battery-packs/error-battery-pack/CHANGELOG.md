@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3](https://github.com/battery-pack-rs/battery-pack/compare/error-battery-pack-v0.6.2...error-battery-pack-v0.6.3) - 2026-05-17
+
+### Other
+
+- Merge pull request #127 from jlizen/error-bp-cleanup-symposium
+- remove SYMPOSIUM.toml manifests
+
 ## [0.6.2](https://github.com/battery-pack-rs/battery-pack/compare/error-battery-pack-v0.6.1...error-battery-pack-v0.6.2) - 2026-05-11
 
 ### Added
