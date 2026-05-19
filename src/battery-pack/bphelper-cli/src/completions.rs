@@ -93,9 +93,9 @@ pub fn registry_and_local_packs(_current: &OsStr) -> Vec<CompletionCandidate> {
 }
 
 fn get_cached_spec(pack_name: &str) -> Option<BatteryPackSpec> {
-    let spec_file = get_cache_dir().join(format!("{}_spec.toml", pack_name));
+    let spec_file = get_cache_dir().join(format!("{}_spec.json", pack_name));
     let content = fs::read_to_string(spec_file).ok()?;
-    bphelper_manifest::parse_battery_pack(&content).ok()
+    serde_json::from_str(&content).ok()
 }
 
 fn collect_keys<F, I>(f: F) -> Vec<CompletionCandidate>

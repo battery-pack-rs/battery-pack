@@ -1,6 +1,7 @@
 //! Battery pack validation: structure checks, packaging, and template compilation.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
+use bphelper_manifest::parse_battery_pack_from_path;
 use std::path::Path;
 
 /// Sentinel error: template validation was skipped (not a real failure).
@@ -51,7 +52,7 @@ pub(crate) fn validate_battery_pack_cmd(path: Option<&str>) -> Result<()> {
         }
     }
 
-    let spec = bphelper_manifest::parse_battery_pack(&content)
+    let spec = parse_battery_pack_from_path(&cargo_toml)
         .with_context(|| format!("failed to parse {}", cargo_toml.display()))?;
 
     // [impl cli.validate.checks]
@@ -112,15 +113,13 @@ pub(crate) fn validate_battery_pack_cmd(path: Option<&str>) -> Result<()> {
 pub fn validate(manifest_dir: &str) -> Result<()> {
     let manifest_dir = Path::new(manifest_dir);
     let cargo_toml = manifest_dir.join("Cargo.toml");
-    let content = std::fs::read_to_string(&cargo_toml)
-        .with_context(|| format!("failed to read {}", cargo_toml.display()))?;
 
     let crate_name = manifest_dir
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("unknown");
-    let spec = bphelper_manifest::parse_battery_pack(&content)
-        .map_err(|e| anyhow::anyhow!("failed to parse {}: {e}", cargo_toml.display()))?;
+    let spec = parse_battery_pack_from_path(&cargo_toml)
+        .map_err(|err| anyhow!("failed to parse {}: {}", cargo_toml.display(), err))?;
 
     if spec.templates.is_empty() {
         println!("no templates to validate");
@@ -149,7 +148,9 @@ pub fn validate(manifest_dir: &str) -> Result<()> {
             );
             (manifest_dir.to_path_buf(), false)
         }
-        Err(e) => return Err(e),
+        Err(e) => {
+          return Err(e);
+        }
     };
 
     // Build a hint so users can inspect the tarball manually on failure.

@@ -15,6 +15,7 @@
 //   - cli.bare.tui           — bare `cargo bp` produces command: None
 //   - cli.add.idempotent     — re-adding same dep doesn't create duplicates
 
+use bphelper_manifest::parse_battery_pack_from_path;
 use clap::Parser;
 use snapbox::{assert_data_eq, str};
 use std::collections::{BTreeMap, BTreeSet};
@@ -519,14 +520,12 @@ fn fixtures_dir() -> PathBuf {
 
 fn load_fancy_spec() -> bphelper_manifest::BatteryPackSpec {
     let fixture = fixtures_dir().join("fancy-battery-pack/Cargo.toml");
-    let content = std::fs::read_to_string(&fixture).unwrap();
-    bphelper_manifest::parse_battery_pack(&content).unwrap()
+    parse_battery_pack_from_path(&fixture).unwrap()
 }
 
 fn load_basic_spec() -> bphelper_manifest::BatteryPackSpec {
     let fixture = fixtures_dir().join("basic-battery-pack/Cargo.toml");
-    let content = std::fs::read_to_string(&fixture).unwrap();
-    bphelper_manifest::parse_battery_pack(&content).unwrap()
+    parse_battery_pack_from_path(&fixture).unwrap()
 }
 
 /// Extract crate names from a ResolvedAdd, panicking if Interactive.

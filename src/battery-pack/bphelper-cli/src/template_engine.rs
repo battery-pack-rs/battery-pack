@@ -5,7 +5,8 @@
 //! - MiniJinja syntax (`{{ project_name }}`, `{% include %}`, etc.)
 //! - Pre-set variable overrides (for non-interactive / test usage)
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
+use bphelper_manifest::parse_battery_pack_from_path;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::io::IsTerminal;
@@ -695,11 +696,10 @@ pub(crate) fn preview_template(opts: &PreviewOpts<'_>) -> Result<(String, Vec<Re
     let resolved = crate::registry::resolve_crate_dir(opts.battery_pack, opts.path, opts.source)?;
 
     let manifest_path = resolved.dir.join("Cargo.toml");
-    let manifest_content = std::fs::read_to_string(&manifest_path)
-        .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
-    let spec = bphelper_manifest::parse_battery_pack(&manifest_content)
-        .map_err(|e| anyhow::anyhow!("Failed to parse battery pack: {e}"))?;
-    let tmpl = spec.templates.get(opts.template).ok_or_else(|| {
+    let spec = parse_battery_pack_from_path(&manifest_path)
+        .map_err(|err| anyhow!("Failed to parse battery pack: {}", err))?;
+
+    let temp_spec = spec.templates.get(opts.template).ok_or_else(|| {
         let available: Vec<_> = spec.templates.keys().map(|s| s.as_str()).collect();
         anyhow::anyhow!(
             "Template '{}' not found. Available: {}",
@@ -710,7 +710,7 @@ pub(crate) fn preview_template(opts: &PreviewOpts<'_>) -> Result<(String, Vec<Re
 
     let opts = RenderOpts {
         crate_root: resolved.dir,
-        template_path: tmpl.path.clone(),
+        template_path: temp_spec.path.clone(),
         project_name: "my-project".to_string(),
         defines: opts.defines.clone(),
         interactive_override: Some(false),

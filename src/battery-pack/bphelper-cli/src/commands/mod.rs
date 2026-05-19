@@ -3,7 +3,8 @@
 //! This module contains the `main()` entry point and all subcommand handlers.
 //! Depends on `registry` and `manifest`.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
+use bphelper_manifest::parse_battery_pack_from_path;
 use clap::{CommandFactory, Parser, Subcommand};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::IsTerminal;
@@ -456,9 +457,7 @@ fn new_from_battery_pack(opts: NewFromBpOpts<'_>) -> Result<()> {
 
     // Read template metadata from the Cargo.toml
     let manifest_path = resolved.dir.join("Cargo.toml");
-    let manifest_content = std::fs::read_to_string(&manifest_path)
-        .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
-    let templates = parse_template_metadata(&manifest_content, &crate_name)?;
+    let templates = parse_template_metadata(&manifest_path, &crate_name)?;
 
     // Resolve which template to use
     let template_path = resolve_template(&templates, opts.template.as_deref(), opts.interactive)?;
@@ -653,9 +652,7 @@ fn add_template(opts: AddTemplateOpts<'_>) -> Result<()> {
 
     // Read template metadata and resolve which template to use.
     let manifest_path = crate_dir.join("Cargo.toml");
-    let manifest_content = std::fs::read_to_string(&manifest_path)
-        .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
-    let templates = parse_template_metadata(&manifest_content, &crate_name)?;
+    let templates = parse_template_metadata(&manifest_path, &crate_name)?;
     let template_path = resolve_template(&templates, Some(opts.template), opts.interactive)?;
 
     // Load post-merge hints before moving template_path.
@@ -748,11 +745,11 @@ pub(crate) fn add_battery_pack(
     // [impl cli.source.replace]
     let (bp_version, bp_spec) = if let Some(local_path) = path {
         let manifest_path = Path::new(local_path).join("Cargo.toml");
-        let manifest_content = std::fs::read_to_string(&manifest_path)
-            .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
-        let spec = bphelper_manifest::parse_battery_pack(&manifest_content)
-            .map_err(|e| anyhow::anyhow!("Failed to parse battery pack '{}': {}", crate_name, e))?;
-        (None, spec)
+        let spec = parse_battery_pack_from_path(&manifest_path)
+            .map_err(|err| anyhow!("Failed to parse battery pack '{}': {}", crate_name, err))?;
+        let version = spec.version.clone(); // !quite sure?
+
+        (Some(version), spec)
     } else {
         fetch_bp_spec(source, name)?
     };
@@ -1487,14 +1484,12 @@ fn generate_from_local(opts: NewOpts, local_path: &str, template: Option<String>
 
     // Read local Cargo.toml
     let manifest_path = local_path.join("Cargo.toml");
-    let manifest_content = std::fs::read_to_string(&manifest_path)
-        .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
 
     let crate_name = local_path
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("unknown");
-    let templates = parse_template_metadata(&manifest_content, crate_name)?;
+    let templates = parse_template_metadata(&manifest_path, crate_name)?;
     let template_path = resolve_template(&templates, template.as_deref(), opts.interactive)?;
 
     generate_from_path(opts, local_path, &template_path)
@@ -1558,11 +1553,11 @@ fn parse_define(s: &str) -> Result<(String, String), String> {
 }
 
 fn parse_template_metadata(
-    manifest_content: &str,
+    manifest_path: &Path,
     crate_name: &str,
 ) -> Result<BTreeMap<String, TemplateConfig>> {
-    let spec = bphelper_manifest::parse_battery_pack(manifest_content)
-        .map_err(|e| anyhow::anyhow!("Failed to parse Cargo.toml: {}", e))?;
+    let spec = parse_battery_pack_from_path(manifest_path)
+        .map_err(|err| anyhow!("Failed to parse Cargo.toml: {}", err))?;
 
     if spec.templates.is_empty() {
         bail!(
