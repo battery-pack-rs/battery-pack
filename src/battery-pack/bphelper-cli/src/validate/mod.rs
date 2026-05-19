@@ -113,8 +113,6 @@ pub(crate) fn validate_battery_pack_cmd(path: Option<&str>) -> Result<()> {
 pub fn validate(manifest_dir: &str) -> Result<()> {
     let manifest_dir = Path::new(manifest_dir);
     let cargo_toml = manifest_dir.join("Cargo.toml");
-    let content = std::fs::read_to_string(&cargo_toml)
-        .with_context(|| format!("failed to read {}", cargo_toml.display()))?;
 
     let crate_name = manifest_dir
         .file_name()
