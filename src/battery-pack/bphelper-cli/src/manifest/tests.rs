@@ -388,8 +388,7 @@ fn deps_add_respects_dep_kind_in_spec() {
 fn integration_add_basic_fixture_deps_to_table() {
     // Parse the basic-battery-pack fixture and add its default crates
     let fixture = fixtures_dir().join("basic-battery-pack/Cargo.toml");
-    let content = std::fs::read_to_string(&fixture).unwrap();
-    let spec = bphelper_manifest::parse_battery_pack(&content).unwrap();
+    let spec = bphelper_manifest::parse_battery_pack_from_path(&fixture).unwrap();
 
     // Resolve default crates
     let crates = spec.resolve_crates(&["default"]);
@@ -416,8 +415,7 @@ fn integration_add_basic_fixture_deps_to_table() {
 fn integration_add_fancy_fixture_deps_to_table() {
     // Parse the fancy-battery-pack fixture and add its default crates
     let fixture = fixtures_dir().join("fancy-battery-pack/Cargo.toml");
-    let content = std::fs::read_to_string(&fixture).unwrap();
-    let spec = bphelper_manifest::parse_battery_pack(&content).unwrap();
+    let spec = parse_battery_pack_from_path(&fixture).unwrap();
 
     // Resolve default crates
     let crates = spec.resolve_crates(&["default"]);
@@ -446,8 +444,7 @@ fn integration_add_fancy_fixture_deps_to_table() {
 fn integration_add_fancy_fixture_with_indicators_feature() {
     // Parse the fancy-battery-pack and resolve with indicators feature
     let fixture = fixtures_dir().join("fancy-battery-pack/Cargo.toml");
-    let content = std::fs::read_to_string(&fixture).unwrap();
-    let spec = bphelper_manifest::parse_battery_pack(&content).unwrap();
+    let spec = parse_battery_pack_from_path(&fixture).unwrap();
 
     let crates = spec.resolve_crates(&["default", "indicators"]);
     assert!(crates.contains_key("clap"));
@@ -530,7 +527,7 @@ fn sync_converts_simple_string_to_table_when_adding_features() {
 //   - version-bump: older version is upgraded (newer left alone)
 //   - feature-add:  missing features are added (existing preserved)
 
-use bphelper_manifest::{CrateSpec, DepKind};
+use bphelper_manifest::{CrateSpec, DepKind, parse_battery_pack_from_path};
 use toml_edit::DocumentMut;
 
 // ---------------------------------------------------------------------------

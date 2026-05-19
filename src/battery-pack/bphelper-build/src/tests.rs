@@ -16,9 +16,8 @@ fn fixtures_dir() -> std::path::PathBuf {
 
 fn parse_fixture(name: &str) -> BatteryPackSpec {
     let path = fixtures_dir().join(name).join("Cargo.toml");
-    let manifest = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("reading {}: {e}", path.display()));
-    bphelper_manifest::parse_battery_pack(&manifest).unwrap()
+    
+    parse_battery_pack_from_path(&path).unwrap_or_else(|err| panic!("parsing {}: {}",path.display(), err))
 }
 
 fn mock_descriptions() -> BTreeMap<String, String> {
