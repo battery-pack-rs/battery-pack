@@ -783,7 +783,7 @@ pub fn discover_battery_packs(path: &Path) -> Result<Vec<BatteryPackSpec>, Error
 ///
 /// Runs `cargo metadata` against the given manifest and returns the spec for the matching package.
 pub fn parse_battery_pack_from_path(manifest_path: &Path) -> Result<BatteryPackSpec, Error> {
-    let metadata = load_metadata(&manifest_path)?;
+    let metadata = load_metadata(manifest_path)?;
 
     // -- find the package whose manifest path matches the requested one --
     let manifest_utf8 = Utf8Path::from_path(manifest_path)
