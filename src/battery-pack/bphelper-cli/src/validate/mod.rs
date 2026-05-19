@@ -345,7 +345,7 @@ fn write_crates_io_patches(project_dir: &Path, metadata: &cargo_metadata::Metada
     let mut patches = String::from("[patch.crates-io]\n");
     for pkg in &metadata.workspace_packages() {
         let path = pkg.manifest_path.parent().unwrap();
-        patches.push_str(&format!("{} = {{ path = \"{}\" }}\n", pkg.name, path));
+        patches.push_str(&format!("{} = {{ path = '{}' }}\n", pkg.name, path)); 
     }
 
     // Forward any existing patches from the battery pack's .cargo/config.toml
