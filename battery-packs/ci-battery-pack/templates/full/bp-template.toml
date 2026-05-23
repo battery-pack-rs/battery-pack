@@ -59,6 +59,11 @@ type = "bool"
 prompt = "Include cross-platform binary builds (GitHub Releases + cargo-binstall)?"
 default = "false"
 
+[placeholders.cross_platform]
+type = "bool"
+prompt = "Include cross-platform testing (macOS + Windows)?"
+default = "false"
+
 [placeholders.mutation_testing]
 type = "bool"
 prompt = "Include mutation testing (cargo-mutants)?"

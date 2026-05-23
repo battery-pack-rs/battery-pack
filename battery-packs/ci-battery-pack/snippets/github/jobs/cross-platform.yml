@@ -1,0 +1,15 @@
+  # Test on macOS and Windows to catch platform-specific issues.
+  cross-platform:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: {% raw %}${{ matrix.os }}{% endraw %}
+    steps:
+      - uses: {{ pin_github_action("actions/checkout", "v6") }}
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-build
+        with:
+          toolchain: stable
+          flags: --all-features

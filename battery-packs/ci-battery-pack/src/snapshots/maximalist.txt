@@ -303,6 +303,21 @@ jobs:
         with:
           persist-credentials: false
       - uses: obi1kenobi/cargo-semver-checks-action@[..] # v2
+  # Test on macOS and Windows to catch platform-specific issues.
+  cross-platform:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/rust-build
+        with:
+          toolchain: stable
+          flags: --all-features
   # Bencher regression detection. Requires:
   # - BENCHER_API_TOKEN repo secret (https://bencher.dev/docs)
   # - BENCHER_PROJECT repo variable (your Bencher project slug)
@@ -455,7 +470,7 @@ jobs:
           sarif_file: clippy-results.sarif
           wait-for-processing: true
   ci-pass:
-    needs: [fmt, clippy-sarif, warnings, docsrs, build, features, msrv, lockfile, minimal-versions, semver, bench, bench-pr, fuzz-smoke, stress-test, spellcheck, xtask, mutants]
+    needs: [fmt, clippy-sarif, warnings, docsrs, build, features, msrv, lockfile, minimal-versions, semver, cross-platform, bench, bench-pr, fuzz-smoke, stress-test, spellcheck, xtask, mutants]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:

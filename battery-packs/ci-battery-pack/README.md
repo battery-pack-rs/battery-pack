@@ -63,6 +63,7 @@ Use `-d all` to enable everything. Otherwise, each defaults to off (except `trus
 | `spellcheck` | false | [typos](https://github.com/crate-ci/typos) config + workflow | |
 | `xtask` | false | [cargo-xtask](https://github.com/matklad/cargo-xtask) scaffold with codegen `--check` | `xshell`, `xflags` |
 | `mutation_testing` | false | [cargo-mutants](https://mutants.rs/) mutation testing | |
+| `cross_platform` | false | Test suite on macOS and Windows | |
 | `clippy_sarif` | false | Clippy with GitHub PR annotations via [SARIF](https://github.com/psastras/sarif-rs) | |
 
 ### SHA pinning

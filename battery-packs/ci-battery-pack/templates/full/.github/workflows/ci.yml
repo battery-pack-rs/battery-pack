@@ -30,6 +30,9 @@ jobs:
 {% include "snippets/github/jobs/lockfile.yml" %}
 {% include "snippets/github/jobs/minimal-versions.yml" %}
 {% include "snippets/github/jobs/semver.yml" %}
+{%- if all or cross_platform %}
+{% include "snippets/github/jobs/cross-platform.yml" %}
+{%- endif -%}
 {%- if all or benchmarks %}
 {% include "snippets/github/jobs/bench.yml" %}
 {%- endif -%}
