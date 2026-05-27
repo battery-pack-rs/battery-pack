@@ -602,7 +602,7 @@ fn test_generate_docs_missing_template_errors() {
     let err = result.unwrap_err().to_string();
     assert_data_eq!(
         err,
-        str!["reading [..]/docs.handlebars.md: No such file or directory (os error 2)"]
+        str!["reading [..]/docs.handlebars.md: [..] (os error 2)"]
     );
 }
 

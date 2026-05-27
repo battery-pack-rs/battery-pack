@@ -811,3 +811,67 @@ fn preview_template_resolves_and_renders() {
     assert!(files.iter().any(|f| f.path == "Cargo.toml"));
     assert!(files.iter().any(|f| f.path == "src/main.rs"));
 }
+
+// -- path normalization --
+
+#[test]
+fn preview_normalizes_backslashes_and_applies_cargo_toml_rename_correctly() {
+    let tmp = tempfile::tempdir().unwrap();
+    let crate_root = tmp.path();
+
+    std::fs::write(
+        crate_root.join("Cargo.toml"),
+        "[package]\nname = \"test-bp\"\nversion = \"0.1.0\"\nkeywords = [\"battery-pack\"]\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(crate_root.join("src")).unwrap();
+    std::fs::write(crate_root.join("src/lib.rs"), "").unwrap();
+
+    // Create a template directory with a subdirectory whose name contains a
+    // backslash. On Linux this is a valid filename character, simulating what
+    // Windows path separators would look like if they leaked into the path.
+    let tpl = crate_root.join("tpl");
+    let backslash_dir = tpl.join("sub\\dir");
+    std::fs::create_dir_all(&backslash_dir).unwrap();
+    std::fs::write(backslash_dir.join("hello.txt"), "hi\n").unwrap();
+
+    // _Cargo.toml at root: should be renamed to Cargo.toml
+    std::fs::write(tpl.join("_Cargo.toml"), "[package]\n").unwrap();
+
+    // _Cargo.toml under templates/: should be preserved as _Cargo.toml
+    std::fs::create_dir_all(tpl.join("templates/inner")).unwrap();
+    std::fs::write(tpl.join("templates/inner/_Cargo.toml"), "[package]\n").unwrap();
+
+    let opts = RenderOpts {
+        crate_root: crate_root.to_path_buf(),
+        template_path: "tpl".to_string(),
+        project_name: "my-app".to_string(),
+        defines: BTreeMap::new(),
+        interactive_override: Some(false),
+    };
+
+    let files = preview(opts).unwrap();
+    let paths: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+
+    // Backslash in directory name is normalized to forward slash
+    assert!(
+        paths.contains(&"sub/dir/hello.txt"),
+        "backslash should be normalized to forward slash: {paths:?}"
+    );
+
+    // _Cargo.toml at root is renamed to Cargo.toml
+    assert!(
+        paths.contains(&"Cargo.toml"),
+        "_Cargo.toml at root should become Cargo.toml: {paths:?}"
+    );
+    assert!(
+        !paths.contains(&"_Cargo.toml"),
+        "_Cargo.toml should not appear at root: {paths:?}"
+    );
+
+    // _Cargo.toml under templates/ is preserved
+    assert!(
+        paths.contains(&"templates/inner/_Cargo.toml"),
+        "_Cargo.toml under templates/ should be preserved: {paths:?}"
+    );
+}

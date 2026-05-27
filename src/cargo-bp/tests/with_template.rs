@@ -24,8 +24,10 @@ fn write_patches(bp_dir: &Path) {
     std::fs::create_dir_all(&cargo_dir).unwrap();
 
     let crate_root = battery_pack_root();
+    // Use single-quoted TOML literal strings so Windows backslashes
+    // (e.g. `\U` in `C:\Users\…`) aren't interpreted as escape sequences.
     let patch = format!(
-        "[patch.crates-io]\nbattery-pack = {{ path = \"{}\" }}\n",
+        "[patch.crates-io]\nbattery-pack = {{ path = '{}' }}\n",
         crate_root.display()
     );
     std::fs::write(cargo_dir.join("config.toml"), patch).unwrap();
