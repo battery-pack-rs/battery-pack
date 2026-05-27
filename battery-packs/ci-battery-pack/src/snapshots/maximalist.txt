@@ -165,7 +165,7 @@ jobs:
         shell: pwsh
         run: |
           cd target/${{ matrix.target }}/release
-          Compress-Archive -Path test-project.exe -DestinationPath ../../../test-project-${{ matrix.target }}-${{ steps.version.outputs.version }}.zip
+          Compress-Archive -Path test-project[EXE] -DestinationPath ../../../test-project-${{ matrix.target }}-${{ steps.version.outputs.version }}.zip
 
       - name: Upload release asset
         uses: softprops/action-gh-release@[..] # v[..]

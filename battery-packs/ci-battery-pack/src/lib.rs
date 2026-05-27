@@ -3,7 +3,19 @@
 #[cfg(test)]
 mod tests {
     use ::battery_pack::testing::PreviewBuilder;
-    use snapbox::{assert_data_eq, file};
+    use snapbox::{Assert, Redactions, file};
+
+    /// Custom assert that unconditionally maps `[EXE]` to `.exe` so snapshots
+    /// containing literal `.exe` (e.g. in GitHub Actions workflow templates)
+    /// pass on all platforms.
+    fn assert_snapshot(actual: impl snapbox::IntoData, expected: impl snapbox::IntoData) {
+        let mut redactions = Redactions::new();
+        redactions.insert("[EXE]", ".exe").unwrap();
+        Assert::new()
+            .action_env("SNAPSHOTS")
+            .redact_with(redactions)
+            .eq(actual, expected);
+    }
 
     #[test]
     fn validate() {
@@ -56,94 +68,94 @@ mod tests {
 
     #[test]
     fn snapshot_minimalist() {
-        assert_data_eq!(snapshot("full", &[]), file!["snapshots/minimalist.txt"]);
+        assert_snapshot(snapshot("full", &[]), file!["snapshots/minimalist.txt"]);
     }
 
     #[test]
     fn snapshot_maximalist() {
-        assert_data_eq!(
+        assert_snapshot(
             snapshot("full", &[("all", "true")]),
-            file!["snapshots/maximalist.txt"]
+            file!["snapshots/maximalist.txt"],
         );
     }
 
     #[test]
     fn snapshot_standalone_benchmarks() {
-        assert_data_eq!(
+        assert_snapshot(
             snapshot("benchmarks", &[]),
-            file!["snapshots/standalone_benchmarks.txt"]
+            file!["snapshots/standalone_benchmarks.txt"],
         );
     }
 
     #[test]
     fn snapshot_standalone_fuzzing() {
-        assert_data_eq!(
+        assert_snapshot(
             snapshot("fuzzing", &[]),
-            file!["snapshots/standalone_fuzzing.txt"]
+            file!["snapshots/standalone_fuzzing.txt"],
         );
     }
 
     #[test]
     fn snapshot_standalone_stress_test() {
-        assert_data_eq!(
+        assert_snapshot(
             snapshot("stress-test", &[]),
-            file!["snapshots/standalone_stress_test.txt"]
+            file!["snapshots/standalone_stress_test.txt"],
         );
     }
 
     #[test]
     fn snapshot_standalone_mdbook() {
-        assert_data_eq!(
+        assert_snapshot(
             snapshot("mdbook", &[]),
-            file!["snapshots/standalone_mdbook.txt"]
+            file!["snapshots/standalone_mdbook.txt"],
         );
     }
 
     #[test]
     fn snapshot_standalone_spellcheck() {
-        assert_data_eq!(
+        assert_snapshot(
             snapshot("spellcheck", &[]),
-            file!["snapshots/standalone_spellcheck.txt"]
+            file!["snapshots/standalone_spellcheck.txt"],
         );
     }
 
     #[test]
     fn snapshot_standalone_xtask() {
-        assert_data_eq!(
+        assert_snapshot(
             snapshot("xtask", &[]),
-            file!["snapshots/standalone_xtask.txt"]
+            file!["snapshots/standalone_xtask.txt"],
         );
     }
 
     #[test]
     fn snapshot_standalone_binary_release() {
-        assert_data_eq!(
+        assert_snapshot(
             snapshot("binary-release", &[]),
-            file!["snapshots/standalone_binary_release.txt"]
+            file!["snapshots/standalone_binary_release.txt"],
         );
     }
 
     #[test]
     fn snapshot_standalone_trusted_publishing() {
-        assert_data_eq!(
+        assert_snapshot(
             snapshot("trusted-publishing", &[]),
-            file!["snapshots/standalone_trusted_publishing.txt"]
+            file!["snapshots/standalone_trusted_publishing.txt"],
         );
     }
 
     #[test]
     fn snapshot_standalone_mutation_testing() {
-        assert_data_eq!(
+        assert_snapshot(
             snapshot("mutation-testing", &[]),
-            file!["snapshots/standalone_mutation_testing.txt"]
+            file!["snapshots/standalone_mutation_testing.txt"],
         );
     }
 
     #[test]
     fn snapshot_standalone_clippy_sarif() {
-        assert_data_eq!(
+        assert_snapshot(
             snapshot("clippy-sarif", &[]),
-            file!["snapshots/standalone_clippy_sarif.txt"]
+            file!["snapshots/standalone_clippy_sarif.txt"],
         );
     }
 }
