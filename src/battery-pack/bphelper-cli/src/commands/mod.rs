@@ -6,7 +6,7 @@
 use anyhow::{Context, Result, bail};
 use clap::{CommandFactory, Parser, Subcommand};
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::IsTerminal;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 use crate::manifest::{
@@ -154,6 +154,10 @@ pub(crate) enum BpCommands {
     List {
         /// Filter by name (omit to list all battery packs)
         filter: Option<String>,
+
+        /// Emit machine-readable JSON instead of the default text output
+        #[arg(long)]
+        json: bool,
     },
 
     /// Show detailed information about a battery pack
@@ -175,6 +179,10 @@ pub(crate) enum BpCommands {
         /// Set a template placeholder value (e.g., -d description="My project")
         #[arg(long = "define", short = 'd', value_parser = parse_define)]
         define: Vec<(String, String)>,
+
+        /// Emit machine-readable JSON instead of the default text output
+        #[arg(long)]
+        json: bool,
     },
 
     /// Show status of installed battery packs and version warnings
@@ -300,10 +308,13 @@ pub fn main() -> Result<()> {
                     interactive,
                     &project_dir,
                 ),
-                BpCommands::List { filter } => {
+                BpCommands::List { filter, json } => {
                     // [impl cli.list.interactive]
                     // [impl cli.list.non-interactive]
-                    if interactive {
+                    // [impl cli.list.json]
+                    if json {
+                        list_battery_packs_json(&source, filter.as_deref())
+                    } else if interactive {
                         crate::tui::run_list(source, filter)
                     } else {
                         // [impl cli.list.query]
@@ -316,35 +327,41 @@ pub fn main() -> Result<()> {
                     template,
                     path,
                     define,
+                    json,
                 } => {
-                    let show_opts = crate::tui::ShowOpts {
-                        battery_pack: &battery_pack,
-                        template: template.as_deref(),
-                        path: path.as_deref(),
-                        source,
-                        defines: define.into_iter().collect(),
-                    };
-                    if interactive {
-                        // [impl cli.show.interactive]
-                        // [impl cli.show.template-preview]
-                        crate::tui::run_show(show_opts)
-                    } else if let Some(tmpl) = show_opts.template {
-                        // [impl cli.show.template-preview]
-                        print_template_preview(&crate::template_engine::PreviewOpts {
-                            battery_pack: show_opts.battery_pack,
-                            template: tmpl,
-                            path: show_opts.path,
-                            source: &show_opts.source,
-                            defines: show_opts.defines,
-                        })
+                    // [impl cli.show.json]
+                    if json {
+                        show_battery_pack_json(&battery_pack, path.as_deref(), &source)
                     } else {
-                        // [impl cli.show.non-interactive]
-                        print_battery_pack_detail(
-                            show_opts.battery_pack,
-                            show_opts.path,
-                            &show_opts.source,
-                            &project_dir,
-                        )
+                        let show_opts = crate::tui::ShowOpts {
+                            battery_pack: &battery_pack,
+                            template: template.as_deref(),
+                            path: path.as_deref(),
+                            source,
+                            defines: define.into_iter().collect(),
+                        };
+                        if interactive {
+                            // [impl cli.show.interactive]
+                            // [impl cli.show.template-preview]
+                            crate::tui::run_show(show_opts)
+                        } else if let Some(tmpl) = show_opts.template {
+                            // [impl cli.show.template-preview]
+                            print_template_preview(&crate::template_engine::PreviewOpts {
+                                battery_pack: show_opts.battery_pack,
+                                template: tmpl,
+                                path: show_opts.path,
+                                source: &show_opts.source,
+                                defines: show_opts.defines,
+                            })
+                        } else {
+                            // [impl cli.show.non-interactive]
+                            print_battery_pack_detail(
+                                show_opts.battery_pack,
+                                show_opts.path,
+                                &show_opts.source,
+                                &project_dir,
+                            )
+                        }
                     }
                 }
                 BpCommands::Status { path, json } => {
@@ -1699,6 +1716,118 @@ fn print_battery_pack_list(source: &CrateSource, filter: Option<&str>) -> Result
     );
 
     Ok(())
+}
+
+// ============================================================================
+// List --json
+// ============================================================================
+
+/// Build a [`cargo_bp_script::ListReport`] and emit it as JSON.
+// [impl cli.list.json]
+fn list_battery_packs_json(source: &CrateSource, filter: Option<&str>) -> Result<()> {
+    let report = build_list_report(source, filter)?;
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    serde_json::to_writer(&mut out, &report).context("Failed to write list JSON")?;
+    writeln!(out)?;
+    Ok(())
+}
+
+/// Build a [`cargo_bp_script::ListReport`] from the registry. Pure data.
+fn build_list_report(
+    source: &CrateSource,
+    filter: Option<&str>,
+) -> Result<cargo_bp_script::ListReport> {
+    let battery_packs = fetch_battery_pack_list(source, filter)?;
+
+    let mut report = cargo_bp_script::ListReport::new();
+    if let Some(f) = filter {
+        report = report.with_filter(f);
+    }
+    report = report.with_packs(battery_packs.iter().map(|bp| {
+        cargo_bp_script::PackSummary::new(&bp.short_name, &bp.name, &bp.version)
+            .with_description(&bp.description)
+    }));
+    Ok(report)
+}
+
+// ============================================================================
+// Show --json
+// ============================================================================
+
+/// Build a [`cargo_bp_script::ShowReport`] and emit it as JSON.
+// [impl cli.show.json]
+fn show_battery_pack_json(name: &str, path: Option<&str>, source: &CrateSource) -> Result<()> {
+    let report = build_show_report(name, path, source)?;
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    serde_json::to_writer(&mut out, &report).context("Failed to write show JSON")?;
+    writeln!(out)?;
+    Ok(())
+}
+
+/// Build a [`cargo_bp_script::ShowReport`] from the registry. Pure data.
+fn build_show_report(
+    name: &str,
+    path: Option<&str>,
+    source: &CrateSource,
+) -> Result<cargo_bp_script::ShowReport> {
+    // --path takes precedence over --crate-source
+    let detail = if path.is_some() {
+        fetch_battery_pack_detail(name, path)?
+    } else {
+        fetch_battery_pack_detail_from_source(source, name)?
+    };
+
+    let mut report =
+        cargo_bp_script::ShowReport::new(&detail.short_name, &detail.name, &detail.version)
+            .with_description(&detail.description);
+
+    if let Some(repo) = &detail.repository {
+        report = report.with_repository(repo);
+    }
+
+    // Owners
+    report = report.with_owners(detail.owners.iter().map(|o| {
+        let mut info = cargo_bp_script::OwnerInfo::new(&o.login);
+        if let Some(n) = &o.name {
+            info = info.with_name(n);
+        }
+        info
+    }));
+
+    // Crates
+    report = report.with_crates(detail.crates.iter().map(|s| s.as_str()));
+
+    // Extends
+    for ext in &detail.extends {
+        report = report.with_extends(ext);
+    }
+
+    // Features
+    report = report.with_features(detail.features.iter().map(|(feat_name, members)| {
+        cargo_bp_script::FeatureInfo::new(feat_name).with_crates(members.iter().map(|s| s.as_str()))
+    }));
+
+    // Templates
+    report = report.with_templates(detail.templates.iter().map(|t| {
+        let mut info = cargo_bp_script::TemplateInfo::new(&t.name);
+        if let Some(d) = &t.description {
+            info = info.with_description(d);
+        }
+        info
+    }));
+
+    // Examples
+    report = report.with_examples(detail.examples.iter().map(|e| {
+        let mut info = cargo_bp_script::ExampleInfo::new(&e.name);
+        if let Some(d) = &e.description {
+            info = info.with_description(d);
+        }
+        info
+    }));
+
+    Ok(report)
 }
 
 /// Read installed state (managed-deps and active features) for a battery pack.
