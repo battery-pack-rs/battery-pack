@@ -1,0 +1,9 @@
+#![doc = include_str!(concat!(env!("OUT_DIR"), "/docs.md"))]
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn validate() {
+        ::battery_pack::testing::validate(env!("CARGO_MANIFEST_DIR")).unwrap();
+    }
+}

@@ -1,0 +1,9 @@
+# Internal future-work
+
+- OTEL/OTLP metrics: once metrique ships an OpenTelemetry formatter, offer it alongside `Json::new()` / `Emf` in the metrics init (CloudWatch supports OTEL metrics natively, public preview Apr 2026).
+- metrique queue self-metrics (metrique_queue_overflows / queue_len / idle_percent): Currently these only surface via the metrics-rs bridge, which is not good enough to depend on yet. Revisit once improved: https://github.com/awslabs/metrique/issues/205. 
+- metrique sysinfo integration: https://github.com/awslabs/metrique/issues/255
+- RedisJSON support for the redis downstream.
+- Kafka downstream/input source.
+- gRPC stack.
+- Additional serialization formats beyond JSON (protobuf, maybe postcard, maybe flatc)
