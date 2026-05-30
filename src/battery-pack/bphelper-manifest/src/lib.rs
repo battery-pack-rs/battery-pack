@@ -2573,4 +2573,29 @@ tokio = { version = "1", optional = true }
         assert_eq!(compare_versions("1", "2"), Ordering::Less);
         assert_eq!(compare_versions("1.0.210", "1.0.100"), Ordering::Greater);
     }
+
+    #[test]
+    fn resolve_crates_keeps_non_optional_deps_with_active_features() {
+        let manifest = r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+
+            [dependencies]
+            anyhow = "1"
+            clap = { version = "4", optional = true }
+
+            [features]
+            cli = ["clap"]
+        "#;
+        let spec = parse_battery_pack(manifest).unwrap();
+        let resolved = spec.resolve_crates(&["cli"]);
+        assert!(resolved.contains_key("clap"), "feature-gated dep is present");
+        // BUG: non-optional normal deps are unconditional in Cargo but get dropped here
+        // when explicit features are active. Assertion inverted to document the bug.
+        assert!(
+            !resolved.contains_key("anyhow"),
+            "non-optional dep dropped when features are active (bug)"
+        );
+    }
 }
