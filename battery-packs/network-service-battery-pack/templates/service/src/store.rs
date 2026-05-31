@@ -58,7 +58,7 @@ pub enum Store {
     InMemory(Arc<Mutex<HashMap<String, String>>>),
     Http {
         client: reqwest::Client,
-        base_url: Arc<str>,
+        base_url: reqwest::Url,
     },
 }
 
@@ -66,10 +66,13 @@ impl Store {
     /// In-memory when `downstream_url` is `None`, otherwise an HTTP forwarder.
     pub fn new(downstream_url: Option<&str>) -> anyhow::Result<Self> {
         Ok(match downstream_url {
-            Some(url) => Store::Http {
-                client: build_client(url)?,
-                base_url: url.trim_end_matches('/').into(),
-            },
+            Some(url) => {
+                let base_url = reqwest::Url::parse(url).context("parse downstream URL")?;
+                Store::Http {
+                    client: build_client(&base_url)?,
+                    base_url,
+                }
+            }
             None => Store::InMemory(Default::default()),
         })
     }
@@ -80,7 +83,7 @@ impl Store {
             Store::InMemory(_) => None,
             Store::Http { client, base_url } => Some(
                 client
-                    .get(format!("{base_url}/health"))
+                    .get(join(base_url, &["health"]))
                     .send()
                     .await
                     .and_then(|resp| resp.error_for_status())
@@ -94,7 +97,7 @@ impl Store {
         match self {
             Store::InMemory(map) => Ok(map.lock().unwrap_or_else(|e| e.into_inner()).get(key).cloned()),
             Store::Http { client, base_url } => {
-                let resp = client.get(format!("{base_url}/items/{key}")).send().await?;
+                let resp = client.get(join(base_url, &["items", key])).send().await?;
                 if resp.status() == StatusCode::NOT_FOUND {
                     return Ok(None);
                 }
@@ -113,7 +116,7 @@ impl Store {
             }
             Store::Http { client, base_url } => {
                 client
-                    .put(format!("{base_url}/items/{key}"))
+                    .put(join(base_url, &["items", key]))
                     .body(value.to_string())
                     .send()
                     .await?
@@ -124,14 +127,22 @@ impl Store {
     }
 }
 
+/// Builds a request URL by appending path segments to the base, percent-encoding each so a key
+/// containing '/' or other URL metacharacters cannot alter the downstream path.
+fn join(base: &reqwest::Url, segments: &[&str]) -> reqwest::Url {
+    let mut url = base.clone();
+    url.path_segments_mut()
+        .expect("downstream base URL can be a base")
+        .pop_if_empty()
+        .extend(segments);
+    url
+}
+
 /// Reuses one client so the connection pool and TLS sessions stay warm. The retry budget bounds
 /// amplification and retries idempotent GET/PUT 503s.
-fn build_client(downstream_url: &str) -> anyhow::Result<reqwest::Client> {
-    // reqwest::Url handles ports, userinfo, and IPv6 literals that naive string splitting mangles.
-    let host = reqwest::Url::parse(downstream_url)
-        .ok()
-        .and_then(|u| u.host_str().map(str::to_string))
-        .unwrap_or_else(|| downstream_url.to_string());
+fn build_client(base_url: &reqwest::Url) -> anyhow::Result<reqwest::Client> {
+    // Scope the retry budget to the downstream host.
+    let host = base_url.host_str().unwrap_or_default().to_string();
     reqwest::Client::builder()
         .timeout(DOWNSTREAM_TIMEOUT)
         .pool_max_idle_per_host(16)

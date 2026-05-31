@@ -61,6 +61,7 @@ pub async fn drain_on_signal(
     // Graceful shutdown waits for in-flight requests. A flood of slow requests can still
     // outlast our shutdown window, so cap the wait and force exit if it elapses. Only a clean
     // finish counts as drained: a server error or panic is a failure, not a graceful drain.
+    let abort = server.abort_handle();
     let drained = match tokio::time::timeout(SHUTDOWN_DRAIN_TIMEOUT, server).await {
         Ok(Ok(Ok(()))) => true,
         Ok(Ok(Err(e))) => {
@@ -76,6 +77,8 @@ pub async fn drain_on_signal(
                 timeout_secs = SHUTDOWN_DRAIN_TIMEOUT.as_secs(),
                 "drain timed out, forcing shutdown"
             );
+            // Cancel rather than detach, so in-flight work does not outlive this call.
+            abort.abort();
             false
         }
     };

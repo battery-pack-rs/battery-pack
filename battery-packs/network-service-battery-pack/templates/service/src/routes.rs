@@ -23,9 +23,9 @@ use tower_governor::key_extractor::GlobalKeyExtractor;
 /// Largest request body accepted, rejected with 413 above this. Bounds memory used per request.
 const MAX_BODY_BYTES: usize = 1024 * 1024;
 {% if tower_timeout %}
-/// Caps total request lifetime, aborting with 408. Kept above `store`'s `DOWNSTREAM_TIMEOUT` times
-/// its retry attempts (1 + `DOWNSTREAM_MAX_RETRIES`) so a downstream call can use its full budget
-/// within one request.
+/// Hard ceiling on total request lifetime, aborting with 408. Sized above `store`'s worst-case
+/// downstream budget (`DOWNSTREAM_TIMEOUT` times 1 + `DOWNSTREAM_MAX_RETRIES`), but a slow body read
+/// counts against it too, so a 408 can also mean the client was slow to send.
 const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(16);
 /// Bounds time spent reading the request body, rejecting a slow client before the full request budget.
 const REQUEST_BODY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);

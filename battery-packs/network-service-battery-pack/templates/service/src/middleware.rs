@@ -63,24 +63,37 @@ impl std::ops::DerefMut for HandlerMetricsGuard {
 }
 
 impl<S: Send + Sync> FromRequestParts<S> for HandlerMetricsGuard {
-    type Rejection = std::convert::Infallible;
+    type Rejection = StatusCode;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let guard = parts
+        match parts
             .extensions
             .get::<HandlerMetricsHandle>()
             .and_then(|h| h.0.lock().unwrap_or_else(|e| e.into_inner()).take())
-            .expect("HandlerMetricsGuard taken twice, or telemetry_middleware not installed");
-        Ok(HandlerMetricsGuard(guard))
+        {
+            Some(guard) => Ok(HandlerMetricsGuard(guard)),
+            // The slot is installed by telemetry_middleware. Reaching here means a route uses this
+            // extractor without that layer, so fail observably rather than panic on live traffic.
+            None => {
+                tracing::error!("HandlerMetricsGuard unavailable: telemetry_middleware not on this route");
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        }
     }
+}
+
+/// Matches the router's single-segment `/items/{key}`, so a probe to `/items/a/b` records as Other.
+fn is_item_path(path: &str) -> bool {
+    path.strip_prefix("/items/")
+        .is_some_and(|key| !key.is_empty() && !key.contains('/'))
 }
 
 /// Unmatched routes record as `Other` so a new endpoint shows up as unclassified until added here.
 fn classify_operation(method: &Method, path: &str) -> Operation {
     match (method, path) {
         (&Method::POST, "/echo") => Operation::Echo,
-        (&Method::GET, p) if p.starts_with("/items/") => Operation::GetItem,
-        (&Method::PUT, p) if p.starts_with("/items/") => Operation::SetItem,
+        (&Method::GET, p) if is_item_path(p) => Operation::GetItem,
+        (&Method::PUT, p) if is_item_path(p) => Operation::SetItem,
         _ => Operation::Other,
     }
 }

@@ -445,24 +445,39 @@ impl std::ops::DerefMut for HandlerMetricsGuard {
 }
 
 impl<S: Send + Sync> FromRequestParts<S> for HandlerMetricsGuard {
-    type Rejection = std::convert::Infallible;
+    type Rejection = StatusCode;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let guard = parts
+        match parts
             .extensions
             .get::<HandlerMetricsHandle>()
             .and_then(|h| h.0.lock().unwrap_or_else(|e| e.into_inner()).take())
-            .expect("HandlerMetricsGuard taken twice, or telemetry_middleware not installed");
-        Ok(HandlerMetricsGuard(guard))
+        {
+            Some(guard) => Ok(HandlerMetricsGuard(guard)),
+            // The slot is installed by telemetry_middleware. Reaching here means a route uses this
+            // extractor without that layer, so fail observably rather than panic on live traffic.
+            None => {
+                tracing::error!(
+                    "HandlerMetricsGuard unavailable: telemetry_middleware not on this route"
+                );
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        }
     }
+}
+
+/// Matches the router's single-segment `/items/{key}`, so a probe to `/items/a/b` records as Other.
+fn is_item_path(path: &str) -> bool {
+    path.strip_prefix("/items/")
+        .is_some_and(|key| !key.is_empty() && !key.contains('/'))
 }
 
 /// Unmatched routes record as `Other` so a new endpoint shows up as unclassified until added here.
 fn classify_operation(method: &Method, path: &str) -> Operation {
     match (method, path) {
         (&Method::POST, "/echo") => Operation::Echo,
-        (&Method::GET, p) if p.starts_with("/items/") => Operation::GetItem,
-        (&Method::PUT, p) if p.starts_with("/items/") => Operation::SetItem,
+        (&Method::GET, p) if is_item_path(p) => Operation::GetItem,
+        (&Method::PUT, p) if is_item_path(p) => Operation::SetItem,
         _ => Operation::Other,
     }
 }
@@ -858,6 +873,7 @@ pub async fn drain_on_signal(
     // Graceful shutdown waits for in-flight requests. A flood of slow requests can still
     // outlast our shutdown window, so cap the wait and force exit if it elapses. Only a clean
     // finish counts as drained: a server error or panic is a failure, not a graceful drain.
+    let abort = server.abort_handle();
     let drained = match tokio::time::timeout(SHUTDOWN_DRAIN_TIMEOUT, server).await {
         Ok(Ok(Ok(()))) => true,
         Ok(Ok(Err(e))) => {
@@ -873,6 +889,8 @@ pub async fn drain_on_signal(
                 timeout_secs = SHUTDOWN_DRAIN_TIMEOUT.as_secs(),
                 "drain timed out, forcing shutdown"
             );
+            // Cancel rather than detach, so in-flight work does not outlive this call.
+            abort.abort();
             false
         }
     };
@@ -941,7 +959,7 @@ pub enum Store {
     InMemory(Arc<Mutex<HashMap<String, String>>>),
     Http {
         client: reqwest::Client,
-        base_url: Arc<str>,
+        base_url: reqwest::Url,
     },
 }
 
@@ -949,10 +967,13 @@ impl Store {
     /// In-memory when `downstream_url` is `None`, otherwise an HTTP forwarder.
     pub fn new(downstream_url: Option<&str>) -> anyhow::Result<Self> {
         Ok(match downstream_url {
-            Some(url) => Store::Http {
-                client: build_client(url)?,
-                base_url: url.trim_end_matches('/').into(),
-            },
+            Some(url) => {
+                let base_url = reqwest::Url::parse(url).context("parse downstream URL")?;
+                Store::Http {
+                    client: build_client(&base_url)?,
+                    base_url,
+                }
+            }
             None => Store::InMemory(Default::default()),
         })
     }
@@ -963,7 +984,7 @@ impl Store {
             Store::InMemory(_) => None,
             Store::Http { client, base_url } => Some(
                 client
-                    .get(format!("{base_url}/health"))
+                    .get(join(base_url, &["health"]))
                     .send()
                     .await
                     .and_then(|resp| resp.error_for_status())
@@ -981,7 +1002,7 @@ impl Store {
                 .get(key)
                 .cloned()),
             Store::Http { client, base_url } => {
-                let resp = client.get(format!("{base_url}/items/{key}")).send().await?;
+                let resp = client.get(join(base_url, &["items", key])).send().await?;
                 if resp.status() == StatusCode::NOT_FOUND {
                     return Ok(None);
                 }
@@ -1000,7 +1021,7 @@ impl Store {
             }
             Store::Http { client, base_url } => {
                 client
-                    .put(format!("{base_url}/items/{key}"))
+                    .put(join(base_url, &["items", key]))
                     .body(value.to_string())
                     .send()
                     .await?
@@ -1011,14 +1032,22 @@ impl Store {
     }
 }
 
+/// Builds a request URL by appending path segments to the base, percent-encoding each so a key
+/// containing '/' or other URL metacharacters cannot alter the downstream path.
+fn join(base: &reqwest::Url, segments: &[&str]) -> reqwest::Url {
+    let mut url = base.clone();
+    url.path_segments_mut()
+        .expect("downstream base URL can be a base")
+        .pop_if_empty()
+        .extend(segments);
+    url
+}
+
 /// Reuses one client so the connection pool and TLS sessions stay warm. The retry budget bounds
 /// amplification and retries idempotent GET/PUT 503s.
-fn build_client(downstream_url: &str) -> anyhow::Result<reqwest::Client> {
-    // reqwest::Url handles ports, userinfo, and IPv6 literals that naive string splitting mangles.
-    let host = reqwest::Url::parse(downstream_url)
-        .ok()
-        .and_then(|u| u.host_str().map(str::to_string))
-        .unwrap_or_else(|| downstream_url.to_string());
+fn build_client(base_url: &reqwest::Url) -> anyhow::Result<reqwest::Client> {
+    // Scope the retry budget to the downstream host.
+    let host = base_url.host_str().unwrap_or_default().to_string();
     reqwest::Client::builder()
         .timeout(DOWNSTREAM_TIMEOUT)
         .pool_max_idle_per_host(16)
