@@ -8,7 +8,7 @@ use http::StatusCode;
 use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
-use crate::downstream::Store;
+use crate::store::Store;
 use crate::middleware::{HandlerMetricsGuard, telemetry_middleware};
 {% if rate_limit %}
 use tower_governor::GovernorLayer;

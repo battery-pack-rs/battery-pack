@@ -6,7 +6,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use http::Request;
 use tower::ServiceExt;
 
-use {{ crate_name }}::downstream::Store;
+use {{ crate_name }}::store::Store;
 use {{ crate_name }}::routes::{self, AppState};
 
 fn state() -> AppState {

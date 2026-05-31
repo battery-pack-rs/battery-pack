@@ -2,7 +2,7 @@
 //! benchmarks exercise [`routes::router`] directly; the binary supplies the process-global setup.
 
 pub mod config;
-pub mod downstream;
+pub mod store;
 pub mod metrics;
 pub mod middleware;
 pub mod routes;
