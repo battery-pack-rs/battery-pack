@@ -19,9 +19,9 @@ jq -r 'select(.type == "result") | "Turns: \(.num_turns), Cost: $\(.total_cost_u
 
 - [ ] `telemetry` appears in the init skills list
 - [ ] `service-architecture` appears in the init skills list
-- [ ] `tokio-performance` and `memory-allocator` appear in the init skills list
+- [ ] `memory-allocator` appears in the init skills list
 - [ ] Agent invoked the `telemetry` skill to understand metrics/logs output
-- [ ] Agent invoked `tokio-performance` (or `telemetry`) to learn how to enable dial9
+- [ ] Agent invoked `telemetry` to learn how to enable dial9
 
 ## Build and run
 

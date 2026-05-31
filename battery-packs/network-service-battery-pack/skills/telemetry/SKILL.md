@@ -42,11 +42,11 @@ dial9 ships its own agent skills and a trace viewer. This skill does not re-expl
 - Every handler takes `HandlerMetricsGuard` and fills it; the middleware holds the parent `RequestMetricsGuard`, which emits the record on drop. Do not construct a second metric record per request.
 - `/health` is mounted outside the telemetry layer and must stay there: probes should not emit per-request metrics.
 - Keep the `TelemetryGuard` alive for the whole process; dropping it early stops log flushing and detaches the metric sink.
-- If `dial9` is on, keep `tokio_unstable` and frame pointers in `.cargo/config.toml`.
+- Keep `--cfg tokio_unstable` in `.cargo/config.toml` while any metrics run: the tokio-metrics bridge depends on it. The `force-frame-pointers` flag is generated only with `dial9` and is needed only for dial9 stack symbolization.
+- When `dial9` is on, spawn background tasks with `dial9::spawn` (not `tokio::spawn`) or they are invisible to the profiler.
 
 ## References
 
-- BuilderHub metrics how-to: https://docs.hub.amazon.dev/docs/languages/rust/howto-metrics/
-- metrique docs and examples: https://docs.rs/metrique
+- metrique, including its `guide` module in the rustdoc: https://docs.rs/metrique
 - dial9: https://github.com/dial9-rs/dial9-tokio-telemetry, viewer at https://dial9-tokio-telemetry.russell-r-cohen.workers.dev/ (dial9 also installs its own agent skills)
-- Runtime tuning: see the `tokio-performance` skill. Allocator profiling: see the `memory-allocator` skill.
+- Allocator profiling: see the `memory-allocator` skill.
