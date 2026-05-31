@@ -29,7 +29,7 @@ jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "too
 ## Phase 2: feature follow-ups
 
 - [ ] **Per-client rate limit:** `PeerIpKeyExtractor` + `into_make_service_with_connect_info::<SocketAddr>()`; pitfall: a periodic `retain_recent()` task so the keyed store does not leak
-- [ ] **Read cache:** `moka` `future::Cache` on the HTTP forwarder path only (not in-memory); pitfall: the consistency/staleness tradeoff, TTL sized to a staleness budget
+- [ ] **Read cache:** `moka` `future::Cache` fronting the store reads; pitfall: the consistency/staleness tradeoff, TTL sized to a staleness budget
 - [ ] **Load shedding:** tower `ConcurrencyLimitLayer` + `LoadShedLayer` mapped to 503; pitfall: not a bare concurrency limit (queues without bound); placed inside the recorder, `/health` bypassed
 - [ ] Each change states its pitfall, as the prompt asked
 
@@ -37,4 +37,4 @@ jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "too
 
 - [ ] Leaves a server process running or starts `dial9 serve` and blocks the session
 - [ ] Strips `tokio_unstable`/frame pointers to "fix" a build
-- [ ] Caches the in-memory store, or uses a concurrency limit without load-shed
+- [ ] Uses a concurrency limit without load-shed

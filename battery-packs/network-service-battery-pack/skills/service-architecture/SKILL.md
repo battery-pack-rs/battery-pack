@@ -42,7 +42,7 @@ Behind a load balancer the peer IP is the balancer, so key off a trusted forward
 
 The `service` template deliberately leaves these out (workload-specific, easy to misuse). Add each with `cargo bp add network-service -F <feature>`, then wire it as below.
 
-- **Read caching** (`cargo bp add network-service -F cache`, which adds `moka`): put its `future::Cache` in front of the HTTP forwarder backend. A cache changes the service's consistency contract; its failure mode is silent stale reads. Size the TTL against an explicit staleness budget.
+- **Read caching** (`cargo bp add network-service -F cache`, which adds `moka`): front the store's reads with its `future::Cache`. A cache changes the service's consistency contract; its failure mode is silent stale reads. Size the TTL against an explicit staleness budget.
 - **Load shedding** (`cargo bp add network-service -F load-shed`, which adds the tower layers): use `ConcurrencyLimitLayer` paired with `LoadShedLayer`, do not hand-roll a counter check. The pair caps concurrent requests and sheds the overflow with a 503; a bare concurrency limit without `LoadShedLayer` queues the overflow without bound. Use the always-on `IN_FLIGHT` metric only to size the cap from observed concurrency, not as the shedding mechanism. Place it inside the recorder so the 503 is counted, but outside the rate limit and timeout.
 
 ## Invariants
