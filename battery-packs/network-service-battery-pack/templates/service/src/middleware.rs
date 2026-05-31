@@ -13,9 +13,8 @@ use uuid::Uuid;
 
 use crate::metrics::{ErrorKind, HandlerMetrics, Operation, RequestMetrics};
 
-/// Open a per-request metric, and passes a slot via extensions for the handler
-/// to write additional fields to. The request metric will be flushed whether
-/// or not the handler is reached.
+/// Injects request context and metrics for use by handlers, and processes
+/// responses into more metrics.
 pub async fn telemetry_layer(mut req: Request, next: Next) -> Response {
     let request_id = Uuid::now_v7().to_string();
     let operation = classify_operation(req.method(), req.uri().path());
@@ -77,11 +76,14 @@ impl<S: Send + Sync> FromRequestParts<S> for HandlerMetricsGuard {
     }
 }
 
+/// Maps a request to its operation. Unmatched routes record as `Other` rather than folding into an
+/// existing operation, so a new endpoint shows up as unclassified until it is added here.
 fn classify_operation(method: &Method, path: &str) -> Operation {
-    match path {
-        "/echo" => Operation::Echo,
-        _ if method == Method::GET => Operation::GetItem,
-        _ => Operation::SetItem,
+    match (method, path) {
+        (&Method::POST, "/echo") => Operation::Echo,
+        (&Method::GET, p) if p.starts_with("/items/") => Operation::GetItem,
+        (&Method::PUT, p) if p.starts_with("/items/") => Operation::SetItem,
+        _ => Operation::Other,
     }
 }
 

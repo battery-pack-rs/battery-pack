@@ -27,6 +27,8 @@ pub enum Operation {
     GetItem,
     SetItem,
     Echo,
+    /// A request that matched no known route.
+    Other,
 }
 
 /// Why a request or downstream call failed.
