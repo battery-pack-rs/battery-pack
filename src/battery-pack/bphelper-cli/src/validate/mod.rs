@@ -373,9 +373,25 @@ fn write_crates_io_patches(project_dir: &Path, metadata: &cargo_metadata::Metada
     let cargo_dir = project_dir.join(".cargo");
     std::fs::create_dir_all(&cargo_dir)
         .with_context(|| format!("failed to create {}", cargo_dir.display()))?;
-    std::fs::write(cargo_dir.join("config.toml"), patches)
+    // A template may ship its own .cargo/config.toml (e.g. `[build] rustflags`). Append the
+    // patch table rather than overwriting it, so those settings survive validation.
+    let config_path = cargo_dir.join("config.toml");
+    let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
+    std::fs::write(&config_path, merge_patches_into_config(&existing, &patches))
         .context("failed to write .cargo/config.toml")?;
     Ok(())
+}
+
+/// Append a `[patch.crates-io]` block to an existing `.cargo/config.toml` body, preserving
+/// any tables (like `[build]`) the template already defined.
+fn merge_patches_into_config(existing: &str, patches: &str) -> String {
+    if existing.trim().is_empty() {
+        return patches.to_string();
+    }
+    let mut out = existing.trim_end().to_string();
+    out.push_str("\n\n");
+    out.push_str(patches);
+    out
 }
 
 /// Check whether a `cargo package` failure is caused by a workspace path
