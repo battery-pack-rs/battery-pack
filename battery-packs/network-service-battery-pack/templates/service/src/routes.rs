@@ -28,8 +28,8 @@ const RATE_LIMIT_PER_SECOND: u64 = 20;
 {% endif %}
 
 /// State information shared across routes.
-/// 
-/// All contents should be cheaply clonable (or wrap the whole thing in an Arc)
+///
+/// Fields must be cheaply clonable: axum clones this for every request.
 #[derive(Clone)]
 pub struct AppState {
     pub store: Store,

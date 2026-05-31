@@ -43,7 +43,8 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         }
     });
 
-    // Spawn our server loop to a task so we can race its graceful shutdown against a timeout.
+    // Run the server in a task so we hold its JoinHandle: that lets us trigger graceful shutdown
+    // and cap how long we wait for in-flight requests to drain before forcing exit.
     let (drain_tx, drain_rx) = tokio::sync::oneshot::channel::<()>();
     let server = {% if dial9 %}dial9::spawn{% else %}tokio::spawn{% endif %}(async move {
         axum::serve(listener, app)

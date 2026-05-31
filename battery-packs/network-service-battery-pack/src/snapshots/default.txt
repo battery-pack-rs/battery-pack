@@ -315,13 +315,11 @@ impl Store {
 /// Builds the shared client once. Reusing it keeps the connection pool and TLS sessions warm; the
 /// retry budget caps amplification at ~20% and retries idempotent GET/PUT 503s.
 fn build_client(downstream_url: &str) -> anyhow::Result<reqwest::Client> {
-    let host = downstream_url
-        .split("://")
-        .nth(1)
-        .and_then(|h| h.split('/').next())
-        .and_then(|h| h.split(':').next())
-        .unwrap_or(downstream_url)
-        .to_string();
+    // reqwest::Url handles ports, userinfo, and IPv6 literals that naive string splitting mangles.
+    let host = reqwest::Url::parse(downstream_url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string))
+        .unwrap_or_else(|| downstream_url.to_string());
     reqwest::Client::builder()
         .timeout(DOWNSTREAM_TIMEOUT)
         .pool_max_idle_per_host(16)
@@ -385,7 +383,8 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         }
     });
 
-    // Spawn our server loop to a task so we can race its graceful shutdown against a timeout.
+    // Run the server in a task so we hold its JoinHandle: that lets us trigger graceful shutdown
+    // and cap how long we wait for in-flight requests to drain before forcing exit.
     let (drain_tx, drain_rx) = tokio::sync::oneshot::channel::<()>();
     let server = dial9::spawn(async move {
         axum::serve(listener, app)
@@ -416,19 +415,17 @@ use test_service::telemetry;
 
 // from_env reads the DIAL9_* knobs documented at
 // https://docs.rs/dial9-tokio-telemetry/latest/dial9_tokio_telemetry/struct.Dial9Config.html#method.from_env
-// (and set in dial9.env). Heap profiling is the one knob it does not cover yet, installed below.
+// (and set in dial9.env).
 #[dial9::main(config = Dial9Config::from_env)]
 async fn main() -> std::process::ExitCode {
     let config = Config::parse();
     // In-flight logs and metrics are flushed when this guard drops, on exit.
     let _telemetry = telemetry::init_telemetry(&config);
-    // Heap profiling is not wired into from_env yet (dial9-rs/dial9#457), so install it here when
-    // DIAL9_MEMORY_PROFILE_ENABLED is set. Fold this into from_env once #457 lands (see TODO.md).
     let _memory_profiler = if std::env::var("DIAL9_MEMORY_PROFILE_ENABLED").as_deref() == Ok("true")
     {
         dial9::memory_profiling::MemoryProfiler::with_defaults()
             .install(dial9::telemetry::TelemetryHandle::current())
-            .inspect_err(|e| tracing::warn!("failed to install memory profiler: {e}"))
+            .inspect_err(|e| tracing::warn!("failed to install memory profiler: {e:#}"))
             .ok()
     } else {
         None
@@ -725,7 +722,7 @@ const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
 /// State information shared across routes.
 ///
-/// All contents should be cheaply clonable (or wrap the whole thing in an Arc)
+/// Fields must be cheaply clonable: axum clones this for every request.
 #[derive(Clone)]
 pub struct AppState {
     pub store: Store,
@@ -1073,8 +1070,8 @@ pub async fn drain_on_signal(
     let start = Instant::now();
     let _ = drain_tx.send(());
 
-    // Graceful shutdown waits for in-flight requests. A flood of slow requests
-    // can still out shutdown, so cap the wait and force exit if it elapses.
+    // Graceful shutdown waits for in-flight requests. A flood of slow requests can still
+    // outlast our shutdown window, so cap the wait and force exit if it elapses.
     let drained = tokio::time::timeout(SHUTDOWN_DRAIN_TIMEOUT, server)
         .await
         .is_ok();

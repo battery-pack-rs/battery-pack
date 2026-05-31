@@ -60,8 +60,8 @@ pub async fn drain_on_signal(
     let start = Instant::now();
     let _ = drain_tx.send(());
 
-    // Graceful shutdown waits for in-flight requests. A flood of slow requests
-    // can still out shutdown, so cap the wait and force exit if it elapses.
+    // Graceful shutdown waits for in-flight requests. A flood of slow requests can still
+    // outlast our shutdown window, so cap the wait and force exit if it elapses.
     let drained = tokio::time::timeout(SHUTDOWN_DRAIN_TIMEOUT, server).await.is_ok();
     if !drained {
         tracing::warn!(

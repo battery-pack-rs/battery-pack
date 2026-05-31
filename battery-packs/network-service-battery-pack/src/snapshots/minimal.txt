@@ -228,13 +228,11 @@ impl Store {
 /// Builds the shared client once. Reusing it keeps the connection pool and TLS sessions warm; the
 /// retry budget caps amplification at ~20% and retries idempotent GET/PUT 503s.
 fn build_client(downstream_url: &str) -> anyhow::Result<reqwest::Client> {
-    let host = downstream_url
-        .split("://")
-        .nth(1)
-        .and_then(|h| h.split('/').next())
-        .and_then(|h| h.split(':').next())
-        .unwrap_or(downstream_url)
-        .to_string();
+    // reqwest::Url handles ports, userinfo, and IPv6 literals that naive string splitting mangles.
+    let host = reqwest::Url::parse(downstream_url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string))
+        .unwrap_or_else(|| downstream_url.to_string());
     reqwest::Client::builder()
         .timeout(DOWNSTREAM_TIMEOUT)
         .pool_max_idle_per_host(16)
@@ -296,7 +294,8 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
         }
     });
 
-    // Spawn our server loop to a task so we can race its graceful shutdown against a timeout.
+    // Run the server in a task so we hold its JoinHandle: that lets us trigger graceful shutdown
+    // and cap how long we wait for in-flight requests to drain before forcing exit.
     let (drain_tx, drain_rx) = tokio::sync::oneshot::channel::<()>();
     let server = tokio::spawn(async move {
         axum::serve(listener, app)
@@ -613,7 +612,7 @@ use crate::middleware::{HandlerMetricsGuard, telemetry_middleware};
 
 /// State information shared across routes.
 ///
-/// All contents should be cheaply clonable (or wrap the whole thing in an Arc)
+/// Fields must be cheaply clonable: axum clones this for every request.
 #[derive(Clone)]
 pub struct AppState {
     pub store: Store,
@@ -942,8 +941,8 @@ pub async fn drain_on_signal(
     let start = Instant::now();
     let _ = drain_tx.send(());
 
-    // Graceful shutdown waits for in-flight requests. A flood of slow requests
-    // can still out shutdown, so cap the wait and force exit if it elapses.
+    // Graceful shutdown waits for in-flight requests. A flood of slow requests can still
+    // outlast our shutdown window, so cap the wait and force exit if it elapses.
     let drained = tokio::time::timeout(SHUTDOWN_DRAIN_TIMEOUT, server)
         .await
         .is_ok();

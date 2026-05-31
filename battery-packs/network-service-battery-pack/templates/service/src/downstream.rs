@@ -106,13 +106,11 @@ impl Store {
 /// Builds the shared client once. Reusing it keeps the connection pool and TLS sessions warm; the
 /// retry budget caps amplification at ~20% and retries idempotent GET/PUT 503s.
 fn build_client(downstream_url: &str) -> anyhow::Result<reqwest::Client> {
-    let host = downstream_url
-        .split("://")
-        .nth(1)
-        .and_then(|h| h.split('/').next())
-        .and_then(|h| h.split(':').next())
-        .unwrap_or(downstream_url)
-        .to_string();
+    // reqwest::Url handles ports, userinfo, and IPv6 literals that naive string splitting mangles.
+    let host = reqwest::Url::parse(downstream_url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string))
+        .unwrap_or_else(|| downstream_url.to_string());
     reqwest::Client::builder()
         .timeout(DOWNSTREAM_TIMEOUT)
         .pool_max_idle_per_host(16)
