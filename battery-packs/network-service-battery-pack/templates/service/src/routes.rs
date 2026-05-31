@@ -26,9 +26,9 @@ const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(16);
 {% endif %}
 {% if rate_limit %}
 /// Global ingress cap: one shared bucket allows bursts up to `RATE_LIMIT_BURST`, refilled at
-/// `RATE_LIMIT_PER_SECOND` per second. See the service-architecture skill to switch to per-client.
-const RATE_LIMIT_BURST: u32 = 50;
-const RATE_LIMIT_PER_SECOND: u64 = 20;
+/// `RATE_LIMIT_PER_SECOND` per second. See the service-architecture skill to switch to per-client limits.
+const RATE_LIMIT_BURST: u32 = 2000;
+const RATE_LIMIT_PER_SECOND: u64 = 1000;
 {% endif %}
 
 /// State information shared across routes.

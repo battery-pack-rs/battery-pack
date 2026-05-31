@@ -5,6 +5,7 @@
 
 use std::time::{Duration, SystemTime};
 
+use metrique::{Counter, CounterGuard};
 use metrique::Slot;
 use metrique::ServiceMetrics;
 use metrique::timers::{Stopwatch, Timer};
@@ -15,6 +16,10 @@ use metrique::writer::value::ToString;
 
 /// Re-exported so handlers can reach the guard alongside the metric types it writes into.
 pub use crate::middleware::HandlerMetricsGuard;
+
+/// Concurrent in-flight requests. The middleware increments it for each request's duration, so a
+/// record's `InFlight` shows the load the request was admitted under.
+pub static IN_FLIGHT: Counter = Counter::new(0);
 
 /// Properties attached to every emitted record.
 #[derive(Entry)]
@@ -69,6 +74,9 @@ pub struct HandlerMetrics {
 pub struct RequestMetrics {
     pub request_id: String,
     pub operation: Operation,
+    /// Live in-flight request count. The guard increments at init and decrements on drop, and
+    /// closes to the current count, so the record shows the load this request ran under.
+    pub in_flight: CounterGuard<'static>,
     /// Request path, recorded as a property (high-cardinality: it contains the key).
     pub path: String,
     /// The start time of the request (from when our router saw it)
@@ -98,6 +106,7 @@ impl RequestMetrics {
         RequestMetrics {
             request_id,
             operation,
+            in_flight: IN_FLIGHT.increment_scoped().0,
             path,
             timestamp: SystemTime::now(),
             duration: Timer::start_now(),
