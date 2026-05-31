@@ -40,7 +40,7 @@ Behind a load balancer the peer IP is the balancer, so key off a trusted forward
 
 ## Optional additions
 
-The `service` template deliberately leaves these out; they are workload-specific and easy to misuse. Add each with `cargo bp add network-service -F <feature>` (this pulls the network-service pack's curated dependency versions into your project), then wire it as below.
+The `service` template deliberately leaves these out (workload-specific, easy to misuse). Add each with `cargo bp add network-service -F <feature>`, then wire it as below.
 
 - **Read caching** (`cargo bp add network-service -F cache`, which adds `moka`): put its `future::Cache` in front of the HTTP forwarder backend. A cache changes the service's consistency contract; its failure mode is silent stale reads. Size the TTL against an explicit staleness budget.
 - **Load shedding** (`cargo bp add network-service -F load-shed`, which adds the tower layers): use `ConcurrencyLimitLayer` paired with `LoadShedLayer`, do not hand-roll a counter check. The pair caps concurrent requests and sheds the overflow with a 503; a bare concurrency limit without `LoadShedLayer` queues the overflow without bound. Use the always-on `IN_FLIGHT` metric only to size the cap from observed concurrency, not as the shedding mechanism. Place it inside the recorder so the 503 is counted, but outside the rate limit and timeout.
@@ -52,6 +52,7 @@ The `service` template deliberately leaves these out; they are workload-specific
 - Keep `DefaultBodyLimit` innermost so oversized bodies are rejected before buffering.
 - A new route needs a matching arm in `classify_operation` (`src/middleware.rs`) or it records as `Other`.
 - `/health` stays on the bypass router: no metrics, no rate limit.
+- Pull the pack's optional features with `cargo bp add network-service -F <feature>`, not a plain `cargo add`, so dependency versions stay the ones the pack pins.
 
 ## References
 
