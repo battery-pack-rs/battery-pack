@@ -10,6 +10,10 @@ use serde::{Deserialize, Serialize};
 use crate::config::Config;
 use crate::store::Store;
 use crate::middleware::{HandlerMetricsGuard, telemetry_middleware};
+use tower_http::request_id::{
+    MakeRequestUuid, PropagateRequestIdLayer, RequestId, SetRequestIdLayer,
+};
+use tower_http::trace::TraceLayer;
 {% if rate_limit %}
 use tower_governor::GovernorLayer;
 use tower_governor::governor::GovernorConfigBuilder;
@@ -23,6 +27,8 @@ const MAX_BODY_BYTES: usize = 1024 * 1024;
 /// its retry attempts (1 + `DOWNSTREAM_MAX_RETRIES`) so a downstream call can use its full budget
 /// within one request.
 const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(16);
+/// Bounds time spent reading the request body, rejecting a slow client before the full request budget.
+const REQUEST_BODY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 {% endif %}
 {% if rate_limit %}
 /// Global ingress cap: one shared bucket allows bursts up to `RATE_LIMIT_BURST`, refilled at
@@ -45,21 +51,13 @@ pub fn build_state(config: &Config) -> anyhow::Result<AppState> {
 }
 
 pub fn router(state: AppState) -> Router {
-    {% if rate_limit %}
-    let governor = GovernorConfigBuilder::default()
-        .key_extractor(GlobalKeyExtractor)
-        .per_second(RATE_LIMIT_PER_SECOND)
-        .burst_size(RATE_LIMIT_BURST)
-        .finish()
-        .expect("valid rate-limit config");
-    {% endif %}
-    // Instrumented routes carry the full middleware stack.
     let app = Router::new()
         .route("/items/{key}", get(get_item).put(set_item))
         .route("/echo", post(echo))
         // Reject oversized bodies with 413 before they are buffered into memory.
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         {% if tower_timeout %}
+        .layer(tower_http::timeout::RequestBodyTimeoutLayer::new(REQUEST_BODY_TIMEOUT))
         .layer(tower_http::timeout::TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
             REQUEST_TIMEOUT,
@@ -81,16 +79,44 @@ pub fn router(state: AppState) -> Router {
         )
         {% endif %}
         {% if tower_catch_panic %}
-        // turn panics into 500 responses
         .layer(tower_http::catch_panic::CatchPanicLayer::new())
         {% endif %}
         {% if rate_limit %}
-        // Applied inside telemetry_middleware so a rejected (429) request is still recorded as a metric.
-        .layer(GovernorLayer::new(governor))
+        // Inside telemetry_middleware so a rejected (429) request is still recorded as a metric.
+        .layer(GovernorLayer::new(
+            GovernorConfigBuilder::default()
+                .key_extractor(GlobalKeyExtractor)
+                .per_second(RATE_LIMIT_PER_SECOND)
+                .burst_size(RATE_LIMIT_BURST)
+                .finish()
+                .expect("valid rate-limit config"),
+        ))
         {% endif %}
-        // telemetry_middleware is applied last so it is the outermost layer and records the final status
-        // even when an inner layer (timeout, catch-panic) produced the response.
-        .layer(axum::middleware::from_fn(telemetry_middleware));
+        // Outermost recorder: captures the final status even when an inner layer produced it.
+        .layer(axum::middleware::from_fn(telemetry_middleware))
+        // The span carries the request id so handler logs correlate; metrics already cover latency.
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|req: &axum::extract::Request| {
+                    let request_id = req
+                        .extensions()
+                        .get::<RequestId>()
+                        .and_then(|id| id.header_value().to_str().ok())
+                        .unwrap_or_default();
+                    tracing::info_span!(
+                        "request",
+                        %request_id,
+                        method = %req.method(),
+                        path = %req.uri().path()
+                    )
+                })
+                .on_request(())
+                .on_response(())
+                .on_failure(()),
+        )
+        // Keep an incoming x-request-id or generate one, and echo it back on the response.
+        .layer(PropagateRequestIdLayer::x_request_id())
+        .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid));
 
     // /health bypasses the middleware stack
     Router::new()

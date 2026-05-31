@@ -21,7 +21,7 @@ default = "true"
 
 [placeholders.tower_timeout]
 type = "bool"
-prompt = "Apply a request timeout layer?"
+prompt = "Apply request and body timeout layers?"
 default = "true"
 
 [placeholders.tower_catch_panic]
@@ -31,7 +31,7 @@ default = "true"
 
 [placeholders.tower_on_early_drop]
 type = "bool"
-prompt = "Detect responses dropped before completion (client disconnects)?"
+prompt = "Detect responses dropped before completion (client disconnects or drops body)?"
 default = "true"
 
 [placeholders.rate_limit]

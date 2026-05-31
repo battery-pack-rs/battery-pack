@@ -11,7 +11,6 @@ serde = { bp-managed = true, features = ["derive"] }
 serde_json.bp-managed = true
 anyhow.bp-managed = true
 thiserror.bp-managed = true
-uuid = { bp-managed = true, features = ["v7"] }
 http.bp-managed = true
 clap = { bp-managed = true, features = ["derive", "env"] }
 
@@ -26,9 +25,7 @@ dial9-tokio-telemetry = { bp-managed = true, features = ["tracing-layer", "cpu-p
 
 axum.bp-managed = true
 tower.bp-managed = true
-{%- if tower_timeout or tower_catch_panic or tower_on_early_drop %}
-tower-http = { bp-managed = true, features = [{% if tower_timeout %}"timeout", {% endif %}{% if tower_catch_panic %}"catch-panic", {% endif %}{% if tower_on_early_drop %}"on-early-drop", {% endif %}] }
-{%- endif %}
+tower-http = { bp-managed = true, features = ["trace", "request-id"{% if tower_timeout %}, "timeout"{% endif %}{% if tower_catch_panic %}, "catch-panic"{% endif %}{% if tower_on_early_drop %}, "on-early-drop"{% endif %}] }
 {%- if rate_limit %}
 tower_governor = { bp-managed = true, default-features = false, features = ["axum"] }
 {%- endif %}

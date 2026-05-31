@@ -6,28 +6,31 @@ use axum::extract::{FromRequestParts, Request};
 use axum::middleware::Next;
 use axum::response::Response;
 use http::request::Parts;
-use http::{HeaderValue, Method, StatusCode};
+use http::{Method, StatusCode};
 use metrique::{OnParentDrop, SlotGuard};
-use tracing::Instrument;
-use uuid::Uuid;
+use tower_http::request_id::RequestId;
 
 use crate::metrics::{ErrorKind, HandlerMetrics, Operation, RequestMetrics};
 
-/// Injects request context and metrics for use by handlers, and processes
-/// responses into more metrics.
+/// Records a wide-event metric per request, and exposes a [`HandlerMetricsGuard`] slot for handlers.
+/// The request id and tracing span come from the tower-http layers wrapping this one.
 pub async fn telemetry_middleware(mut req: Request, next: Next) -> Response {
-    let request_id = Uuid::now_v7().to_string();
+    let request_id = req
+        .extensions()
+        .get::<RequestId>()
+        .and_then(|id| id.header_value().to_str().ok())
+        .unwrap_or_default()
+        .to_string();
     let operation = classify_operation(req.method(), req.uri().path());
-    let span = tracing::info_span!("request", %request_id);
     // path is captured now, before next.run consumes the request, so it survives a timeout.
     let mut metrics =
-        RequestMetrics::init(request_id.clone(), operation, req.uri().path().to_string());
+        RequestMetrics::init(request_id, operation, req.uri().path().to_string());
 
     let slot = metrics.handler.open(OnParentDrop::Discard).expect("slot opened more than once");
     req.extensions_mut()
         .insert(HandlerMetricsHandle(Arc::new(Mutex::new(Some(slot)))));
 
-    let mut response = next.run(req).instrument(span).await;
+    let response = next.run(req).await;
 
     let status = response.status();
     metrics.status_code = status.as_u16();
@@ -36,9 +39,6 @@ pub async fn telemetry_middleware(mut req: Request, next: Next) -> Response {
     // A 4xx is the client's fault, not ours, so only a 5xx counts against success.
     metrics.success = !status.is_server_error();
     metrics.error_kind = classify_error(status);
-    if let Ok(value) = HeaderValue::from_str(&request_id) {
-        response.headers_mut().insert("x-request-id", value);
-    }
     response
 }
 
