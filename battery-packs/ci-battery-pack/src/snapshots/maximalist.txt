@@ -724,9 +724,6 @@ path = "src/main.rs"
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/{ name }-v{ version }/{ name }-{ target }-v{ version }{ archive-suffix }"
-
-[package.metadata.battery-pack]
-ci-battery-pack = { features = ["benchmarks", "fuzzing", "xtask"] }
 ── README.md ──
 # test-project
 
@@ -750,6 +747,12 @@ at your option.
 
 [files]
 extend-exclude = ["*.lock"]
+── battery-pack.toml ──
+version = 1
+
+[[battery-pack]]
+name = "ci"
+features = ["benchmarks", "fuzzing", "xtask"]
 ── benches/example_bench.rs ──
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
@@ -816,8 +819,8 @@ edition = "2024"
 cargo-fuzz = true
 
 [dependencies]
-libfuzzer-sys = "0.4"
-arbitrary = { version = "1", features = ["derive"] }
+libfuzzer-sys.bp-managed = true
+arbitrary.bp-managed = true
 test-project = { path = ".." }
 
 [workspace]
@@ -827,9 +830,6 @@ members = ["."]
 name = "fuzz_example"
 path = "fuzz_targets/fuzz_example.rs"
 doc = false
-
-[package.metadata.battery-pack]
-ci-battery-pack = { features = ["fuzzing"] }
 ── fuzz/fuzz_targets/fuzz_example.rs ──
 #![no_main]
 use arbitrary::Arbitrary;
@@ -887,11 +887,8 @@ edition = "2024"
 publish = false
 
 [dependencies]
-xshell = "0.2"
-xflags = "0.3"
-
-[package.metadata.battery-pack]
-ci-battery-pack = { features = ["xtask"] }
+xshell.bp-managed = true
+xflags.bp-managed = true
 ── xtask/src/main.rs ──
 use std::path::{Path, PathBuf};
 use xshell::{Shell, cmd};

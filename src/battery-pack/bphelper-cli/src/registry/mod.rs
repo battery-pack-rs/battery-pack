@@ -282,17 +282,15 @@ fn active_packs_from_state(state: &str) -> Vec<(String, std::collections::BTreeS
                 .iter()
                 .filter_map(|entry| {
                     let name = entry.get("name")?.as_str()?.to_string();
-                    let features = entry
-                        .get("features")
-                        .and_then(|f| f.as_array())
-                        .map(|values| {
-                            values
-                                .iter()
-                                .filter_map(|v| v.as_str().map(str::to_string))
-                                .collect::<std::collections::BTreeSet<_>>()
-                        })
-                        .filter(|f| !f.is_empty())
-                        .unwrap_or_else(|| std::collections::BTreeSet::from(["default".to_string()]));
+                    // A present features array is used as-is (empty means base deps only, matching
+                    // the metadata path); a missing key means the implicit default feature.
+                    let features = match entry.get("features").and_then(|f| f.as_array()) {
+                        Some(values) => values
+                            .iter()
+                            .filter_map(|v| v.as_str().map(str::to_string))
+                            .collect::<std::collections::BTreeSet<_>>(),
+                        None => std::collections::BTreeSet::from(["default".to_string()]),
+                    };
                     Some((name, features))
                 })
                 .collect()
@@ -351,8 +349,11 @@ pub fn resolve_bp_managed_content(
             .and_then(|bp| bp.as_table())
             .map(|table| {
                 table
-                    .keys()
-                    .map(|name| {
+                    .iter()
+                    // Pack entries are tables (`pack = { features = [...] }`); skip other keys
+                    // such as `hidden` (an array of dependency names).
+                    .filter(|(_, value)| value.is_table())
+                    .map(|(name, _)| {
                         let features =
                             crate::manifest::read_features_at(&raw, &["package", "metadata"], name);
                         (name.clone(), features)
@@ -377,9 +378,15 @@ pub fn resolve_bp_managed_content(
         {
             s.clone()
         } else {
-            // Battery pack not in local workspace; fetch from crates.io.
-            let (_version, s) = fetch_bp_spec_from_registry(bp_name).with_context(|| {
-                format!("battery pack '{bp_name}' not found locally or on crates.io")
+            // Not local; fetch from crates.io. State entries use the short name, so restore the
+            // full `*-battery-pack` crate name for the registry lookup.
+            let full_name = if bp_name == "battery-pack" || bp_name.ends_with("-battery-pack") {
+                bp_name.clone()
+            } else {
+                format!("{bp_name}-battery-pack")
+            };
+            let (_version, s) = fetch_bp_spec_from_registry(&full_name).with_context(|| {
+                format!("battery pack '{full_name}' not found locally or on crates.io")
             })?;
             s
         };

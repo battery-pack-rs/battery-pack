@@ -81,7 +81,6 @@ fn with_template_two_level_generation() {
     let inner_cargo =
         std::fs::read_to_string(bp_dir.join("templates/default/_Cargo.toml")).unwrap();
     assert!(inner_cargo.contains("{{ project_name }}"));
-    assert!(inner_cargo.contains("http-battery-pack"));
     assert_data_eq!(
         inner_cargo,
         str![[r#"
@@ -97,10 +96,13 @@ license = "MIT OR Apache-2.0"
 # versions managed by your battery pack:
 # clap.bp-managed = true
 
-[package.metadata.battery-pack]
-http-battery-pack = { features = ["default"] }
 "#]]
     );
+
+    // The pack name now lives in the inner battery-pack.toml, not Cargo.toml metadata.
+    let inner_state =
+        std::fs::read_to_string(bp_dir.join("templates/default/battery-pack.toml")).unwrap();
+    assert!(inner_state.contains("http-battery-pack"));
 
     // Step 2: patch deps so validate can resolve against local workspace
     write_patches(&bp_dir);

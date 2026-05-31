@@ -1,0 +1,5 @@
+version = 1
+
+[[battery-pack]]
+name = "{{ project_name }}"
+features = ["default"]

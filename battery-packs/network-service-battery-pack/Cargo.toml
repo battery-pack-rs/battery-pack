@@ -14,8 +14,6 @@ hidden = ["battery-pack", "snapbox"]
 service = { path = "templates/service", description = "Resilient request-response service (axum or hyper) with observability, graceful shutdown, and a Redis or HTTP downstream" }
 
 [dependencies]
-battery-pack = { workspace = true }
-
 # Core observability; always on.
 metrique = { version = "0.1", features = ["json"] }
 metrique-util = { version = "0.1", features = ["tokio-metrics-bridge"] }
