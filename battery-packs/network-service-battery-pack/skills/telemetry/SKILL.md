@@ -28,15 +28,15 @@ For native AWS (Lambda or Fargate to CloudWatch), swap the metric formatter in `
 
 ## dial9 (the `dial9` feature)
 
-dial9 is an always-on Tokio profiler: poll timing, wake events, CPU and (optionally) heap samples recorded to disk for offline analysis. It is off unless you build with the `dial9` feature, and even then does nothing until enabled at runtime.
+dial9 is off unless you build with the `dial9` feature, and even then does nothing until enabled at runtime.
 
 - **Build flags:** the `dial9` feature adds `--cfg tokio_unstable` (runtime hooks) and `-C force-frame-pointers=yes` (stack symbolization) to `.cargo/config.toml`. Stripping them while dial9 is enabled breaks the build.
 - **Tracing filter:** the `Dial9TokioLayer` carries a `Targets` filter (this crate at TRACE, everything else at ERROR). Without aggressive filtering, SDK spans can flood the trace at over 100k events/s.
 - **Runtime config:** dial9 reads `DIAL9_*` env vars (`Dial9Config::from_env`). The generated `dial9.env` sets the common ones (`DIAL9_ENABLED=true`, `DIAL9_TRACE_DIR`, `DIAL9_CPU_PROFILE_ENABLED`, `DIAL9_MEMORY_PROFILE_ENABLED`); `source dial9.env` before running.
-- **CPU and schedule profiling (Linux)** need `kernel.perf_event_paranoid <= 1` (`sudo sysctl kernel.perf_event_paranoid=1`), and `kernel.kptr_restrict=0` to symbolize kernel frames.
+- **CPU and schedule profiling (Linux)** need relaxed perf permissions (`kernel.perf_event_paranoid`); see dial9's docs for the exact sysctls.
 - **Task dumps** (`DIAL9_TASK_DUMP_ENABLED`) capture an async backtrace of what each idle task is awaiting, useful for hangs. The `taskdump` feature compiles only on Linux (aarch64/x86/x86_64) and is a hard compile error elsewhere; it also adds an extra wake per capture, so measure before enabling on a hot path.
 
-dial9 ships its own agent skills and a trace viewer that cover setup and analysis in depth, so this skill does not re-explain trace reading. Install the CLI with `cargo install --locked dial9`, browse traces with `dial9 serve --local-dir <dir>`, and run `dial9 agents` to get its analysis skills and toolkit (with Symposium, `cargo agents sync` auto-installs them).
+dial9 ships its own agent skills and a trace viewer that cover setup and analysis in depth, so this skill does not re-explain trace reading. Install the CLI (`cargo install --locked dial9`): `dial9 serve` opens the trace viewer and `dial9 agents` provides its analysis skills (with Symposium, `cargo agents sync` auto-installs them).
 
 ## Invariants
 

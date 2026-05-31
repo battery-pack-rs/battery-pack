@@ -9,7 +9,7 @@ How a request flows through this service, why the middleware stack is ordered th
 
 ## Why axum, and when to drop to hyper
 
-The scaffold ships axum because its extractors and `Router` make handlers and middleware cheap to write and read. The cost is a small per-request overhead: axum clones state and runs extractors. Drop to raw hyper (via `hyper-util`) only when you need control axum hides: custom connection lifecycle, protocol upgrades, or shaving the last allocation off a hot path. See the hyper-util examples rather than scaffolding a hyper variant here.
+The scaffold uses axum: its extractors and `Router` make handlers and middleware cheap to write, at a small per-request cost (a state clone and extractor runs). Drop to raw hyper (the `hyper-util` examples) only when you need what axum hides: custom connection lifecycle, protocol upgrades, or the last allocation off a hot path.
 
 ## The layer stack (read this before reordering it)
 

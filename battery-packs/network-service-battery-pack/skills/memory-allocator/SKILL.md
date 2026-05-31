@@ -13,7 +13,7 @@ The `allocator` choice at generation time sets the `#[global_allocator]` in `src
 - **mimalloc**: newer and smaller, with very fast small-allocation paths and a typically lower memory footprint, but far fewer tuning knobs and less of a track record under sustained server load. A strong pick for allocation-heavy workloads or a Windows-MSVC target.
 - **system**: the platform allocator (glibc on Linux). No extra dependency and the simplest build, but glibc's per-thread arenas can grow RSS under heavy multi-threaded churn. Use it for low-concurrency services, when you want zero added dependencies, or as a baseline when isolating an allocator-sensitive bug.
 
-Measure before switching: the best choice is workload-dependent, throughput, memory footprint, and tail latency trade against each other, and jemalloc is a safe default for a multi-threaded service.
+jemalloc is the default; switch only after measuring your workload.
 
 ## Heap profiling with dial9
 
