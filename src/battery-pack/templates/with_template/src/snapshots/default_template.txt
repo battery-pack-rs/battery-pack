@@ -11,8 +11,12 @@ license = "MIT OR Apache-2.0"
 # versions managed by your battery pack:
 # clap.bp-managed = true
 
-[package.metadata.battery-pack]
-{{ project_name }} = { features = ["default"] }
+── battery-pack.toml ──
+version = 1
+
+[[battery-pack]]
+name = "{{ project_name }}"
+features = ["default"]
 
 ── src/main.rs ──
 fn main() {
