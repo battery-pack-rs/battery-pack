@@ -63,6 +63,18 @@ pub struct ShowReport {
 
     /// Available examples.
     pub examples: Vec<ExampleInfo>,
+
+    /// Crates from this pack that are currently installed in the user's
+    /// project. Empty when not run inside a project or when the pack
+    /// isn't installed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub installed_crates: Vec<String>,
+
+    /// Features from this pack that are currently active in the user's
+    /// project. Empty when not run inside a project or when the pack
+    /// isn't installed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub active_features: Vec<String>,
 }
 
 /// Information about a battery pack owner/author.
@@ -133,6 +145,8 @@ impl ShowReport {
             features: Vec::new(),
             templates: Vec::new(),
             examples: Vec::new(),
+            installed_crates: Vec::new(),
+            active_features: Vec::new(),
         }
     }
 
@@ -215,6 +229,28 @@ impl ShowReport {
     /// Extend with multiple examples.
     pub fn with_examples(mut self, examples: impl IntoIterator<Item = ExampleInfo>) -> Self {
         self.examples.extend(examples);
+        self
+    }
+
+    /// Set the crates from this pack that are currently installed.
+    pub fn with_installed_crates<I, S>(mut self, crates: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.installed_crates
+            .extend(crates.into_iter().map(Into::into));
+        self
+    }
+
+    /// Set the features from this pack that are currently active.
+    pub fn with_active_features<I, S>(mut self, features: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.active_features
+            .extend(features.into_iter().map(Into::into));
         self
     }
 }
