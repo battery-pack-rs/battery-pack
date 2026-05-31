@@ -48,6 +48,9 @@ PHASE 2, layer on production features as follow-ups, using the service-architect
 
 When finished, make sure no server process you started is still running."
 
+# Renders text, thinking, bash commands ($ cmd), and other tool calls ([Name]) in order.
+FILTER='select(.type == "assistant") | .message.content[]? | if .type == "thinking" then "<thinking>\n\(.thinking)\n</thinking>" elif .type == "text" then (.text // empty) elif .type == "tool_use" then (if .name == "Bash" then "$ \(.input.command)" elif .name == "Skill" then "[skill: \(.input.skill)]" else "[\(.name)]" end) else empty end'
+
 echo ""
 echo "Running benchmark (streaming below)..."
 echo "Target: $TARGET"
@@ -60,18 +63,17 @@ EXTRA_FLAGS=""
 [[ -n "$MODEL" ]] && EXTRA_FLAGS="$EXTRA_FLAGS --model $MODEL"
 [[ -n "$AGENT" ]] && EXTRA_FLAGS="$EXTRA_FLAGS --agent $AGENT"
 
-# Stream live to the terminal while capturing the raw event stream.
+# Stream live to the terminal (text, thinking, and commands) while capturing the raw stream.
 cd "$TARGET"
 echo "$PROMPT" | claude -p --verbose --output-format stream-json \
     --allowed-tools "Read,Glob,Grep,Skill,Edit,Write,Bash" \
     $EXTRA_FLAGS \
     | tee "$LOG.raw" \
-    | jq -r --unbuffered 'select(.type == "assistant") | .message.content[]? | select(.type == "text" or .type == "thinking") | if .type == "thinking" then "<thinking>\n\(.thinking)\n</thinking>" else .text // empty end'
+    | jq -r --unbuffered "$FILTER"
 
 DURATION=$(($(date +%s) - START_TIME))
 
 # Assemble one self-contained, gist-ready report: summaries up top, raw stream at the bottom.
-transcript() { jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "text" or .type == "thinking") | if .type == "thinking" then "<thinking>\n\(.thinking)\n</thinking>" else .text // empty end' "$LOG.raw"; }
 result_line() { jq -r 'select(.type == "result") | "Turns: \(.num_turns // "?")  Cost: $\(.total_cost_usd // "?")"' "$LOG.raw" 2>/dev/null | head -1; }
 
 {
@@ -100,7 +102,7 @@ result_line() { jq -r 'select(.type == "result") | "Turns: \(.num_turns // "?") 
     echo
     echo "## Transcript"
     echo
-    transcript
+    jq -r "$FILTER" "$LOG.raw"
     echo
     echo "---"
     echo
