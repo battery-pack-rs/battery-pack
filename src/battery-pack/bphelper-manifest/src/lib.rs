@@ -2599,7 +2599,10 @@ tokio = { version = "1", optional = true }
         "#;
         let spec = parse_battery_pack(manifest).unwrap();
         let resolved = spec.resolve_crates(&["cli"]);
-        assert!(resolved.contains_key("clap"), "feature-gated dep is present");
+        assert!(
+            resolved.contains_key("clap"),
+            "feature-gated dep is present"
+        );
         // Non-optional normal deps are unconditional in Cargo, so they must be present
         // even when explicit features are active.
         assert!(

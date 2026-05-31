@@ -1,4 +1,4 @@
-{%- if server_framework == "axum" %}
+{% if server_framework == "axum" %}
 //! Request-metrics middleware and the guard a handler uses to record its own metrics.
 
 use std::sync::{Arc, Mutex};
@@ -96,4 +96,4 @@ fn classify_error(status: StatusCode) -> Option<ErrorKind> {
     })
 }
 
-{%- endif %}
+{% endif %}

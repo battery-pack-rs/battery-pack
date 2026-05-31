@@ -102,13 +102,13 @@ dial9 serve --local-dir /tmp/dial9-traces
 ```
 
 ── benches/service.rs ──
-
 //! Benchmarks the router end to end via `tower::oneshot`, without binding a socket.
 
 use axum::body::Body;
 use criterion::{Criterion, criterion_group, criterion_main};
 use http::Request;
 use tower::ServiceExt;
+
 use test_service::downstream::Store;
 use test_service::routes::{self, AppState};
 
@@ -139,6 +139,7 @@ fn health(c: &mut Criterion) {
 
 criterion_group!(benches, health);
 criterion_main!(benches);
+
 
 ── src/config.rs ──
 //! Configuration from CLI args and environment variables.
@@ -180,8 +181,8 @@ pub struct Config {
     pub downstream_timeout: Duration,
 }
 
-── src/downstream.rs ──
 
+── src/downstream.rs ──
 //! Client for the downstream HTTP service: timeouts, reqwest's native retry budget, and a circuit breaker.
 
 use std::time::Duration;
@@ -207,6 +208,7 @@ impl StoreError {
         }
     }
 }
+
 /// Breaker policy: open after 5 consecutive failures, then probe on an exponential backoff.
 type Breaker = failsafe::StateMachine<
     failsafe::failure_policy::ConsecutiveFailures<failsafe::backoff::Exponential>,
@@ -274,13 +276,10 @@ impl Store {
             }
             Ok(Some(resp.error_for_status()?.text().await?))
         };
-        self.breaker
-            .call(call)
-            .await
-            .map_err(|e| match e {
-                failsafe::Error::Inner(e) => StoreError::Request(e),
-                failsafe::Error::Rejected => StoreError::CircuitOpen,
-            })
+        self.breaker.call(call).await.map_err(|e| match e {
+            failsafe::Error::Inner(e) => StoreError::Request(e),
+            failsafe::Error::Rejected => StoreError::CircuitOpen,
+        })
     }
 
     pub async fn set(&self, key: &str, value: &str) -> Result<(), StoreError> {
@@ -294,6 +293,7 @@ impl Store {
     }
 }
 
+
 ── src/lib.rs ──
 //! Library surface: the service modules plus [`run`], the server orchestration. Tests and
 //! benchmarks exercise [`routes::router`] directly; the binary supplies the process-global setup.
@@ -305,6 +305,7 @@ pub mod middleware;
 pub mod routes;
 pub mod shutdown;
 pub mod telemetry;
+
 use dial9_tokio_telemetry as dial9;
 
 use anyhow::Context;
@@ -336,13 +337,13 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     Ok(())
 }
 
+
 ── src/main.rs ──
 // jemalloc reduces fragmentation and allocator contention under the multi-threaded
 // runtime. It does not build under MSVC.
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
 static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
-
 use clap::Parser;
 
 use test_service::config::Config;
@@ -369,6 +370,7 @@ async fn main() -> std::process::ExitCode {
     std::process::ExitCode::from(code)
 }
 
+
 ── src/metrics.rs ──
 //! Wide-event metrics for the service.
 //!
@@ -377,8 +379,8 @@ async fn main() -> std::process::ExitCode {
 
 use std::time::{Duration, SystemTime};
 
-use metrique::Slot;
 use metrique::ServiceMetrics;
+use metrique::Slot;
 use metrique::timers::Timer;
 use metrique::unit::{Byte, Millisecond};
 use metrique::unit_of_work::metrics;
@@ -499,8 +501,8 @@ pub fn record_process_exit(exit_code: u8) {
     .append_on_drop(ServiceMetrics::sink_or_discard());
 }
 
-── src/middleware.rs ──
 
+── src/middleware.rs ──
 //! Request-metrics middleware and the guard a handler uses to record its own metrics.
 
 use std::sync::{Arc, Mutex};
@@ -525,7 +527,10 @@ pub async fn telemetry_layer(mut req: Request, next: Next) -> Response {
     let span = tracing::info_span!("request", %request_id);
     let mut metrics = RequestMetrics::open(request_id.clone(), operation);
 
-    let slot = metrics.handler.open(OnParentDrop::Discard).expect("slot opened once");
+    let slot = metrics
+        .handler
+        .open(OnParentDrop::Discard)
+        .expect("slot opened once");
     req.extensions_mut()
         .insert(HandlerMetricsHandle(Arc::new(Mutex::new(Some(slot)))));
 
@@ -598,18 +603,18 @@ fn classify_error(status: StatusCode) -> Option<ErrorKind> {
     })
 }
 
-── src/routes.rs ──
 
+── src/routes.rs ──
 //! Axum router, application state, and request handlers.
 
 use std::time::Duration;
 
+use anyhow::Context;
 use axum::Router;
 use axum::extract::{Path, State};
 use axum::routing::get;
 use http::StatusCode;
 use metrique::timers::Timer;
-use anyhow::Context;
 
 use crate::config::Config;
 use crate::downstream::Store;
@@ -619,6 +624,7 @@ use crate::middleware::{HandlerMetricsGuard, telemetry_layer};
 pub struct AppState {
     pub store: Store,
 }
+
 pub async fn build_state(config: &Config) -> anyhow::Result<AppState> {
     let store = Store::connect(&config.downstream_url, config.downstream_timeout)
         .context("build downstream client")?;
@@ -633,32 +639,32 @@ pub fn router(state: AppState) -> Router {
 
     // `record_metrics` is applied last so it is the outermost layer and records the final
     // status even when an inner layer (timeout, catch-panic) produced the response.
-    app
-        .layer(tower_http::timeout::TimeoutLayer::with_status_code(
-            StatusCode::REQUEST_TIMEOUT,
-            Duration::from_secs(15),
-        ))
-        .layer(
-            tower_http::on_early_drop::OnEarlyDropLayer::builder()
-                .on_future_drop(|_req: &axum::extract::Request| {
-                    || tracing::warn!("response future dropped before completion")
-                })
-                .on_body_drop(tower_http::on_early_drop::OnBodyDropFn::new(
-                    |_req: &axum::extract::Request| {
-                        |_parts: &http::response::Parts| {
-                            || tracing::warn!("response body dropped before completion")
-                        }
-                    },
-                )),
-        )
-        // turn panics into 500s
-        .layer(tower_http::catch_panic::CatchPanicLayer::new())
-        .layer(axum::middleware::from_fn(telemetry_layer))
+    app.layer(tower_http::timeout::TimeoutLayer::with_status_code(
+        StatusCode::REQUEST_TIMEOUT,
+        Duration::from_secs(15),
+    ))
+    .layer(
+        tower_http::on_early_drop::OnEarlyDropLayer::builder()
+            .on_future_drop(|_req: &axum::extract::Request| {
+                || tracing::warn!("response future dropped before completion")
+            })
+            .on_body_drop(tower_http::on_early_drop::OnBodyDropFn::new(
+                |_req: &axum::extract::Request| {
+                    |_parts: &http::response::Parts| {
+                        || tracing::warn!("response body dropped before completion")
+                    }
+                },
+            )),
+    )
+    // turn panics into 500s
+    .layer(tower_http::catch_panic::CatchPanicLayer::new())
+    .layer(axum::middleware::from_fn(telemetry_layer))
 }
 
 async fn health() -> &'static str {
     "ok"
 }
+
 #[tracing::instrument(skip(state, metrics), fields(key = %key))]
 async fn get_item(
     State(state): State<AppState>,
@@ -717,11 +723,13 @@ mod tests {
     use super::*;
     use axum::body::{Body, to_bytes};
     use http::Request;
-    use tower::ServiceExt;
     use httpmock::prelude::*;
+    use tower::ServiceExt;
+
     fn test_state() -> AppState {
         AppState {
-            store: Store::connect("http://127.0.0.1:0", Duration::from_millis(1000)).expect("client"),
+            store: Store::connect("http://127.0.0.1:0", Duration::from_millis(1000))
+                .expect("client"),
         }
     }
 
@@ -737,7 +745,10 @@ mod tests {
     /// Installs a thread-local test sink, drives one request, and returns the single emitted
     /// metric entry. `#[tokio::test]` runs on a current-thread runtime, so the thread-local sink
     /// set here is the one the middleware records into.
-    async fn capture_metric(app: axum::Router, req: Request<Body>) -> metrique::test_util::TestEntry {
+    async fn capture_metric(
+        app: axum::Router,
+        req: Request<Body>,
+    ) -> metrique::test_util::TestEntry {
         let metrique::test_util::TestEntrySink { inspector, sink } =
             metrique::test_util::test_entry_sink();
         let _guard = metrique::ServiceMetrics::set_test_sink(sink);
@@ -758,6 +769,7 @@ mod tests {
         assert!(m.metrics["Success"].as_bool());
         assert_eq!(m.metrics["StatusCode"].as_u64(), 200);
     }
+
     #[tracing_test::traced_test]
     #[tokio::test]
     async fn get_item_is_instrumented() {
@@ -768,6 +780,7 @@ mod tests {
             .unwrap();
         assert!(logs_contain("get_item"));
     }
+
     #[tokio::test]
     async fn get_found() {
         let server = MockServer::start_async().await;
@@ -777,7 +790,8 @@ mod tests {
                 then.status(200).body("v");
             })
             .await;
-        let store = Store::connect(&server.base_url(), Duration::from_millis(1000)).expect("client");
+        let store =
+            Store::connect(&server.base_url(), Duration::from_millis(1000)).expect("client");
 
         let got = router(AppState { store })
             .oneshot(Request::get("/items/k").body(Body::empty()).unwrap())
@@ -798,7 +812,8 @@ mod tests {
                 then.status(404);
             })
             .await;
-        let store = Store::connect(&server.base_url(), Duration::from_millis(1000)).expect("client");
+        let store =
+            Store::connect(&server.base_url(), Duration::from_millis(1000)).expect("client");
 
         let got = router(AppState { store })
             .oneshot(Request::get("/items/missing").body(Body::empty()).unwrap())
@@ -816,7 +831,8 @@ mod tests {
                 then.status(200).body("vv");
             })
             .await;
-        let store = Store::connect(&server.base_url(), Duration::from_millis(1000)).expect("client");
+        let store =
+            Store::connect(&server.base_url(), Duration::from_millis(1000)).expect("client");
         let m = capture_metric(
             router(AppState { store }),
             Request::get("/items/k").body(Body::empty()).unwrap(),
@@ -835,7 +851,8 @@ mod tests {
                 then.status(500);
             })
             .await;
-        let store = Store::connect(&server.base_url(), Duration::from_millis(1000)).expect("client");
+        let store =
+            Store::connect(&server.base_url(), Duration::from_millis(1000)).expect("client");
         let m = capture_metric(
             router(AppState { store }),
             Request::get("/items/boom").body(Body::empty()).unwrap(),
@@ -847,6 +864,7 @@ mod tests {
         assert!(!m.metrics["DownstreamSuccess"].as_bool());
     }
 }
+
 
 ── src/shutdown.rs ──
 //! Graceful shutdown signal, shared across service types.
@@ -912,10 +930,14 @@ pub async fn drain_on_signal(
     // can still out shutdown, so cap the wait and force exit if it elapses.
     let drained = tokio::time::timeout(timeout, server).await.is_ok();
     if !drained {
-        tracing::warn!(timeout_secs = timeout.as_secs(), "drain timed out, forcing shutdown");
+        tracing::warn!(
+            timeout_secs = timeout.as_secs(),
+            "drain timed out, forcing shutdown"
+        );
     }
     crate::metrics::record_shutdown(reason.as_str(), drained, start.elapsed());
 }
+
 
 ── src/telemetry.rs ──
 //! Tracing and metrics initialization.
@@ -976,8 +998,8 @@ fn init_metrics(service_name: &str) -> AttachHandle {
     handle
 }
 
-── tests/e2e.rs ──
 
+── tests/e2e.rs ──
 //! Integration tests against a real downstream. Fast, mock-backed tests live as unit tests
 //! in `src/routes.rs`; these exercise an actual dependency.
 
@@ -987,6 +1009,7 @@ use tower::ServiceExt;
 
 use test_service::downstream::Store;
 use test_service::routes::{self, AppState};
+
 #[tokio::test]
 async fn http_downstream_round_trip() {
     // Set DOWNSTREAM_URL to a running service that serves GET/PUT on `/<key>`.
@@ -1016,4 +1039,5 @@ async fn round_trip(store: Store) {
     let body = to_bytes(got.into_body(), usize::MAX).await.unwrap();
     assert_eq!(&body[..], b"v");
 }
+
 

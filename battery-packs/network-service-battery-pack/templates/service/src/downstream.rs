@@ -1,4 +1,4 @@
-{%- if downstream == "redis" %}
+{% if downstream == "redis" %}
 //! Key/value store backed by Redis, with an in-memory fallback for tests and local runs.
 
 use std::collections::HashMap;
@@ -60,7 +60,7 @@ impl Store {
         }
     }
 }
-{%- elif downstream == "http-service" %}
+{% elif downstream == "http-service" %}
 //! Client for the downstream HTTP service: timeouts, reqwest's native retry budget{% if circuit_breaker %}, and a circuit breaker{% endif %}.
 
 use std::time::Duration;
@@ -74,10 +74,10 @@ use crate::metrics::ErrorKind;
 pub enum StoreError {
     #[error("downstream request failed")]
     Request(#[from] reqwest::Error),
-    {%- if circuit_breaker %}
+    {% if circuit_breaker %}
     #[error("circuit breaker is open")]
     CircuitOpen,
-    {%- endif %}
+    {% endif %}
 }
 
 impl StoreError {
@@ -89,21 +89,21 @@ impl StoreError {
     }
 }
 
-{%- if circuit_breaker %}
+{% if circuit_breaker %}
 /// Breaker policy: open after 5 consecutive failures, then probe on an exponential backoff.
 type Breaker = failsafe::StateMachine<
     failsafe::failure_policy::ConsecutiveFailures<failsafe::backoff::Exponential>,
     (),
 >;
-{%- endif %}
+{% endif %}
 
 #[derive(Clone)]
 pub struct Store {
     client: reqwest::Client,
     base_url: std::sync::Arc<str>,
-    {%- if circuit_breaker %}
+    {% if circuit_breaker %}
     breaker: std::sync::Arc<Breaker>,
-    {%- endif %}
+    {% endif %}
 }
 
 impl Store {
@@ -133,7 +133,7 @@ impl Store {
         Ok(Store {
             client,
             base_url: base_url.into(),
-            {%- if circuit_breaker %}
+            {% if circuit_breaker %}
             breaker: std::sync::Arc::new(
                 failsafe::Config::new()
                     .failure_policy(failsafe::failure_policy::consecutive_failures(
@@ -145,12 +145,12 @@ impl Store {
                     ))
                     .build(),
             ),
-            {%- endif %}
+            {% endif %}
         })
     }
 
     pub async fn get(&self, key: &str) -> Result<Option<String>, StoreError> {
-        {%- if circuit_breaker %}
+        {% if circuit_breaker %}
         use failsafe::futures::CircuitBreaker;
         let call = async {
             let resp = self
@@ -170,7 +170,7 @@ impl Store {
                 failsafe::Error::Inner(e) => StoreError::Request(e),
                 failsafe::Error::Rejected => StoreError::CircuitOpen,
             })
-        {%- else %}
+        {% else %}
         let resp = self
             .client
             .get(format!("{}/{key}", self.base_url))
@@ -180,7 +180,7 @@ impl Store {
             return Ok(None);
         }
         Ok(Some(resp.error_for_status()?.text().await?))
-        {%- endif %}
+        {% endif %}
     }
 
     pub async fn set(&self, key: &str, value: &str) -> Result<(), StoreError> {
@@ -193,4 +193,4 @@ impl Store {
         Ok(())
     }
 }
-{%- endif %}
+{% endif %}

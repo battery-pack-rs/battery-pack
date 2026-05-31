@@ -283,17 +283,23 @@ fn build_and_test_template(
 
     write_crates_io_patches(&project_dir, metadata)?;
 
-    // Failure details (assertions, panics) go to stdout, not stderr.
-    for cmd in ["check", "test"] {
+    // Failure details (assertions, panics) go to stdout, not stderr. `fmt --check` keeps generated
+    // output rustfmt-clean so a freshly scaffolded project does not greet the user with a diff.
+    for args in [
+        ["check"].as_slice(),
+        ["test"].as_slice(),
+        ["fmt", "--check"].as_slice(),
+    ] {
         let output = std::process::Command::new("cargo")
-            .arg(cmd)
+            .args(args)
             .env("CARGO_TARGET_DIR", shared_target_dir)
             .current_dir(&project_dir)
             .output()
-            .with_context(|| format!("failed to run cargo {cmd}"))?;
+            .with_context(|| format!("failed to run cargo {}", args.join(" ")))?;
         anyhow::ensure!(
             output.status.success(),
-            "cargo {cmd} failed for template '{label}':\n{}\n{}",
+            "cargo {} failed for template '{label}':\n{}\n{}",
+            args.join(" "),
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );

@@ -292,7 +292,10 @@ fn merge_patches_preserves_existing_config() {
     let patches = "[patch.crates-io]\nfoo = { path = \"/x\" }\n";
     let merged = super::merge_patches_into_config(existing, patches);
     // Both tables survive and the result is valid TOML.
-    assert!(merged.contains("tokio_unstable"), "existing build flags kept");
+    assert!(
+        merged.contains("tokio_unstable"),
+        "existing build flags kept"
+    );
     assert!(merged.contains("[patch.crates-io]"), "patch table appended");
     let parsed: toml::Table = merged.parse().expect("merged config is valid TOML");
     assert!(parsed.contains_key("build") && parsed.contains_key("patch"));

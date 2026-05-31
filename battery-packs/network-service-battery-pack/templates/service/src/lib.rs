@@ -2,18 +2,18 @@
 //! benchmarks exercise [`routes::router`] directly; the binary supplies the process-global setup.
 
 pub mod config;
-{%- if downstream != "none" %}
+{% if downstream != "none" %}
 pub mod downstream;
-{%- endif %}
+{% endif %}
 pub mod metrics;
 pub mod middleware;
 pub mod routes;
 pub mod shutdown;
 pub mod telemetry;
 
-{%- if dial9 %}
+{% if dial9 %}
 use dial9_tokio_telemetry as dial9;
-{%- endif %}
+{% endif %}
 
 use anyhow::Context;
 

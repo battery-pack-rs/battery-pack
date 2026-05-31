@@ -1,4 +1,4 @@
-{%- if server_framework == "axum" %}
+{% if server_framework == "axum" %}
 //! Axum router, application state, and request handlers.
 
 use std::time::Duration;
@@ -8,24 +8,24 @@ use axum::extract::{Path, State};
 use axum::routing::get;
 use http::StatusCode;
 use metrique::timers::Timer;
-{%- if downstream != "none" %}
+{% if downstream != "none" %}
 use anyhow::Context;
-{%- endif %}
+{% endif %}
 
 use crate::config::Config;
-{%- if downstream != "none" %}
+{% if downstream != "none" %}
 use crate::downstream::Store;
-{%- endif %}
+{% endif %}
 use crate::middleware::{HandlerMetricsGuard, telemetry_layer};
 
 #[derive(Clone)]
 pub struct AppState {
-    {%- if downstream != "none" %}
+    {% if downstream != "none" %}
     pub store: Store,
-    {%- endif %}
+    {% endif %}
 }
 
-{%- if downstream == "redis" %}
+{% if downstream == "redis" %}
 pub async fn build_state(config: &Config) -> anyhow::Result<AppState> {
     let store = if config.in_memory {
         Store::in_memory()
@@ -36,38 +36,38 @@ pub async fn build_state(config: &Config) -> anyhow::Result<AppState> {
     };
     Ok(AppState { store })
 }
-{%- elif downstream == "http-service" %}
+{% elif downstream == "http-service" %}
 pub async fn build_state(config: &Config) -> anyhow::Result<AppState> {
     let store = Store::connect(&config.downstream_url, config.downstream_timeout)
         .context("build downstream client")?;
     Ok(AppState { store })
 }
-{%- else %}
+{% else %}
 pub async fn build_state(_config: &Config) -> anyhow::Result<AppState> {
     Ok(AppState {})
 }
-{%- endif %}
+{% endif %}
 
 pub fn router(state: AppState) -> Router {
     let app = Router::new()
         .route("/health", get(health))
-        {%- if downstream != "none" %}
+        {% if downstream != "none" %}
         .route("/items/{key}", get(get_item).put(set_item))
-        {%- else %}
+        {% else %}
         .route("/echo", axum::routing::post(echo))
-        {%- endif %}
+        {% endif %}
         .with_state(state);
 
     // `record_metrics` is applied last so it is the outermost layer and records the final
     // status even when an inner layer (timeout, catch-panic) produced the response.
     app
-        {%- if tower_timeout %}
+        {% if tower_timeout %}
         .layer(tower_http::timeout::TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(15),
         ))
-        {%- endif %}
-        {%- if tower_on_early_drop %}
+        {% endif %}
+        {% if tower_on_early_drop %}
         .layer(
             tower_http::on_early_drop::OnEarlyDropLayer::builder()
                 .on_future_drop(|_req: &axum::extract::Request| {
@@ -81,11 +81,11 @@ pub fn router(state: AppState) -> Router {
                     },
                 )),
         )
-        {%- endif %}
-        {%- if tower_catch_panic %}
+        {% endif %}
+        {% if tower_catch_panic %}
         // turn panics into 500s
         .layer(tower_http::catch_panic::CatchPanicLayer::new())
-        {%- endif %}
+        {% endif %}
         .layer(axum::middleware::from_fn(telemetry_layer))
 }
 
@@ -93,7 +93,7 @@ async fn health() -> &'static str {
     "ok"
 }
 
-{%- if downstream != "none" %}
+{% if downstream != "none" %}
 #[tracing::instrument(skip(state, metrics), fields(key = %key))]
 async fn get_item(
     State(state): State<AppState>,
@@ -146,14 +146,14 @@ async fn set_item(
         }
     }
 }
-{%- else %}
+{% else %}
 /// Echoes the request body back.
 #[tracing::instrument(skip_all)]
 async fn echo(mut metrics: HandlerMetricsGuard, body: String) -> String {
     metrics.payload_bytes = body.len();
     body
 }
-{%- endif %}
+{% endif %}
 
 #[cfg(test)]
 mod tests {
@@ -161,27 +161,27 @@ mod tests {
     use axum::body::{Body, to_bytes};
     use http::Request;
     use tower::ServiceExt;
-    {%- if downstream == "http-service" %}
+    {% if downstream == "http-service" %}
     use httpmock::prelude::*;
-    {%- endif %}
+    {% endif %}
 
-    {%- if downstream == "redis" %}
+    {% if downstream == "redis" %}
     fn test_state() -> AppState {
         AppState {
             store: Store::in_memory(),
         }
     }
-    {%- elif downstream == "http-service" %}
+    {% elif downstream == "http-service" %}
     fn test_state() -> AppState {
         AppState {
             store: Store::connect("http://127.0.0.1:0", Duration::from_millis(1000)).expect("client"),
         }
     }
-    {%- else %}
+    {% else %}
     fn test_state() -> AppState {
         AppState {}
     }
-    {%- endif %}
+    {% endif %}
 
     #[tokio::test]
     async fn health_ok() {
@@ -217,7 +217,7 @@ mod tests {
         assert_eq!(m.metrics["StatusCode"].as_u64(), 200);
     }
 
-    {%- if downstream != "none" %}
+    {% if downstream != "none" %}
     #[tracing_test::traced_test]
     #[tokio::test]
     async fn get_item_is_instrumented() {
@@ -228,9 +228,9 @@ mod tests {
             .unwrap();
         assert!(logs_contain("get_item"));
     }
-    {%- endif %}
+    {% endif %}
 
-    {%- if downstream == "redis" %}
+    {% if downstream == "redis" %}
     #[tokio::test]
     async fn set_then_get_returns_value() {
         let app = router(test_state());
@@ -281,7 +281,7 @@ mod tests {
         assert_eq!(m.metrics["StatusCode"].as_u64(), 404);
         assert_eq!(m.values["ErrorKind"], "InvalidRequest");
     }
-    {%- elif downstream == "http-service" %}
+    {% elif downstream == "http-service" %}
     #[tokio::test]
     async fn get_found() {
         let server = MockServer::start_async().await;
@@ -360,7 +360,7 @@ mod tests {
         assert_eq!(m.values["DownstreamErrorKind"], "Downstream");
         assert!(!m.metrics["DownstreamSuccess"].as_bool());
     }
-    {%- else %}
+    {% else %}
     #[tokio::test]
     async fn echo_returns_body() {
         let got = router(test_state())
@@ -383,6 +383,6 @@ mod tests {
         assert!(m.metrics["Success"].as_bool());
         assert_eq!(m.metrics["PayloadBytes"].as_u64(), 5);
     }
-    {%- endif %}
+    {% endif %}
 }
-{%- endif %}
+{% endif %}

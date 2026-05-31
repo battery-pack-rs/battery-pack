@@ -1,7 +1,7 @@
 [package]
 name = "broken-battery-pack"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "A deliberately broken battery pack for testing validation"
 # Missing keywords = ["battery-pack"] — violates format.crate.keyword
 

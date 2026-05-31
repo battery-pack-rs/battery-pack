@@ -168,7 +168,7 @@ fn render(
     config: &BpTemplateConfig,
     variables: &BTreeMap<String, String>,
 ) -> Result<Vec<RenderedFile>> {
-    let env = build_jinja_env(crate_root, variables)?;
+    let mut env = build_jinja_env(crate_root, variables)?;
     prefetch_pin_github_actions(crate_root);
     let ignore_set: Vec<&str> = config.ignore.iter().map(|s| s.as_str()).collect();
 
@@ -204,6 +204,13 @@ fn render(
         };
         let content = std::fs::read_to_string(entry.path())
             .with_context(|| format!("failed to read {}", entry.path().display()))?;
+        // Whitespace trimming and trailing-newline keeping apply to Rust only, where rustfmt also
+        // normalizes the result. Other formats (YAML, TOML) are newline-sensitive and keep the
+        // legacy behavior, so their templates still use `{%- -%}` for whitespace control.
+        let is_rust = rel_path.extension().and_then(|e| e.to_str()) == Some("rs");
+        env.set_trim_blocks(is_rust);
+        env.set_lstrip_blocks(is_rust);
+        env.set_keep_trailing_newline(is_rust);
         let rendered = env
             .render_str(&content, minijinja::context! {})
             .with_context(|| format!("failed to render template {}", rel_path.display()))?;
@@ -228,6 +235,10 @@ fn render(
         }
         let content = std::fs::read_to_string(&src_path)
             .with_context(|| format!("failed to read {}", src_path.display()))?;
+        let is_rust = file_include.dest.ends_with(".rs");
+        env.set_trim_blocks(is_rust);
+        env.set_lstrip_blocks(is_rust);
+        env.set_keep_trailing_newline(is_rust);
         let rendered = env
             .render_str(&content, minijinja::context! {})
             .with_context(|| format!("failed to render {}", src_path.display()))?;
@@ -258,10 +269,54 @@ fn render(
         }
     }
 
+    // Normalize rendered Rust through rustfmt so generated output is formatting-stable regardless
+    // of template whitespace. No-ops if rustfmt is missing or rejects the input.
+    for file in files.iter_mut().filter(|f| f.path.ends_with(".rs")) {
+        file.content = rustfmt_rust(std::mem::take(&mut file.content));
+    }
+
     Ok(files)
 }
 
-/// Resolve template variables from render options and config.
+/// Formats Rust source with rustfmt (edition 2024) over stdin/stdout, with no temporary files so
+/// it works for previews too. Returns the input unchanged if rustfmt is unavailable or fails, so
+/// generation never hard-depends on a rustfmt install.
+fn rustfmt_rust(source: String) -> String {
+    use std::io::{Read, Write};
+    use std::process::{Command, Stdio};
+
+    let mut child = match Command::new("rustfmt")
+        .args(["--edition", "2024", "--emit", "stdout", "--quiet"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(_) => return source,
+    };
+
+    // Feed stdin from another thread so a full stdout pipe can't deadlock the write.
+    let mut stdin = child.stdin.take().expect("stdin is piped");
+    let input = source.clone();
+    let writer = std::thread::spawn(move || {
+        let _ = stdin.write_all(input.as_bytes());
+    });
+
+    let mut formatted = String::new();
+    let read_ok = child
+        .stdout
+        .take()
+        .expect("stdout is piped")
+        .read_to_string(&mut formatted)
+        .is_ok();
+    let _ = writer.join();
+
+    match child.wait() {
+        Ok(status) if status.success() && read_ok => formatted,
+        _ => source,
+    }
+}
 fn prepare_render(
     opts: &RenderOpts,
     config: &BpTemplateConfig,

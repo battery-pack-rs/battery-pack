@@ -1,4 +1,4 @@
-{%- if downstream != "none" %}
+{% if downstream != "none" %}
 //! Integration tests against a real downstream. Fast, mock-backed tests live as unit tests
 //! in `src/routes.rs`; these exercise an actual dependency.
 
@@ -9,7 +9,7 @@ use tower::ServiceExt;
 use {{ crate_name }}::downstream::Store;
 use {{ crate_name }}::routes::{self, AppState};
 
-{%- if downstream == "redis" %}
+{% if downstream == "redis" %}
 /// Probes for a Docker- or Podman-compatible runtime.
 fn container_runtime_available() -> bool {
     ["docker", "podman"].iter().any(|bin| {
@@ -38,7 +38,7 @@ async fn redis_round_trip() {
         .expect("connect to redis");
     round_trip(store).await;
 }
-{%- elif downstream == "http-service" %}
+{% elif downstream == "http-service" %}
 #[tokio::test]
 async fn http_downstream_round_trip() {
     // Set DOWNSTREAM_URL to a running service that serves GET/PUT on `/<key>`.
@@ -49,7 +49,7 @@ async fn http_downstream_round_trip() {
     let store = Store::connect(&url, std::time::Duration::from_millis(2000)).expect("build client");
     round_trip(store).await;
 }
-{%- endif %}
+{% endif %}
 
 async fn round_trip(store: Store) {
     let app = routes::router(AppState { store });
@@ -69,4 +69,4 @@ async fn round_trip(store: Store) {
     let body = to_bytes(got.into_body(), usize::MAX).await.unwrap();
     assert_eq!(&body[..], b"v");
 }
-{%- endif %}
+{% endif %}
