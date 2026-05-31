@@ -33,6 +33,7 @@ dial9 is off unless you build with the `dial9` feature, and even then does nothi
 - **Build flags:** the `dial9` feature adds `--cfg tokio_unstable` (runtime hooks) and `-C force-frame-pointers=yes` (stack symbolization) to `.cargo/config.toml`. Stripping them while dial9 is enabled breaks the build.
 - **Tracing filter:** the `Dial9TokioLayer` carries a `Targets` filter (this crate at TRACE, everything else at ERROR). Without aggressive filtering, SDK spans can flood the trace with over 100k events/s.
 - **Runtime config:** dial9 reads `DIAL9_*` env vars (`Dial9Config::from_env`). The generated `dial9.env` sets the common ones (`DIAL9_ENABLED=true`, `DIAL9_TRACE_DIR`, `DIAL9_CPU_PROFILE_ENABLED`, `DIAL9_MEMORY_PROFILE_ENABLED`); `source dial9.env` before running.
+- **Trace destination:** local disk by default. On ephemeral compute (Fargate, Lambda) where local traces are lost on shutdown, enable the `worker-s3` feature and set `DIAL9_S3_BUCKET` to upload sealed segments to S3, or use `with_custom_pipeline` to ship them anywhere else.
 - **CPU and schedule profiling (Linux)** need relaxed perf permissions (`kernel.perf_event_paranoid`); see dial9's docs for the exact sysctls.
 - **Task dumps** (`DIAL9_TASK_DUMP_ENABLED`) capture an async backtrace of what each idle task is awaiting, useful for hangs. The `taskdump` feature compiles only on Linux (aarch64/x86/x86_64) and is a hard compile error elsewhere; it also adds an extra wake per capture, so measure before enabling on a hot path.
 
