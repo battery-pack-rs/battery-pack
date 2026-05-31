@@ -1,6 +1,6 @@
 {% if dial9 %}
-// dial9's allocator wraps the real allocator to add opt-in heap profiling. It is a
-// passthrough until DIAL9_MEMORY_PROFILE_ENABLED turns it on.
+// dial9's allocator wraps the real allocator to add opt-in heap profiling. The hook is a
+// passthrough until the memory profiler is installed in main.
 {% if allocator == "jemalloc" %}
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
@@ -28,12 +28,17 @@ static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 {% endif %}
 {% endif %}
 use clap::Parser;
+{% if dial9 %}
+use dial9_tokio_telemetry::{self as dial9, Dial9Config};
+{% endif %}
 
 use {{ crate_name }}::config::Config;
 use {{ crate_name }}::telemetry;
 {% if dial9 %}
-use dial9_tokio_telemetry::{self as dial9, Dial9Config};
 
+// from_env reads the DIAL9_* knobs documented at
+// https://docs.rs/dial9-tokio-telemetry/latest/dial9_tokio_telemetry/struct.Dial9Config.html#method.from_env
+// (and set in dial9.env).
 #[dial9::main(config = Dial9Config::from_env)]
 {% else %}
 #[tokio::main]
@@ -42,6 +47,16 @@ async fn main() -> std::process::ExitCode {
     let config = Config::parse();
     // In-flight logs and metrics are flushed when this guard drops, on exit.
     let _telemetry = telemetry::init_telemetry(&config);
+    {% if dial9 %}
+    let _memory_profiler = if std::env::var("DIAL9_MEMORY_PROFILE_ENABLED").as_deref() == Ok("true") {
+        dial9::memory_profiling::MemoryProfiler::with_defaults()
+            .install(dial9::telemetry::TelemetryHandle::current())
+            .inspect_err(|e| tracing::warn!("failed to install memory profiler: {e:#}"))
+            .ok()
+    } else {
+        None
+    };
+    {% endif %}
 
     let code: u8 = match {{ crate_name }}::run(config).await {
         Ok(()) => 0,
