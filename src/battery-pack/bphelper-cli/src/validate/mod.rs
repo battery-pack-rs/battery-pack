@@ -194,56 +194,14 @@ pub fn validate(manifest_dir: &str) -> Result<()> {
         }
 
         println!("validating template '{name}'...");
-
-        let tmp = tempfile::tempdir().context("failed to create temp directory")?;
-        let project_name = format!("bp-validate-{name}");
-
-        let opts = crate::template_engine::GenerateOpts {
-            render: crate::template_engine::RenderOpts {
-                crate_root: packaged_dir.clone(),
-                template_path: template.path.clone(),
-                project_name,
-                defines: std::collections::BTreeMap::new(),
-                interactive_override: Some(false),
-            },
-            destination: Some(tmp.path().to_path_buf()),
-            git_init: false,
-        };
-
-        let project_dir = crate::template_engine::generate(opts)
-            .with_context(|| format!("failed to generate template '{name}'"))?;
-
-        write_crates_io_patches(&project_dir, &metadata)?;
-
-        // cargo check
-        let output = std::process::Command::new("cargo")
-            .args(["check"])
-            .env("CARGO_TARGET_DIR", &*shared_target_dir)
-            .current_dir(&project_dir)
-            .output()
-            .context("failed to run cargo check")?;
-        anyhow::ensure!(
-            output.status.success(),
-            "cargo check failed for template '{name}':\n{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-
-        // cargo test
-        // Failure details (assertions, panics) go to stdout, not stderr.
-        let output = std::process::Command::new("cargo")
-            .args(["test"])
-            .env("CARGO_TARGET_DIR", &*shared_target_dir)
-            .current_dir(&project_dir)
-            .output()
-            .context("failed to run cargo test")?;
-        anyhow::ensure!(
-            output.status.success(),
-            "cargo test failed for template '{name}':\n{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-
+        build_and_test_template(
+            &packaged_dir,
+            &template.path,
+            name,
+            std::collections::BTreeMap::new(),
+            shared_target_dir.as_std_path(),
+            &metadata,
+        )?;
         println!("template '{name}' ok");
         validated += 1;
     }
@@ -252,6 +210,94 @@ pub fn validate(manifest_dir: &str) -> Result<()> {
         "{} template(s) validated, {} skipped for '{}'",
         validated, skipped, crate_name
     );
+    Ok(())
+}
+
+/// Generate one template with explicit placeholder values, then `cargo check` + `cargo test` it.
+///
+/// Generates from the source tree (not the packaged tarball) so battery pack authors can
+/// exercise feature/placeholder combinations beyond the template defaults in their own tests.
+pub fn validate_template_with(
+    manifest_dir: &str,
+    template_name: &str,
+    defines: &[(&str, &str)],
+) -> Result<()> {
+    let manifest_dir = Path::new(manifest_dir);
+    let cargo_toml = manifest_dir.join("Cargo.toml");
+    let content = std::fs::read_to_string(&cargo_toml)
+        .with_context(|| format!("failed to read {}", cargo_toml.display()))?;
+    let spec = bphelper_manifest::parse_battery_pack(&content)
+        .map_err(|e| anyhow::anyhow!("failed to parse {}: {e}", cargo_toml.display()))?;
+    let template = spec.templates.get(template_name).with_context(|| {
+        format!(
+            "template '{template_name}' not found in {}",
+            cargo_toml.display()
+        )
+    })?;
+
+    let metadata = cargo_metadata::MetadataCommand::new()
+        .manifest_path(&cargo_toml)
+        .no_deps()
+        .exec()
+        .context("failed to run cargo metadata")?;
+    let shared_target_dir = metadata.target_directory.join("bp-validate");
+
+    let defines = defines
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+    build_and_test_template(
+        manifest_dir,
+        &template.path,
+        template_name,
+        defines,
+        shared_target_dir.as_std_path(),
+        &metadata,
+    )
+}
+
+/// Generate a template into a temp dir with the given placeholders, then run
+/// `cargo check` and `cargo test` against it.
+fn build_and_test_template(
+    crate_root: &Path,
+    template_path: &str,
+    label: &str,
+    defines: std::collections::BTreeMap<String, String>,
+    shared_target_dir: &Path,
+    metadata: &cargo_metadata::Metadata,
+) -> Result<()> {
+    let tmp = tempfile::tempdir().context("failed to create temp directory")?;
+    let opts = crate::template_engine::GenerateOpts {
+        render: crate::template_engine::RenderOpts {
+            crate_root: crate_root.to_path_buf(),
+            template_path: template_path.to_string(),
+            project_name: format!("bp-validate-{label}"),
+            defines,
+            interactive_override: Some(false),
+        },
+        destination: Some(tmp.path().to_path_buf()),
+        git_init: false,
+    };
+    let project_dir = crate::template_engine::generate(opts)
+        .with_context(|| format!("failed to generate template '{label}'"))?;
+
+    write_crates_io_patches(&project_dir, metadata)?;
+
+    // Failure details (assertions, panics) go to stdout, not stderr.
+    for cmd in ["check", "test"] {
+        let output = std::process::Command::new("cargo")
+            .arg(cmd)
+            .env("CARGO_TARGET_DIR", shared_target_dir)
+            .current_dir(&project_dir)
+            .output()
+            .with_context(|| format!("failed to run cargo {cmd}"))?;
+        anyhow::ensure!(
+            output.status.success(),
+            "cargo {cmd} failed for template '{label}':\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
     Ok(())
 }
 
