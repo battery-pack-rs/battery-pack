@@ -79,6 +79,8 @@ fn init_metrics(service_name: &str, telemetry_dir: Option<&Path>) -> AttachHandl
                 .merge_globals(globals),
         ),
     };
+    // Always on: without tokio_unstable (set only by the dial9 feature) the unstable runtime
+    // counters read zero while the rest still report, so the bridge degrades rather than breaks.
     ServiceMetrics::subscribe_tokio_runtime_metrics(TokioRuntimeMetricsConfig::default());
     handle
 }

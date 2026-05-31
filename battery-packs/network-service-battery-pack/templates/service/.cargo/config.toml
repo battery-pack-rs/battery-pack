@@ -1,9 +1,11 @@
-# tokio_unstable exposes the Tokio runtime metrics that metrique-util samples{% if dial9 %} and
-# the runtime hooks dial9 records{% endif %}. It is an API-stability flag (these APIs may change
+{% if dial9 %}# dial9 needs tokio_unstable for its runtime hooks and frame pointers to symbolize stacks.
+# tokio_unstable also lets the tokio-metrics bridge report Tokio's full runtime counters; without
+# it the bridge still runs on a reduced subset. These are API-stability flags (the APIs may shift
 # between Tokio releases), not a correctness or production-safety concern.
 [build]
 rustflags = [
-    "--cfg", "tokio_unstable",{% if dial9 %}
-    # frame pointers let dial9 symbolize stacks cheaply
-    "-C", "force-frame-pointers=yes",{% endif %}
+    "--cfg", "tokio_unstable",
+    "-C", "force-frame-pointers=yes",
 ]
+{% else %}# No special build flags are needed. The dial9 feature adds tokio_unstable and frame pointers here.
+{% endif %}

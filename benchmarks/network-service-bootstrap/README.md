@@ -44,4 +44,4 @@ Evaluate /tmp/network-service-bootstrap-<timestamp>.md against benchmarks/networ
 
 ## Agent support
 
-Currently Claude Code only (`claude -p`). The harness mirrors the error-skills and ci-skills benchmarks; the same future agents (Kiro, Codex) apply.
+Currently Claude Code only (`claude -p`).

@@ -1,13 +1,14 @@
 ── .cargo/config.toml ──
-# tokio_unstable exposes the Tokio runtime metrics that metrique-util samples and
-# the runtime hooks dial9 records. It is an API-stability flag (these APIs may change
+# dial9 needs tokio_unstable for its runtime hooks and frame pointers to symbolize stacks.
+# tokio_unstable also lets the tokio-metrics bridge report Tokio's full runtime counters; without
+# it the bridge still runs on a reduced subset. These are API-stability flags (the APIs may shift
 # between Tokio releases), not a correctness or production-safety concern.
 [build]
 rustflags = [
     "--cfg", "tokio_unstable",
-    # frame pointers let dial9 symbolize stacks cheaply
     "-C", "force-frame-pointers=yes",
 ]
+
 
 ── Cargo.toml ──
 [package]
@@ -1312,6 +1313,8 @@ fn init_metrics(service_name: &str, telemetry_dir: Option<&Path>) -> AttachHandl
                 .merge_globals(globals),
         ),
     };
+    // Always on: without tokio_unstable (set only by the dial9 feature) the unstable runtime
+    // counters read zero while the rest still report, so the bridge degrades rather than breaks.
     ServiceMetrics::subscribe_tokio_runtime_metrics(TokioRuntimeMetricsConfig::default());
     handle
 }

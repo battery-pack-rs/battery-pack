@@ -9,7 +9,7 @@ How a request flows through this service, why the middleware stack is ordered th
 
 ## Why axum, and when to drop to hyper
 
-The scaffold ships axum because its extractors and `Router` make handlers and middleware cheap to write and read. The cost is a small per-request overhead: axum clones state and runs extractors. Drop to raw hyper (via `hyper-util`) only when you need control axum hides: custom connection lifecycle, protocol upgrades, or shaving the last allocation off a hot path. That is a higher ceiling for far more code, so reach for it deliberately, not by default. See the hyper-util examples rather than scaffolding a hyper variant here.
+The scaffold ships axum because its extractors and `Router` make handlers and middleware cheap to write and read. The cost is a small per-request overhead: axum clones state and runs extractors. Drop to raw hyper (via `hyper-util`) only when you need control axum hides: custom connection lifecycle, protocol upgrades, or shaving the last allocation off a hot path. See the hyper-util examples rather than scaffolding a hyper variant here.
 
 ## The layer stack (read this before reordering it)
 
@@ -24,24 +24,26 @@ Layers wrap the router, so the last one added is the outermost and a request flo
 7. **timeout / body-timeout** (when enabled): bound total request time (408) and slow-body reads.
 8. **DefaultBodyLimit** (innermost): rejects oversized bodies with 413 before they are buffered into memory.
 
-The load-bearing rule: anything that can *produce a status* (rate limit, panic, timeout, body limit) sits inside `telemetry_middleware` so the status is recorded, while request-id and tracing sit outside it so the id and span exist when it runs. `/health` is mounted on a separate router with none of this, so probes are not metered or rate-limited.
+Anything that can *produce a status* (rate limit, panic, timeout, body limit) sits inside `telemetry_middleware` so the status is recorded, while request-id and tracing sit outside it so the id and span exist when it runs. `/health` is mounted on a separate router with none of this, so probes are not metered or rate-limited.
 
 ## Scaling the rate limit
 
-The scaffold ships a single global token bucket (`GlobalKeyExtractor`): a coarse total-ingress cap that needs no connection info and works in `oneshot` tests. To limit per client instead:
+The scaffold ships a single global token bucket (`GlobalKeyExtractor`). To limit per client instead:
 
 - Swap `GlobalKeyExtractor` for `PeerIpKeyExtractor`.
 - Serve with `into_make_service_with_connect_info::<SocketAddr>()` so the extractor can read the peer address from request extensions (tests then need a `SocketAddr` injected).
 - Run a periodic `governor_conf.limiter().retain_recent()` task. The keyed store grows one entry per key and is never auto-evicted, so without this it leaks memory under a wide key space.
 
+No new dependency or feature is needed: `PeerIpKeyExtractor` ships with the `tower_governor` the `rate-limit` feature already pulls, so this is a code change.
+
 Behind a load balancer the peer IP is the balancer, so key off a trusted forwarded-for header instead of the socket address.
 
-## Optional additions (breadcrumbs)
+## Optional additions
 
 These are deliberately not scaffolded; they are workload-specific and easy to misuse.
 
-- **Read caching**: `moka` (its `future::Cache`) in front of the HTTP forwarder only (dead weight for the in-memory default). The decisive caveat: a cache changes the service's consistency contract and its failure mode is silent stale reads, so size the TTL against an explicit staleness budget.
-- **Load shedding**: the scaffold already *measures* concurrency via the always-on `IN_FLIGHT` counter. To *bound* it, add tower's `ConcurrencyLimitLayer` paired with `LoadShedLayer` (bare concurrency-limit queues unboundedly; the pair sheds with a 503). Size the cap off observed `IN_FLIGHT` rather than a guess (Little's Law: in-flight is roughly arrival rate times latency). Place it inside the recorder so the 503 is counted, but outside the rate limit and timeout.
+- **Read caching** (the pack's `cache` feature, `moka`): use its `future::Cache` in front of the HTTP forwarder backend. A cache changes the service's consistency contract and its failure mode is silent stale reads, so size the TTL against an explicit staleness budget.
+- **Load shedding** (the pack's `load-shed` feature, tower's limit and load-shed layers): the scaffold already *measures* concurrency via the always-on `IN_FLIGHT` counter. To *bound* it, add `ConcurrencyLimitLayer` paired with `LoadShedLayer` (bare concurrency-limit queues unboundedly; the pair sheds with a 503). Size the cap off observed `IN_FLIGHT` rather than a guess. Place it inside the recorder so the 503 is counted, but outside the rate limit and timeout.
 
 ## Invariants
 

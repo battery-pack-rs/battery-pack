@@ -9,16 +9,14 @@ How this service emits metrics and logs, and how to read its runtime behavior. T
 
 ## Why one wide event per request
 
-Every request emits a single `RequestMetrics` record carrying all of its dimensions (operation, status, latency, request id, payload bytes, downstream outcome). One row per request means you answer questions ("p99 latency for SetItem when the downstream timed out") with a filter on one stream, not a join across separate counter and timer streams. Add a new dimension by adding a field to `RequestMetrics` or to the handler-owned `HandlerMetrics` slot, never by emitting a second record.
+Every request emits a single `RequestMetrics` record carrying all of its metadata. One row per request means you answer questions ("p99 latency for SetItem when the downstream timed out") with a filter on one stream, not a join across separate counter and timer streams. Add a new property by adding a field to `RequestMetrics` or to the handler-owned `HandlerMetrics` slot, not by emitting a second record.
 
 ## metrique and dial9 do different jobs
 
 This scaffold splits observability across two tools on purpose:
 
-- **metrique** owns the business and RED metrics (rate, errors, duration) you alarm and dashboard on. It also bridges Tokio runtime metrics (queue depth, busy ratio) via `subscribe_tokio_runtime_metrics`.
+- **metrique** owns the business and RED metrics (rate, errors, duration) you alarm and dashboard on. It also bridges Tokio runtime metrics (queue depth, busy ratio) via `subscribe_tokio_runtime_metrics`, fully populated only when `tokio_unstable` is set (the `dial9` feature sets it); otherwise the bridge reports a reduced subset.
 - **dial9** (optional, off by default) is an always-on Tokio profiler for root-cause work: poll timing, park/unpark, wake, per-task CPU. You reach for it when the metrics say "slow" but not "why".
-
-Keep that boundary: do not reimplement runtime sampling in metrique, and do not push request KPIs into dial9 traces.
 
 ## Where output goes
 
@@ -26,27 +24,31 @@ Keep that boundary: do not reimplement runtime sampling in metrique, and do not 
 
 ## CloudWatch EMF
 
-For native AWS (Lambda or Fargate to CloudWatch), swap the metric formatter from `Json::new()` to `Emf::builder(namespace, dimensions).build()` (or `Emf::all_validations(..)` while developing) in `init_metrics`.
+For native AWS (Lambda or Fargate to CloudWatch), swap the metric formatter in `init_metrics` from `Json::new()` to `Emf::builder(namespace, dimensions).build()` (or `Emf::all_validations(..)` while developing). See metrique's `examples/` directory for a complete EMF setup.
 
 ## dial9 (the `dial9` feature)
 
-When enabled, dial9 records runtime telemetry through the `#[dial9::main]` runtime and a filtered tracing layer. Two wiring facts matter and are easy to break:
+dial9 is an always-on Tokio profiler: poll timing, wake events, CPU and (optionally) heap samples recorded to disk for offline analysis. It is off unless you build with the `dial9` feature, and even then does nothing until enabled at runtime.
 
-- It requires `--cfg tokio_unstable` and `-C force-frame-pointers=yes`, set in the generated `.cargo/config.toml`. Removing them makes dial9 fail to build or symbolize.
-- The `Dial9TokioLayer` carries a `Targets` filter (this crate at TRACE, everything else at ERROR). Without aggressive filtering, SDK spans can flood the trace at over 100k events/s.
+- **Build flags:** the `dial9` feature adds `--cfg tokio_unstable` (runtime hooks) and `-C force-frame-pointers=yes` (stack symbolization) to `.cargo/config.toml`. Stripping them while dial9 is enabled breaks the build.
+- **Tracing filter:** the `Dial9TokioLayer` carries a `Targets` filter (this crate at TRACE, everything else at ERROR). Without aggressive filtering, SDK spans can flood the trace at over 100k events/s.
+- **Runtime config:** dial9 reads `DIAL9_*` env vars (`Dial9Config::from_env`). The generated `dial9.env` sets the common ones (`DIAL9_ENABLED=true`, `DIAL9_TRACE_DIR`, `DIAL9_CPU_PROFILE_ENABLED`, `DIAL9_MEMORY_PROFILE_ENABLED`); `source dial9.env` before running.
+- **CPU and schedule profiling (Linux)** need `kernel.perf_event_paranoid <= 1` (`sudo sysctl kernel.perf_event_paranoid=1`), and `kernel.kptr_restrict=0` to symbolize kernel frames.
+- **Task dumps** (`DIAL9_TASK_DUMP_ENABLED`, Linux only) capture an async backtrace of what each idle task is awaiting, useful for hangs. They add overhead, so enable them only while diagnosing.
 
-dial9 ships its own agent skills and a trace viewer. This skill does not re-explain trace or flamegraph reading; see the References.
+dial9 ships its own agent skills and a trace viewer that cover setup and analysis in depth, so this skill does not re-explain trace reading. Install the CLI with `cargo install --locked dial9` and browse traces with `dial9 serve --local-dir <dir>` (or the hosted viewer in the References); with Symposium, `cargo agents sync` auto-installs dial9's skills.
+
 
 ## Invariants
 
 - Every handler takes `HandlerMetricsGuard` and fills it; the middleware holds the parent `RequestMetricsGuard`, which emits the record on drop. Do not construct a second metric record per request.
-- `/health` is mounted outside the telemetry layer and must stay there: probes should not emit per-request metrics.
+- `/health` is mounted outside the telemetry layer. Probes should not emit per-request metrics.
 - Keep the `TelemetryGuard` alive for the whole process; dropping it early stops log flushing and detaches the metric sink.
-- Keep `--cfg tokio_unstable` in `.cargo/config.toml` while any metrics run: the tokio-metrics bridge depends on it. The `force-frame-pointers` flag is generated only with `dial9` and is needed only for dial9 stack symbolization.
-- When `dial9` is on, spawn background tasks with `dial9::spawn` (not `tokio::spawn`) or they are invisible to the profiler.
+- The `dial9` feature adds `tokio_unstable` and frame pointers to `.cargo/config.toml`; do not strip them while dial9 is enabled, or dial9 will not build.
+- When `dial9` is on, spawn background tasks with `dial9_tokio_telemetry::spawn` (not `tokio::spawn`) or they are invisible to the profiler.
 
 ## References
 
-- metrique, including its `guide` module in the rustdoc: https://docs.rs/metrique
-- dial9: https://github.com/dial9-rs/dial9-tokio-telemetry, viewer at https://dial9-tokio-telemetry.russell-r-cohen.workers.dev/ (dial9 also installs its own agent skills)
+- metrique rustdoc (`guide` module and `examples/`): https://docs.rs/metrique
+- dial9: https://github.com/dial9-rs/dial9-tokio-telemetry, hosted viewer https://dial9-tokio-telemetry.netlify.app/ (dial9 also installs its own agent skills)
 - Allocator profiling: see the `memory-allocator` skill.
