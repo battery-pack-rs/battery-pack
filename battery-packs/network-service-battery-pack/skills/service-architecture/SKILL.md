@@ -43,7 +43,7 @@ Behind a load balancer the peer IP is the balancer, so key off a trusted forward
 These are deliberately not scaffolded; they are workload-specific and easy to misuse.
 
 - **Read caching** (the pack's `cache` feature, `moka`): use its `future::Cache` in front of the HTTP forwarder backend. A cache changes the service's consistency contract; its failure mode is silent stale reads. Size the TTL against an explicit staleness budget.
-- **Load shedding** (the pack's `load-shed` feature, tower's limit and load-shed layers): the scaffold already *measures* concurrency via the always-on `IN_FLIGHT` counter. To *bound* it, add `ConcurrencyLimitLayer` paired with `LoadShedLayer` (a bare concurrency limit queues requests without bound; the pair sheds with a 503). Size the cap off observed `IN_FLIGHT` rather than a guess. Place it inside the recorder so the 503 is counted, but outside the rate limit and timeout.
+- **Load shedding** (the pack's `load-shed` feature): use tower's `ConcurrencyLimitLayer` paired with `LoadShedLayer`, do not hand-roll a counter check. The pair caps concurrent requests and sheds the overflow with a 503; a bare concurrency limit without `LoadShedLayer` queues the overflow without bound. Use the always-on `IN_FLIGHT` metric only to size the cap from observed concurrency, not as the shedding mechanism. Place it inside the recorder so the 503 is counted, but outside the rate limit and timeout.
 
 ## Invariants
 
