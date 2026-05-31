@@ -59,5 +59,3 @@ name = "service"
 harness = false
 {%- endif %}
 
-[package.metadata.battery-pack]
-network-service-battery-pack = { features = ["axum-server", "http-client", "clap-config"{% if dial9 %}, "dial9"{% endif %}{% if allocator == "jemalloc" %}, "jemalloc"{% elif allocator == "mimalloc" %}, "mimalloc-alloc"{% endif %}{% if rate_limit %}, "rate-limit"{% endif %}{% if benchmarks %}, "benchmarks"{% endif %}] }

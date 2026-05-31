@@ -160,7 +160,40 @@ use std::path::Path;
 
 /// Resolve bp-managed deps in a Cargo.toml string using the given fixture as the bp crate root.
 fn resolve_with_fixture(cargo_toml: &str, bp_crate_root: &Path) -> anyhow::Result<String> {
-    super::resolve_bp_managed_content(cargo_toml, bp_crate_root)
+    super::resolve_bp_managed_content(cargo_toml, bp_crate_root, None)
+}
+
+#[test]
+fn resolve_bp_managed_from_state_file() {
+    let bp_root = fixtures_dir().join("managed-battery-pack");
+    // No [package.metadata.battery-pack] section: active packs come from battery-pack.toml.
+    let cargo_toml = r#"[package]
+name = "my-app"
+version = "0.1.0"
+
+[dependencies]
+anyhow.bp-managed = true
+clap.bp-managed = true
+"#;
+    // State uses the short pack name.
+    let state = r#"version = 1
+
+[[battery-pack]]
+name = "managed"
+features = ["default"]
+"#;
+
+    let result =
+        super::resolve_bp_managed_content(cargo_toml, &bp_root, Some(state)).unwrap();
+
+    assert!(
+        !result.contains("bp-managed"),
+        "bp-managed should resolve from the state file, got:\n{result}"
+    );
+    assert!(
+        result.contains("anyhow = \""),
+        "anyhow should resolve to a concrete version, got:\n{result}"
+    );
 }
 
 #[test]
@@ -599,7 +632,7 @@ battery-pack = { bp-managed = true, features = ["build"] }
 hidden = ["battery-pack"]
 "#;
 
-    let result = crate::resolve_bp_managed_content(cargo_toml, bp_root).unwrap();
+    let result = crate::resolve_bp_managed_content(cargo_toml, bp_root, None).unwrap();
 
     // Version should be resolved (not bp-managed)
     assert!(

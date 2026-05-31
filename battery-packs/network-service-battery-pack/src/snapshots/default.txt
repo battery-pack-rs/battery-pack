@@ -52,9 +52,6 @@ tempfile = "3"
 name = "service"
 harness = false
 
-[package.metadata.battery-pack]
-network-service-battery-pack = { features = ["axum-server", "http-client", "clap-config", "dial9", "jemalloc", "benchmarks"] }
-
 
 ── README.md ──
 # test-service
@@ -128,6 +125,13 @@ Or analyze it with the agent toolkit:
 ```bash
 dial9 agents
 ```
+
+── battery-pack.toml ──
+version = 1
+
+[[battery-pack]]
+name = "network-service"
+features = ["axum-server", "http-client", "clap-config", "dial9", "jemalloc", "benchmarks"]
 
 ── benches/service.rs ──
 //! Benchmarks the router end to end via `tower::oneshot`, without binding a socket.

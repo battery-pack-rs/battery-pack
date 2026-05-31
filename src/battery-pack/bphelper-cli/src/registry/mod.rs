@@ -269,7 +269,42 @@ pub(crate) fn fetch_bp_spec_from_registry(
 
 /// Resolve `bp-managed = true` dependencies in a Cargo.toml string,
 /// returning the rewritten content with concrete versions.
-pub fn resolve_bp_managed_content(content: &str, bp_crate_root: &Path) -> Result<String> {
+/// Parse `(pack short name, features)` from a rendered `battery-pack.toml` state file. Unparsable
+/// content yields no packs; an entry without features defaults to `default`.
+fn active_packs_from_state(state: &str) -> Vec<(String, std::collections::BTreeSet<String>)> {
+    let Ok(raw) = toml::from_str::<toml::Value>(state) else {
+        return Vec::new();
+    };
+    raw.get("battery-pack")
+        .and_then(|b| b.as_array())
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| {
+                    let name = entry.get("name")?.as_str()?.to_string();
+                    let features = entry
+                        .get("features")
+                        .and_then(|f| f.as_array())
+                        .map(|values| {
+                            values
+                                .iter()
+                                .filter_map(|v| v.as_str().map(str::to_string))
+                                .collect::<std::collections::BTreeSet<_>>()
+                        })
+                        .filter(|f| !f.is_empty())
+                        .unwrap_or_else(|| std::collections::BTreeSet::from(["default".to_string()]));
+                    Some((name, features))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub fn resolve_bp_managed_content(
+    content: &str,
+    bp_crate_root: &Path,
+    bp_state: Option<&str>,
+) -> Result<String> {
     let mut doc: toml_edit::DocumentMut = content.parse().context("failed to parse Cargo.toml")?;
 
     // Collect all bp-managed dep names across all sections.
@@ -304,40 +339,54 @@ pub fn resolve_bp_managed_content(content: &str, bp_crate_root: &Path) -> Result
     // Discover battery pack specs reachable from bp_crate_root.
     let all_specs = bphelper_manifest::discover_from_crate_root(bp_crate_root)?;
 
-    // Build a merged map of crate_name -> (version, features, dep_kind) from all
-    // battery packs referenced in the generated project's metadata.
+    // Determine the active battery packs and their features. Prefer the rendered battery-pack.toml
+    // state (short names); fall back to [package.metadata.battery-pack] (full names) for templates
+    // that still record their packs there.
+    let active: Vec<(String, std::collections::BTreeSet<String>)> = match bp_state {
+        Some(state) => active_packs_from_state(state),
+        None => raw
+            .get("package")
+            .and_then(|p| p.get("metadata"))
+            .and_then(|m| m.get("battery-pack"))
+            .and_then(|bp| bp.as_table())
+            .map(|table| {
+                table
+                    .keys()
+                    .map(|name| {
+                        let features =
+                            crate::manifest::read_features_at(&raw, &["package", "metadata"], name);
+                        (name.clone(), features)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+    };
+
+    // Build a merged map of crate_name -> spec from all active battery packs.
     let mut resolved: std::collections::BTreeMap<String, bphelper_manifest::CrateSpec> =
         std::collections::BTreeMap::new();
     // Also track battery pack versions for resolving bp-managed build-deps.
     let mut bp_versions: std::collections::BTreeMap<String, String> =
         std::collections::BTreeMap::new();
 
-    let bp_metadata = raw
-        .get("package")
-        .and_then(|p| p.get("metadata"))
-        .and_then(|m| m.get("battery-pack"))
-        .and_then(|bp| bp.as_table());
+    for (bp_name, active_features) in &active {
+        // State entries use the short pack name; metadata uses the full name. Match either.
+        let spec = if let Some(s) = all_specs
+            .iter()
+            .find(|s| s.name == *bp_name || short_name(&s.name) == bp_name)
+        {
+            s.clone()
+        } else {
+            // Battery pack not in local workspace; fetch from crates.io.
+            let (_version, s) = fetch_bp_spec_from_registry(bp_name).with_context(|| {
+                format!("battery pack '{bp_name}' not found locally or on crates.io")
+            })?;
+            s
+        };
 
-    if let Some(bp_table) = bp_metadata {
-        for (bp_name, _entry) in bp_table {
-            let active_features =
-                crate::manifest::read_features_at(&raw, &["package", "metadata"], bp_name);
-
-            let spec = if let Some(s) = all_specs.iter().find(|s| s.name == *bp_name) {
-                s.clone()
-            } else {
-                // Battery pack not in local workspace; fetch from crates.io.
-                let (_version, s) = fetch_bp_spec_from_registry(bp_name).with_context(|| {
-                    format!("battery pack '{bp_name}' not found locally or on crates.io")
-                })?;
-                s
-            };
-
-            bp_versions.insert(bp_name.clone(), spec.version.clone());
-            let crates = spec.resolve_for_features(&active_features);
-            for (crate_name, crate_spec) in crates {
-                resolved.insert(crate_name, crate_spec);
-            }
+        bp_versions.insert(spec.name.clone(), spec.version.clone());
+        for (crate_name, crate_spec) in spec.resolve_for_features(active_features) {
+            resolved.insert(crate_name, crate_spec);
         }
     }
 

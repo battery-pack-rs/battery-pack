@@ -40,9 +40,6 @@ metrique = { version = "0.1", features = ["json", "test-util"] }
 # Spawn the real binary and tempdir for telemetry in the e2e test; reqwest (a normal dep) is the client.
 tempfile = "3"
 
-[package.metadata.battery-pack]
-network-service-battery-pack = { features = ["axum-server", "http-client", "clap-config", "mimalloc-alloc"] }
-
 
 ── README.md ──
 # test-service
@@ -81,6 +78,13 @@ curl -X PUT localhost:3000/items/greeting --data 'hello'
 curl localhost:3000/items/greeting
 curl -X POST localhost:3000/echo -H 'content-type: application/json' --data '{"message":"hi"}'
 ```
+
+── battery-pack.toml ──
+version = 1
+
+[[battery-pack]]
+name = "network-service"
+features = ["axum-server", "http-client", "clap-config", "mimalloc-alloc"]
 
 ── src/config.rs ──
 //! Configuration from CLI args and environment variables.
