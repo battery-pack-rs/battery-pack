@@ -154,6 +154,10 @@ pub(crate) enum BpCommands {
     List {
         /// Filter by name (omit to list all battery packs)
         filter: Option<String>,
+
+        /// Emit machine-readable JSON instead of the default text output
+        #[arg(long)]
+        json: bool,
     },
 
     /// Show detailed information about a battery pack
@@ -175,6 +179,10 @@ pub(crate) enum BpCommands {
         /// Set a template placeholder value (e.g., -d description="My project")
         #[arg(long = "define", short = 'd', value_parser = parse_define)]
         define: Vec<(String, String)>,
+
+        /// Emit machine-readable JSON instead of the default text output
+        #[arg(long, conflicts_with_all = ["template", "define"])]
+        json: bool,
     },
 
     /// Show status of installed battery packs and version warnings
@@ -300,15 +308,14 @@ pub fn main() -> Result<()> {
                     interactive,
                     &project_dir,
                 ),
-                BpCommands::List { filter } => {
+                BpCommands::List { filter, json } => {
                     // [impl cli.list.interactive]
                     // [impl cli.list.non-interactive]
-                    if interactive {
-                        crate::tui::run_list(source, filter)
+                    // [impl cli.list.json]
+                    if json || !interactive {
+                        list_battery_packs(&source, filter.as_deref(), json)
                     } else {
-                        // [impl cli.list.query]
-                        // [impl cli.list.filter]
-                        print_battery_pack_list(&source, filter.as_deref())
+                        crate::tui::run_list(source, filter)
                     }
                 }
                 BpCommands::Show {
@@ -316,35 +323,40 @@ pub fn main() -> Result<()> {
                     template,
                     path,
                     define,
+                    json,
                 } => {
-                    let show_opts = crate::tui::ShowOpts {
-                        battery_pack: &battery_pack,
-                        template: template.as_deref(),
-                        path: path.as_deref(),
-                        source,
-                        defines: define.into_iter().collect(),
-                    };
-                    if interactive {
-                        // [impl cli.show.interactive]
-                        // [impl cli.show.template-preview]
-                        crate::tui::run_show(show_opts)
-                    } else if let Some(tmpl) = show_opts.template {
-                        // [impl cli.show.template-preview]
-                        print_template_preview(&crate::template_engine::PreviewOpts {
-                            battery_pack: show_opts.battery_pack,
-                            template: tmpl,
-                            path: show_opts.path,
-                            source: &show_opts.source,
-                            defines: show_opts.defines,
-                        })
-                    } else {
-                        // [impl cli.show.non-interactive]
-                        print_battery_pack_detail(
-                            show_opts.battery_pack,
-                            show_opts.path,
-                            &show_opts.source,
+                    // [impl cli.show.json]
+                    // [impl cli.show.non-interactive]
+                    if json || (!interactive && template.is_none()) {
+                        show_battery_pack(
+                            &battery_pack,
+                            path.as_deref(),
+                            &source,
                             &project_dir,
+                            json,
                         )
+                    } else {
+                        let show_opts = crate::tui::ShowOpts {
+                            battery_pack: &battery_pack,
+                            template: template.as_deref(),
+                            path: path.as_deref(),
+                            source,
+                            defines: define.into_iter().collect(),
+                        };
+                        if interactive {
+                            // [impl cli.show.interactive]
+                            // [impl cli.show.template-preview]
+                            crate::tui::run_show(show_opts)
+                        } else {
+                            // [impl cli.show.template-preview]
+                            print_template_preview(&crate::template_engine::PreviewOpts {
+                                battery_pack: show_opts.battery_pack,
+                                template: show_opts.template.unwrap(),
+                                path: show_opts.path,
+                                source: &show_opts.source,
+                                defines: show_opts.defines,
+                            })
+                        }
                     }
                 }
                 BpCommands::Status { path, json } => {
@@ -1650,55 +1662,218 @@ fn prompt_for_template(
     Ok(config.path.clone())
 }
 
-fn print_battery_pack_list(source: &CrateSource, filter: Option<&str>) -> Result<()> {
-    use console::style;
+// ============================================================================
+// List command
+// ============================================================================
+//
+// Like `status`, the list command is split into:
+//   1. `build_list_report`  — pure data, returns a `ListReport`.
+//   2. `render_list_json`   — serializes the report.
+//   3. `render_list_text`   — pretty-prints the report.
+// `list_battery_packs` is a thin dispatcher that picks one renderer.
 
+// [impl cli.list.json]
+// [impl cli.list.non-interactive]
+fn list_battery_packs(source: &CrateSource, filter: Option<&str>, json: bool) -> Result<()> {
+    let report = build_list_report(source, filter)?;
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    if json {
+        render_list_json(&report, &mut out).context("Failed to write list JSON")?;
+    } else {
+        render_list_text(&report, &mut out).context("Failed to render list")?;
+    }
+    Ok(())
+}
+
+/// Build a [`cargo_bp_script::ListReport`] from the registry. Pure data.
+fn build_list_report(
+    source: &CrateSource,
+    filter: Option<&str>,
+) -> Result<cargo_bp_script::ListReport> {
     let battery_packs = fetch_battery_pack_list(source, filter)?;
 
-    if battery_packs.is_empty() {
-        match filter {
-            Some(q) => println!("No battery packs found matching '{}'", q),
-            None => println!("No battery packs found"),
+    let mut report = cargo_bp_script::ListReport::new();
+    if let Some(f) = filter {
+        report = report.with_filter(f);
+    }
+    report = report.with_packs(battery_packs.iter().map(|bp| {
+        cargo_bp_script::PackSummary::new(&bp.short_name, &bp.name, &bp.version)
+            .with_description(&bp.description)
+    }));
+    Ok(report)
+}
+
+/// Serialize a [`ListReport`] as JSON to `w`, with a trailing newline.
+fn render_list_json(
+    report: &cargo_bp_script::ListReport,
+    w: &mut impl std::io::Write,
+) -> std::io::Result<()> {
+    serde_json::to_writer(&mut *w, report)?;
+    writeln!(w)?;
+    Ok(())
+}
+
+/// Pretty-print a [`ListReport`] for human consumption to `w`.
+fn render_list_text(
+    report: &cargo_bp_script::ListReport,
+    w: &mut impl std::io::Write,
+) -> std::io::Result<()> {
+    use console::style;
+
+    if report.packs.is_empty() {
+        match &report.filter {
+            Some(q) => writeln!(w, "No battery packs found matching '{}'", q)?,
+            None => writeln!(w, "No battery packs found")?,
         }
         return Ok(());
     }
 
     // Find the longest name for alignment
-    let max_name_len = battery_packs
+    let max_name_len = report
+        .packs
         .iter()
-        .map(|c| c.short_name.len())
+        .map(|p| p.short_name.len())
         .max()
         .unwrap_or(0);
 
-    let max_version_len = battery_packs
+    let max_version_len = report
+        .packs
         .iter()
-        .map(|c| c.version.len())
+        .map(|p| p.version.len())
         .max()
         .unwrap_or(0);
 
-    println!();
-    for bp in &battery_packs {
-        let desc = bp.description.lines().next().unwrap_or("");
+    writeln!(w)?;
+    for pack in &report.packs {
+        let desc = pack.description.lines().next().unwrap_or("");
 
         // Pad strings manually, then apply colors (ANSI codes break width formatting)
-        let name_padded = format!("{:<width$}", bp.short_name, width = max_name_len);
-        let ver_padded = format!("{:<width$}", bp.version, width = max_version_len);
+        let name_padded = format!("{:<width$}", pack.short_name, width = max_name_len);
+        let ver_padded = format!("{:<width$}", pack.version, width = max_version_len);
 
-        println!(
+        writeln!(
+            w,
             "  {}  {}  {}",
             style(name_padded).green().bold(),
             style(ver_padded).dim(),
             desc,
-        );
+        )?;
     }
-    println!();
+    writeln!(w)?;
 
-    println!(
+    writeln!(
+        w,
         "{}",
-        style(format!("Found {} battery pack(s)", battery_packs.len())).dim()
-    );
+        style(format!("Found {} battery pack(s)", report.packs.len())).dim()
+    )?;
 
     Ok(())
+}
+
+// ============================================================================
+// Show command
+// ============================================================================
+//
+// Like `status`, the show command is split into:
+//   1. `build_show_report`  — pure data, returns a `ShowReport`.
+//   2. `render_show_json`   — serializes the report.
+//   3. `render_show_text`   — pretty-prints the report.
+// `show_battery_pack` is a thin dispatcher that picks one renderer.
+
+// [impl cli.show.json]
+// [impl cli.show.non-interactive]
+fn show_battery_pack(
+    name: &str,
+    path: Option<&str>,
+    source: &CrateSource,
+    project_dir: &Path,
+    json: bool,
+) -> Result<()> {
+    let report = build_show_report(name, path, source, project_dir)?;
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    if json {
+        render_show_json(&report, &mut out).context("Failed to write show JSON")?;
+    } else {
+        render_show_text(&report, &mut out).context("Failed to render show")?;
+    }
+    Ok(())
+}
+
+/// Build a [`cargo_bp_script::ShowReport`] from the registry. Pure data.
+fn build_show_report(
+    name: &str,
+    path: Option<&str>,
+    source: &CrateSource,
+    project_dir: &Path,
+) -> Result<cargo_bp_script::ShowReport> {
+    // --path takes precedence over --crate-source
+    let detail = if path.is_some() {
+        fetch_battery_pack_detail(name, path)?
+    } else {
+        fetch_battery_pack_detail_from_source(source, name)?
+    };
+
+    let mut report =
+        cargo_bp_script::ShowReport::new(&detail.short_name, &detail.name, &detail.version)
+            .with_description(&detail.description);
+
+    if let Some(repo) = &detail.repository {
+        report = report.with_repository(repo);
+    }
+
+    // Owners
+    report = report.with_owners(detail.owners.iter().map(|o| {
+        let mut info = cargo_bp_script::OwnerInfo::new(&o.login);
+        if let Some(n) = &o.name {
+            info = info.with_name(n);
+        }
+        info
+    }));
+
+    // Crates
+    report = report.with_crates(detail.crates.iter().map(|s| s.as_str()));
+
+    // Extends
+    for ext in &detail.extends {
+        report = report.with_extends(ext);
+    }
+
+    // Features
+    report = report.with_features(detail.features.iter().map(|(feat_name, members)| {
+        cargo_bp_script::FeatureInfo::new(feat_name).with_crates(members.iter().map(|s| s.as_str()))
+    }));
+
+    // Templates
+    report = report.with_templates(detail.templates.iter().map(|t| {
+        let mut info = cargo_bp_script::TemplateInfo::new(&t.name);
+        if let Some(d) = &t.description {
+            info = info.with_description(d);
+        }
+        info
+    }));
+
+    // Examples
+    report = report.with_examples(detail.examples.iter().map(|e| {
+        let mut info = cargo_bp_script::ExampleInfo::new(&e.name);
+        if let Some(d) = &e.description {
+            info = info.with_description(d);
+        }
+        info
+    }));
+
+    // Installed state from the current project (if available)
+    let crate_name = resolve_crate_name(name);
+    let (managed_deps, active_features) = read_installed_state(project_dir, &crate_name);
+    if !managed_deps.is_empty() {
+        report = report.with_installed_crates(managed_deps);
+    }
+    if !active_features.is_empty() {
+        report = report.with_active_features(active_features);
+    }
+
+    Ok(report)
 }
 
 /// Read installed state (managed-deps and active features) for a battery pack.
@@ -1720,138 +1895,138 @@ fn read_installed_state(
     (managed, features)
 }
 
-fn print_battery_pack_detail(
-    name: &str,
-    path: Option<&str>,
-    source: &CrateSource,
-    project_dir: &Path,
-) -> Result<()> {
+/// Serialize a [`ShowReport`] as JSON to `w`, with a trailing newline.
+fn render_show_json(
+    report: &cargo_bp_script::ShowReport,
+    w: &mut impl std::io::Write,
+) -> std::io::Result<()> {
+    serde_json::to_writer(&mut *w, report)?;
+    writeln!(w)?;
+    Ok(())
+}
+
+/// Pretty-print a [`ShowReport`] for human consumption to `w`.
+fn render_show_text(
+    report: &cargo_bp_script::ShowReport,
+    w: &mut impl std::io::Write,
+) -> std::io::Result<()> {
     use console::style;
 
-    // --path takes precedence over --crate-source
-    let detail = if path.is_some() {
-        fetch_battery_pack_detail(name, path)?
-    } else {
-        fetch_battery_pack_detail_from_source(source, name)?
-    };
-
-    // Read installed state from the project (if available)
-    let crate_name = resolve_crate_name(name);
-    let (managed_deps, active_features) = read_installed_state(project_dir, &crate_name);
-
     // Header
-    println!();
-    println!(
+    writeln!(w)?;
+    writeln!(
+        w,
         "{} {}",
-        style(&detail.name).green().bold(),
-        style(&detail.version).dim()
-    );
-    if !detail.description.is_empty() {
-        println!("{}", detail.description);
+        style(&report.name).green().bold(),
+        style(&report.version).dim()
+    )?;
+    if !report.description.is_empty() {
+        writeln!(w, "{}", report.description)?;
     }
 
     // Authors
-    if !detail.owners.is_empty() {
-        println!();
-        println!("{}", style("Authors:").bold());
-        for owner in &detail.owners {
+    if !report.owners.is_empty() {
+        writeln!(w)?;
+        writeln!(w, "{}", style("Authors:").bold())?;
+        for owner in &report.owners {
             if let Some(name) = &owner.name {
-                println!("  {} ({})", name, owner.login);
+                writeln!(w, "  {} ({})", name, owner.login)?;
             } else {
-                println!("  {}", owner.login);
+                writeln!(w, "  {}", owner.login)?;
             }
         }
     }
 
     // Crates
-    if !detail.crates.is_empty() {
-        println!();
-        println!("{}", style("Crates:").bold());
-        for dep in &detail.crates {
-            let marker = if managed_deps.contains(dep) {
+    if !report.crates.is_empty() {
+        writeln!(w)?;
+        writeln!(w, "{}", style("Crates:").bold())?;
+        for dep in &report.crates {
+            let marker = if report.installed_crates.contains(dep) {
                 format!(" {}", style("✓").green())
             } else {
                 String::new()
             };
-            println!("  {}{}", dep, marker);
+            writeln!(w, "  {}{}", dep, marker)?;
         }
     }
 
     // Features
-    if !detail.features.is_empty() {
-        println!();
-        println!("{}", style("Features:").bold());
-        for (feat_name, members) in &detail.features {
-            let marker = if active_features.contains(feat_name) {
+    if !report.features.is_empty() {
+        writeln!(w)?;
+        writeln!(w, "{}", style("Features:").bold())?;
+        for feat in &report.features {
+            let marker = if report.active_features.contains(&feat.name) {
                 format!(" {}", style("✓").green())
             } else {
                 String::new()
             };
-            println!(
+            writeln!(
+                w,
                 "  {} → {}{}",
-                style(feat_name).cyan(),
-                members.join(", "),
+                style(&feat.name).cyan(),
+                feat.crates.join(", "),
                 marker
-            );
+            )?;
         }
     }
 
     // Extends
-    if !detail.extends.is_empty() {
-        println!();
-        println!("{}", style("Extends:").bold());
-        for dep in &detail.extends {
-            println!("  {}", dep);
+    if !report.extends.is_empty() {
+        writeln!(w)?;
+        writeln!(w, "{}", style("Extends:").bold())?;
+        for dep in &report.extends {
+            writeln!(w, "  {}", dep)?;
         }
     }
 
     // Templates
-    if !detail.templates.is_empty() {
-        println!();
-        println!("{}", style("Templates:").bold());
-        let max_name_len = detail
+    if !report.templates.is_empty() {
+        writeln!(w)?;
+        writeln!(w, "{}", style("Templates:").bold())?;
+        let max_name_len = report
             .templates
             .iter()
             .map(|t| t.name.len())
             .max()
             .unwrap_or(0);
-        for tmpl in &detail.templates {
+        for tmpl in &report.templates {
             let name_padded = format!("{:<width$}", tmpl.name, width = max_name_len);
             if let Some(desc) = &tmpl.description {
-                println!("  {}  {}", style(name_padded).cyan(), desc);
+                writeln!(w, "  {}  {}", style(name_padded).cyan(), desc)?;
             } else {
-                println!("  {}", style(name_padded).cyan());
+                writeln!(w, "  {}", style(name_padded).cyan())?;
             }
         }
     }
 
     // [impl format.examples.browsable]
     // Examples
-    if !detail.examples.is_empty() {
-        println!();
-        println!("{}", style("Examples:").bold());
-        let max_name_len = detail
+    if !report.examples.is_empty() {
+        writeln!(w)?;
+        writeln!(w, "{}", style("Examples:").bold())?;
+        let max_name_len = report
             .examples
             .iter()
             .map(|e| e.name.len())
             .max()
             .unwrap_or(0);
-        for example in &detail.examples {
+        for example in &report.examples {
             let name_padded = format!("{:<width$}", example.name, width = max_name_len);
             if let Some(desc) = &example.description {
-                println!("  {}  {}", style(name_padded).magenta(), desc);
+                writeln!(w, "  {}  {}", style(name_padded).magenta(), desc)?;
             } else {
-                println!("  {}", style(name_padded).magenta());
+                writeln!(w, "  {}", style(name_padded).magenta())?;
             }
         }
     }
 
     // Install hints
-    println!();
-    println!("{}", style("Install:").bold());
-    println!("  cargo bp add {}", detail.short_name);
-    println!("  cargo bp new {}", detail.short_name);
-    println!();
+    writeln!(w)?;
+    writeln!(w, "{}", style("Install:").bold())?;
+    writeln!(w, "  cargo bp add {}", report.short_name)?;
+    writeln!(w, "  cargo bp new {}", report.short_name)?;
+    writeln!(w)?;
 
     Ok(())
 }
