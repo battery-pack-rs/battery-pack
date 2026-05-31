@@ -61,7 +61,7 @@ set -a; source dial9.env; set +a
 cargo run
 ```
 
-Then inspect the traces with the dial9 viewer:
+Drive some traffic at the running service (a curl loop, or `oha`) so the trace captures real work. Then inspect it with the dial9 viewer:
 
 ```bash
 cargo install dial9
