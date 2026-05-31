@@ -1,70 +1,62 @@
-{% if server_framework == "axum" %}
 //! Axum router, application state, and request handlers.
 
-use std::time::Duration;
-
 use axum::Router;
+use axum::Json;
 use axum::extract::{Path, State};
-use axum::routing::get;
+use axum::routing::{get, post};
 use http::StatusCode;
-use metrique::timers::Timer;
-{% if downstream != "none" %}
-use anyhow::Context;
-{% endif %}
+use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
-{% if downstream != "none" %}
 use crate::downstream::Store;
-{% endif %}
 use crate::middleware::{HandlerMetricsGuard, telemetry_layer};
+{% if rate_limit %}
+use tower_governor::GovernorLayer;
+use tower_governor::governor::GovernorConfigBuilder;
+use tower_governor::key_extractor::GlobalKeyExtractor;
+{% endif %}
 
+{% if tower_timeout %}
+/// Requests slower than this are aborted with 408 so a stalled handler cannot pin a connection.
+const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+{% endif %}
+{% if rate_limit %}
+/// Global ingress cap: one shared bucket allows bursts up to `RATE_LIMIT_BURST`, refilled at
+/// `RATE_LIMIT_PER_SECOND` per second. See the service-architecture skill to switch to per-client.
+const RATE_LIMIT_BURST: u32 = 50;
+const RATE_LIMIT_PER_SECOND: u64 = 20;
+{% endif %}
+
+/// State information shared across routes.
+/// 
+/// All contents should be cheaply clonable (or wrap the whole thing in an Arc)
 #[derive(Clone)]
 pub struct AppState {
-    {% if downstream != "none" %}
     pub store: Store,
-    {% endif %}
 }
 
-{% if downstream == "redis" %}
-pub async fn build_state(config: &Config) -> anyhow::Result<AppState> {
-    let store = if config.in_memory {
-        Store::in_memory()
-    } else {
-        Store::connect(&config.redis_url)
-            .await
-            .context("connect to redis")?
-    };
+pub fn build_state(config: &Config) -> anyhow::Result<AppState> {
+    let store = Store::new(config.downstream_url.as_deref())?;
     Ok(AppState { store })
 }
-{% elif downstream == "http-service" %}
-pub async fn build_state(config: &Config) -> anyhow::Result<AppState> {
-    let store = Store::connect(&config.downstream_url, config.downstream_timeout)
-        .context("build downstream client")?;
-    Ok(AppState { store })
-}
-{% else %}
-pub async fn build_state(_config: &Config) -> anyhow::Result<AppState> {
-    Ok(AppState {})
-}
-{% endif %}
 
 pub fn router(state: AppState) -> Router {
+    {% if rate_limit %}
+    let governor = GovernorConfigBuilder::default()
+        .key_extractor(GlobalKeyExtractor)
+        .per_second(RATE_LIMIT_PER_SECOND)
+        .burst_size(RATE_LIMIT_BURST)
+        .finish()
+        .expect("valid rate-limit config");
+    {% endif %}
+    // Instrumented routes carry the full middleware stack.
     let app = Router::new()
-        .route("/health", get(health))
-        {% if downstream != "none" %}
         .route("/items/{key}", get(get_item).put(set_item))
-        {% else %}
-        .route("/echo", axum::routing::post(echo))
-        {% endif %}
-        .with_state(state);
-
-    // `record_metrics` is applied last so it is the outermost layer and records the final
-    // status even when an inner layer (timeout, catch-panic) produced the response.
-    app
+        .route("/echo", post(echo))
         {% if tower_timeout %}
         .layer(tower_http::timeout::TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
-            Duration::from_secs(15),
+            REQUEST_TIMEOUT,
         ))
         {% endif %}
         {% if tower_on_early_drop %}
@@ -83,41 +75,57 @@ pub fn router(state: AppState) -> Router {
         )
         {% endif %}
         {% if tower_catch_panic %}
-        // turn panics into 500s
+        // turn panics into 500 responses
         .layer(tower_http::catch_panic::CatchPanicLayer::new())
         {% endif %}
-        .layer(axum::middleware::from_fn(telemetry_layer))
+        {% if rate_limit %}
+        // Applied inside telemetry_layer so a rejected (429) request is still recorded as a metric.
+        .layer(GovernorLayer::new(governor))
+        {% endif %}
+        // telemetry_layer is applied last so it is the outermost layer and records the final status
+        // even when an inner layer (timeout, catch-panic) produced the response.
+        .layer(axum::middleware::from_fn(telemetry_layer));
+
+    // /health bypasses the middleware stack
+    Router::new()
+        .route("/health", get(health))
+        .merge(app)
+        .with_state(state)
 }
 
 async fn health() -> &'static str {
     "ok"
 }
 
-{% if downstream != "none" %}
 #[tracing::instrument(skip(state, metrics), fields(key = %key))]
 async fn get_item(
     State(state): State<AppState>,
     Path(key): Path<String>,
     mut metrics: HandlerMetricsGuard,
 ) -> Result<String, StatusCode> {
-    let mut timer = Timer::start_now();
-    let result = state.store.get(&key).await;
-    metrics.downstream_latency = Some(timer.stop());
+    let result = {
+        let _timing = metrics.downstream_duration.start();
+        state.store.get(&key).await
+    };
     match result {
         Ok(Some(value)) => {
-            metrics.downstream_success = true;
+            metrics.downstream_success = Some(true);
+            metrics.found = Some(true);
             metrics.payload_bytes = value.len();
-            tracing::info!(found = true, "get_item");
+            tracing::debug!(found = true, "get_item");
             Ok(value)
         }
         Ok(None) => {
-            metrics.downstream_success = true;
-            tracing::info!(found = false, "get_item");
+            metrics.downstream_success = Some(true);
+            metrics.found = Some(false);
+            tracing::debug!(found = false, "get_item");
             Err(StatusCode::NOT_FOUND)
         }
         Err(e) => {
             metrics.downstream_error_kind = Some(e.kind());
-            tracing::error!("downstream call failed: {:#}", anyhow::anyhow!(e));
+            let err = anyhow::anyhow!(e);
+            metrics.downstream_error = Some(format!("{err:#}"));
+            tracing::error!("downstream call failed: {err:#}");
             Err(StatusCode::BAD_GATEWAY)
         }
     }
@@ -131,29 +139,43 @@ async fn set_item(
     body: String,
 ) -> Result<StatusCode, StatusCode> {
     metrics.payload_bytes = body.len();
-    let mut timer = Timer::start_now();
-    let result = state.store.set(&key, &body).await;
-    metrics.downstream_latency = Some(timer.stop());
+    let result = {
+        let _timing = metrics.downstream_duration.start();
+        state.store.set(&key, &body).await
+    };
     match result {
         Ok(()) => {
-            metrics.downstream_success = true;
+            metrics.downstream_success = Some(true);
             Ok(StatusCode::NO_CONTENT)
         }
         Err(e) => {
             metrics.downstream_error_kind = Some(e.kind());
-            tracing::error!("downstream call failed: {:#}", anyhow::anyhow!(e));
+            let err = anyhow::anyhow!(e);
+            metrics.downstream_error = Some(format!("{err:#}"));
+            tracing::error!("downstream call failed: {err:#}");
             Err(StatusCode::BAD_GATEWAY)
         }
     }
 }
-{% else %}
-/// Echoes the request body back.
-#[tracing::instrument(skip_all)]
-async fn echo(mut metrics: HandlerMetricsGuard, body: String) -> String {
-    metrics.payload_bytes = body.len();
-    body
+
+#[derive(Deserialize)]
+pub struct EchoRequest {
+    pub message: String,
 }
-{% endif %}
+
+#[derive(Serialize)]
+pub struct EchoResponse {
+    pub message: String,
+}
+
+/// Echoes a JSON body back. A malformed body is rejected with 422.
+#[tracing::instrument(skip_all)]
+async fn echo(mut metrics: HandlerMetricsGuard, Json(req): Json<EchoRequest>) -> Json<EchoResponse> {
+    metrics.payload_bytes = req.message.len();
+    Json(EchoResponse {
+        message: req.message,
+    })
+}
 
 #[cfg(test)]
 mod tests {
@@ -161,41 +183,20 @@ mod tests {
     use axum::body::{Body, to_bytes};
     use http::Request;
     use tower::ServiceExt;
-    {% if downstream == "http-service" %}
-    use httpmock::prelude::*;
-    {% endif %}
 
-    {% if downstream == "redis" %}
     fn test_state() -> AppState {
         AppState {
-            store: Store::in_memory(),
+            store: Store::InMemory(Default::default()),
         }
-    }
-    {% elif downstream == "http-service" %}
-    fn test_state() -> AppState {
-        AppState {
-            store: Store::connect("http://127.0.0.1:0", Duration::from_millis(1000)).expect("client"),
-        }
-    }
-    {% else %}
-    fn test_state() -> AppState {
-        AppState {}
-    }
-    {% endif %}
-
-    #[tokio::test]
-    async fn health_ok() {
-        let resp = router(test_state())
-            .oneshot(Request::get("/health").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
     }
 
     /// Installs a thread-local test sink, drives one request, and returns the single emitted
     /// metric entry. `#[tokio::test]` runs on a current-thread runtime, so the thread-local sink
     /// set here is the one the middleware records into.
-    async fn capture_metric(app: axum::Router, req: Request<Body>) -> metrique::test_util::TestEntry {
+    async fn capture_metric(
+        app: axum::Router,
+        req: Request<Body>,
+    ) -> metrique::test_util::TestEntry {
         let metrique::test_util::TestEntrySink { inspector, sink } =
             metrique::test_util::test_entry_sink();
         let _guard = metrique::ServiceMetrics::set_test_sink(sink);
@@ -206,31 +207,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn health_emits_metric() {
-        let m = capture_metric(
-            router(test_state()),
-            Request::get("/health").body(Body::empty()).unwrap(),
-        )
-        .await;
-        assert_eq!(m.values["Operation"], "Health");
-        assert!(m.metrics["Success"].as_bool());
-        assert_eq!(m.metrics["StatusCode"].as_u64(), 200);
+    async fn health_ok() {
+        let resp = router(test_state())
+            .oneshot(Request::get("/health").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 
-    {% if downstream != "none" %}
+    #[tokio::test]
+    async fn health_emits_no_metric() {
+        let metrique::test_util::TestEntrySink { inspector, sink } =
+            metrique::test_util::test_entry_sink();
+        let _guard = metrique::ServiceMetrics::set_test_sink(sink);
+        router(test_state())
+            .oneshot(Request::get("/health").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert!(inspector.entries().is_empty(), "/health bypasses the telemetry layer");
+    }
+
     #[tracing_test::traced_test]
     #[tokio::test]
     async fn get_item_is_instrumented() {
-        // Outcome depends on the downstream; we only assert the handler's span/event fired.
         let _ = router(test_state())
             .oneshot(Request::get("/items/abc").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert!(logs_contain("get_item"));
     }
-    {% endif %}
 
-    {% if downstream == "redis" %}
     #[tokio::test]
     async fn set_then_get_returns_value() {
         let app = router(test_state());
@@ -278,111 +284,43 @@ mod tests {
             Request::get("/items/nope").body(Body::empty()).unwrap(),
         )
         .await;
-        assert_eq!(m.metrics["StatusCode"].as_u64(), 404);
+        assert_eq!(m.values["StatusCode"], "404");
         assert_eq!(m.values["ErrorKind"], "InvalidRequest");
-    }
-    {% elif downstream == "http-service" %}
-    #[tokio::test]
-    async fn get_found() {
-        let server = MockServer::start_async().await;
-        let mock = server
-            .mock_async(|when, then| {
-                when.method(GET).path("/k");
-                then.status(200).body("v");
-            })
-            .await;
-        let store = Store::connect(&server.base_url(), Duration::from_millis(1000)).expect("client");
-
-        let got = router(AppState { store })
-            .oneshot(Request::get("/items/k").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(got.status(), StatusCode::OK);
-        let body = to_bytes(got.into_body(), usize::MAX).await.unwrap();
-        assert_eq!(&body[..], b"v");
-        mock.assert_async().await;
+        assert!(m.metrics["ClientError"].as_bool());
+        assert!(!m.metrics["ServerError"].as_bool());
+        assert!(m.metrics["Success"].as_bool()); // a 4xx is the client's fault, still a success
+        assert_eq!(m.values["Path"], "/items/nope");
+        assert!(!m.metrics["Found"].as_bool());
     }
 
     #[tokio::test]
-    async fn get_not_found() {
-        let server = MockServer::start_async().await;
-        server
-            .mock_async(|when, then| {
-                when.method(GET).path("/missing");
-                then.status(404);
-            })
-            .await;
-        let store = Store::connect(&server.base_url(), Duration::from_millis(1000)).expect("client");
-
-        let got = router(AppState { store })
-            .oneshot(Request::get("/items/missing").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(got.status(), StatusCode::NOT_FOUND);
-    }
-
-    #[tokio::test]
-    async fn found_records_downstream_success() {
-        let server = MockServer::start_async().await;
-        server
-            .mock_async(|when, then| {
-                when.method(GET).path("/k");
-                then.status(200).body("vv");
-            })
-            .await;
-        let store = Store::connect(&server.base_url(), Duration::from_millis(1000)).expect("client");
-        let m = capture_metric(
-            router(AppState { store }),
-            Request::get("/items/k").body(Body::empty()).unwrap(),
-        )
-        .await;
-        assert!(m.metrics["DownstreamSuccess"].as_bool());
-        assert_eq!(m.metrics["PayloadBytes"].as_u64(), 2);
-    }
-
-    #[tokio::test]
-    async fn downstream_5xx_records_downstream_error() {
-        let server = MockServer::start_async().await;
-        server
-            .mock_async(|when, then| {
-                when.method(GET).path("/boom");
-                then.status(500);
-            })
-            .await;
-        let store = Store::connect(&server.base_url(), Duration::from_millis(1000)).expect("client");
-        let m = capture_metric(
-            router(AppState { store }),
-            Request::get("/items/boom").body(Body::empty()).unwrap(),
-        )
-        .await;
-        assert_eq!(m.metrics["StatusCode"].as_u64(), 502);
-        assert_eq!(m.values["ErrorKind"], "Downstream");
-        assert_eq!(m.values["DownstreamErrorKind"], "Downstream");
-        assert!(!m.metrics["DownstreamSuccess"].as_bool());
-    }
-    {% else %}
-    #[tokio::test]
-    async fn echo_returns_body() {
+    async fn echo_returns_json() {
         let got = router(test_state())
-            .oneshot(Request::post("/echo").body(Body::from("hello")).unwrap())
+            .oneshot(
+                Request::post("/echo")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"message":"hi"}"#))
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(got.status(), StatusCode::OK);
         let body = to_bytes(got.into_body(), usize::MAX).await.unwrap();
-        assert_eq!(&body[..], b"hello");
+        assert_eq!(&body[..], br#"{"message":"hi"}"#);
     }
 
     #[tokio::test]
     async fn echo_records_payload() {
         let m = capture_metric(
             router(test_state()),
-            Request::post("/echo").body(Body::from("hello")).unwrap(),
+            Request::post("/echo")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"message":"hello"}"#))
+                .unwrap(),
         )
         .await;
         assert_eq!(m.values["Operation"], "Echo");
         assert!(m.metrics["Success"].as_bool());
         assert_eq!(m.metrics["PayloadBytes"].as_u64(), 5);
     }
-    {% endif %}
 }
-{% endif %}

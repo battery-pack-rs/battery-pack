@@ -3,29 +3,11 @@ type = "string"
 prompt = "What does this service do?"
 default = "A starter async network service."
 
-[placeholders.server_framework]
-type = "select"
-prompt = "HTTP server"
-options = ["axum", "hyper"]
-default = "axum"
-
-[placeholders.downstream]
-type = "select"
-prompt = "Downstream dependency"
-options = ["redis", "http-service", "none"]
-default = "redis"
-
 [placeholders.allocator]
 type = "select"
 prompt = "Global allocator"
 options = ["jemalloc", "mimalloc", "system"]
 default = "jemalloc"
-
-[placeholders.metrics_output]
-type = "select"
-prompt = "Where to write metrics"
-options = ["stdout", "disk"]
-default = "stdout"
 
 [placeholders.dial9]
 type = "bool"
@@ -56,11 +38,3 @@ default = "true"
 type = "bool"
 prompt = "Apply an inbound rate-limit layer (governor)?"
 default = "false"
-
-[placeholders.circuit_breaker]
-type = "bool"
-prompt = "Wrap the HTTP downstream in a circuit breaker (only applies to the http-service downstream)?"
-default = "false"
-
-[[hints]]
-message = "Start a local Redis with: docker run --rm -p 6379:6379 redis:7-alpine"

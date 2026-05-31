@@ -2,9 +2,7 @@
 //! benchmarks exercise [`routes::router`] directly; the binary supplies the process-global setup.
 
 pub mod config;
-{% if downstream != "none" %}
 pub mod downstream;
-{% endif %}
 pub mod metrics;
 pub mod middleware;
 pub mod routes;
@@ -22,14 +20,30 @@ use crate::config::Config;
 /// Serves until SIGINT/SIGTERM, then drains in-flight requests and records the shutdown metric.
 /// The tracing and metric sinks are installed by the binary and outlive this call.
 pub async fn run(config: Config) -> anyhow::Result<()> {
-    let app = routes::router(routes::build_state(&config).await?);
+    tracing::info!(?config, "starting up");
+    let state = routes::build_state(&config)?;
+    let probe_store = state.store.clone();
+    let app = routes::router(state);
     let listener = tokio::net::TcpListener::bind(config.bind_addr)
         .await
         .context("bind listener")?;
     tracing::info!(addr = %config.bind_addr, "listening");
 
-    // Run the accept loop as its own task so the runtime schedules it like any other work
-    //{% if dial9 %} and dial9 records it{% endif %}. Shutdown coordination lives in `shutdown`.
+    // Smoke test that downstream is reachable. Only warn on unreachable, to avoid
+    // cascading failure.
+    {% if dial9 %}dial9::spawn{% else %}tokio::spawn{% endif %}(async move {
+        if let Some(result) = probe_store.probe().await {
+            match result {
+                Ok(()) => tracing::debug!("downstream reachable"),
+                Err(e) => tracing::warn!(
+                    "downstream unreachable at startup (non-fatal): {:#}",
+                    anyhow::anyhow!(e)
+                ),
+            }
+        }
+    });
+
+    // Spawn our server loop to a task so we can race its graceful shutdown against a timeout.
     let (drain_tx, drain_rx) = tokio::sync::oneshot::channel::<()>();
     let server = {% if dial9 %}dial9::spawn{% else %}tokio::spawn{% endif %}(async move {
         axum::serve(listener, app)
@@ -40,6 +54,6 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
             .expect("server error");
     });
 
-    shutdown::drain_on_signal(server, drain_tx, config.shutdown_drain_timeout).await;
+    shutdown::drain_on_signal(server, drain_tx).await;
     Ok(())
 }

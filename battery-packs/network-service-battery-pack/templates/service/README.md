@@ -4,54 +4,37 @@
 
 ## Run
 
-{%- if downstream == "redis" %}
-Start Redis with Docker or Podman, then run the service:
-
 ```bash
-docker run --rm -p 6379:6379 redis:7-alpine   # or: podman run --rm -p 6379:6379 redis:7-alpine
 cargo run
 ```
 
-To run without Redis, use the in-memory store:
-
-```bash
-cargo run -- --in-memory
-```
-{%- elif downstream == "http-service" %}
-Point the service at the downstream and run it:
+With no `--downstream-url`, items are stored in memory, so this works with no dependencies. Point it at a downstream to forward items there instead:
 
 ```bash
 cargo run -- --downstream-url http://127.0.0.1:3001
 ```
-{%- else %}
-```bash
-cargo run
-```
-{%- endif %}
 
-The service binds `127.0.0.1:3000` by default. Logs (JSON) go to stderr and metrics (JSON) to stdout.
+A second instance can be that downstream:
+
+```bash
+# terminal 1 — backing store (in-memory):
+cargo run -- --bind-addr 127.0.0.1:3001
+
+# terminal 2 — forwarder:
+cargo run -- --bind-addr 127.0.0.1:3000 --downstream-url http://127.0.0.1:3001
+```
+
+The service binds `127.0.0.1:3000` by default. Logs go to stderr and metrics to stdout. Set `--telemetry-dir <dir>` to roll both into files there instead.
 
 ## Endpoints
 
 ```bash
 curl localhost:3000/health
-{%- if downstream != "none" %}
 curl -X PUT localhost:3000/items/greeting --data 'hello'
 curl localhost:3000/items/greeting
-{%- endif %}
+curl -X POST localhost:3000/echo -H 'content-type: application/json' --data '{"message":"hi"}'
 ```
 
-## Test
-
-```bash
-cargo test
-```
-{%- if downstream == "redis" %}
-
-`redis_round_trip` starts a real Redis through testcontainers. It needs a Docker or
-Podman-compatible runtime (`DOCKER_HOST` selects which) and skips with a warning when none
-is reachable.
-{%- endif %}
 {%- if benchmarks %}
 
 ## Benchmark
@@ -64,11 +47,25 @@ cargo bench
 
 ## Debugging with dial9
 
-This service records a Tokio flight recorder trace when `DIAL9_ENABLED=true`. Inspect traces
-with the dial9 viewer:
+Run with the prod-ready flight recorder enabled (Tokio telemetry, cpu stack traces, heap profiling, and more) by enabling Dial9 environment variables.
+Locally, you can do this by sourcing by sourcing `dial9.env`:
+
+```bash
+set -a; source dial9.env; set +a
+cargo run
+```
+
+Then inspect the traces with the dial9 viewer:
 
 ```bash
 cargo install dial9
 dial9 serve --local-dir /tmp/dial9-traces
 ```
+
+Or analyze it with the agent toolkit:
+
+```bash
+dial9 agents
+```
+
 {%- endif %}

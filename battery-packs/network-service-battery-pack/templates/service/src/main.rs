@@ -1,4 +1,32 @@
-{% include "snippets/allocator.rs" %}
+{% if dial9 %}
+// dial9's allocator wraps the real allocator to add opt-in heap profiling. It is a
+// passthrough until DIAL9_MEMORY_PROFILE_ENABLED turns it on.
+{% if allocator == "jemalloc" %}
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static ALLOC: dial9_tokio_telemetry::memory_profiling::Dial9Allocator<tikv_jemallocator::Jemalloc> =
+    dial9_tokio_telemetry::memory_profiling::Dial9Allocator::new(tikv_jemallocator::Jemalloc);
+{% elif allocator == "mimalloc" %}
+#[global_allocator]
+static ALLOC: dial9_tokio_telemetry::memory_profiling::Dial9Allocator<mimalloc::MiMalloc> =
+    dial9_tokio_telemetry::memory_profiling::Dial9Allocator::new(mimalloc::MiMalloc);
+{% else %}
+#[global_allocator]
+static ALLOC: dial9_tokio_telemetry::memory_profiling::Dial9Allocator =
+    dial9_tokio_telemetry::memory_profiling::Dial9Allocator::system();
+{% endif %}
+{% else %}
+{% if allocator == "jemalloc" %}
+// jemalloc reduces fragmentation and allocator contention under the multi-threaded
+// runtime. It does not build under MSVC.
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+{% elif allocator == "mimalloc" %}
+#[global_allocator]
+static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+{% endif %}
+{% endif %}
 use clap::Parser;
 
 use {{ crate_name }}::config::Config;

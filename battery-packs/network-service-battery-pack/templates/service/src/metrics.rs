@@ -7,10 +7,11 @@ use std::time::{Duration, SystemTime};
 
 use metrique::Slot;
 use metrique::ServiceMetrics;
-use metrique::timers::Timer;
+use metrique::timers::{Stopwatch, Timer};
 use metrique::unit::{Byte, Millisecond};
 use metrique::unit_of_work::metrics;
 use metrique::writer::Entry;
+use metrique::writer::value::ToString;
 
 /// Properties attached to every emitted record.
 #[derive(Entry)]
@@ -19,14 +20,13 @@ pub struct Globals {
     pub service_name: String,
 }
 
-/// The operation a request maps to. `value(string)` keeps metric cardinality bounded.
+/// The operation a request maps to.
 #[metrics(value(string))]
 #[derive(Clone, Copy)]
 pub enum Operation {
     GetItem,
     SetItem,
     Echo,
-    Health,
 }
 
 /// Why a request or downstream call failed.
@@ -41,17 +41,22 @@ pub enum ErrorKind {
 
 /// Everything below the middleware records here. The middleware opens it as a slot and the
 /// handler writes to it through the `HandlerMetricsHandle` extractor.
-#[metrics(subfield)]
+#[metrics(subfield_owned)]
 #[derive(Default)]
 pub struct HandlerMetrics {
     /// Bytes of the value read or written, set by the handler.
     #[metrics(unit = Byte)]
     pub payload_bytes: usize,
-    pub downstream_success: bool,
+    /// `None` for operations that make no downstream call.
+    pub downstream_success: Option<bool>,
+    /// Whether a lookup found the key. `None` for operations that do not look one up.
+    pub found: Option<bool>,
     pub downstream_error_kind: Option<ErrorKind>,
-    /// `None` when no downstream call was made.
+    /// The downstream failure chain, recorded as a property for debugging.
+    pub downstream_error: Option<String>,
+    /// Duration of the downstream call, if started.
     #[metrics(unit = Millisecond)]
-    pub downstream_latency: Option<Duration>,
+    pub downstream_duration: Stopwatch,
 }
 
 /// Per-request wide event. The middleware owns the guard and flushes it on drop.
@@ -59,11 +64,22 @@ pub struct HandlerMetrics {
 pub struct RequestMetrics {
     pub request_id: String,
     pub operation: Operation,
+    /// Request path, recorded as a property (high-cardinality: it contains the key).
+    pub path: String,
+    /// The start time of the request (from when our router saw it)
     #[metrics(timestamp)]
     pub timestamp: SystemTime,
+    /// The full foreground duration of the request
     #[metrics(unit = Millisecond)]
     pub duration: Timer,
+    /// True unless the service itself failed (5xx). A 4xx is a client problem, still a success.
     pub success: bool,
+    /// If the request was a 4xx error
+    pub client_error: bool,
+    /// If the request was a 5xx error
+    pub server_error: bool,
+    /// Rendered via `ToString` so it is recorded as a string property, not a numeric metric.
+    #[metrics(format = ToString)]
     pub status_code: u16,
     pub error_kind: Option<ErrorKind>,
     #[metrics(flatten)]
@@ -73,13 +89,16 @@ pub struct RequestMetrics {
 impl RequestMetrics {
     /// Opens a record bound to the global sink. The duration timer starts now, so it must be
     /// called at the middleware boundary, not inside the handler.
-    pub fn open(request_id: String, operation: Operation) -> RequestMetricsGuard {
+    pub fn init(request_id: String, operation: Operation) -> RequestMetricsGuard {
         RequestMetrics {
             request_id,
             operation,
+            path: String::new(),
             timestamp: SystemTime::now(),
             duration: Timer::start_now(),
             success: false,
+            client_error: false,
+            server_error: false,
             status_code: 0,
             error_kind: None,
             handler: Slot::default(),

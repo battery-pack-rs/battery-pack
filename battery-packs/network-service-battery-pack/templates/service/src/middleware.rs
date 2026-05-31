@@ -1,4 +1,3 @@
-{% if server_framework == "axum" %}
 //! Request-metrics middleware and the guard a handler uses to record its own metrics.
 
 use std::sync::{Arc, Mutex};
@@ -21,9 +20,11 @@ pub async fn telemetry_layer(mut req: Request, next: Next) -> Response {
     let request_id = Uuid::now_v7().to_string();
     let operation = classify_operation(req.method(), req.uri().path());
     let span = tracing::info_span!("request", %request_id);
-    let mut metrics = RequestMetrics::open(request_id.clone(), operation);
+    let mut metrics = RequestMetrics::init(request_id.clone(), operation);
+    // Captured before `next.run` consumes the request, so it is recorded even on a timeout.
+    metrics.path = req.uri().path().to_string();
 
-    let slot = metrics.handler.open(OnParentDrop::Discard).expect("slot opened once");
+    let slot = metrics.handler.open(OnParentDrop::Discard).expect("slot opened more than once");
     req.extensions_mut()
         .insert(HandlerMetricsHandle(Arc::new(Mutex::new(Some(slot)))));
 
@@ -31,7 +32,10 @@ pub async fn telemetry_layer(mut req: Request, next: Next) -> Response {
 
     let status = response.status();
     metrics.status_code = status.as_u16();
-    metrics.success = status.is_success();
+    metrics.client_error = status.is_client_error();
+    metrics.server_error = status.is_server_error();
+    // A 4xx is the client's fault, not ours, so only a 5xx counts against success.
+    metrics.success = !status.is_server_error();
     metrics.error_kind = classify_error(status);
     if let Ok(value) = HeaderValue::from_str(&request_id) {
         response.headers_mut().insert("x-request-id", value);
@@ -75,7 +79,6 @@ impl<S: Send + Sync> FromRequestParts<S> for HandlerMetricsGuard {
 
 fn classify_operation(method: &Method, path: &str) -> Operation {
     match path {
-        "/health" => Operation::Health,
         "/echo" => Operation::Echo,
         _ if method == Method::GET => Operation::GetItem,
         _ => Operation::SetItem,
@@ -96,4 +99,3 @@ fn classify_error(status: StatusCode) -> Option<ErrorKind> {
     })
 }
 
-{% endif %}

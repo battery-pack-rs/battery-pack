@@ -6,24 +6,13 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use http::Request;
 use tower::ServiceExt;
 
-{% if downstream != "none" %}
 use {{ crate_name }}::downstream::Store;
-{% endif %}
 use {{ crate_name }}::routes::{self, AppState};
 
 fn state() -> AppState {
-    {% if downstream == "redis" %}
     AppState {
-        store: Store::in_memory(),
+        store: Store::InMemory(Default::default()),
     }
-    {% elif downstream == "http-service" %}
-    AppState {
-        store: Store::connect("http://127.0.0.1:0", std::time::Duration::from_millis(1000))
-            .expect("build client"),
-    }
-    {% else %}
-    AppState {}
-    {% endif %}
 }
 
 fn health(c: &mut Criterion) {

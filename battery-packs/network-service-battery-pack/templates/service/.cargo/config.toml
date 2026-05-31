@@ -1,1 +1,9 @@
-{% include "snippets/cargo-config.toml" %}
+# tokio_unstable exposes the Tokio runtime metrics that metrique-util samples{% if dial9 %} and
+# the runtime hooks dial9 records{% endif %}. It is an API-stability flag (these APIs may change
+# between Tokio releases), not a correctness or production-safety concern.
+[build]
+rustflags = [
+    "--cfg", "tokio_unstable",{% if dial9 %}
+    # frame pointers let dial9 symbolize stacks cheaply
+    "-C", "force-frame-pointers=yes",{% endif %}
+]

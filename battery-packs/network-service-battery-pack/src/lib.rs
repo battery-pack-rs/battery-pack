@@ -22,7 +22,7 @@ mod tests {
         out
     }
 
-    /// Default template (axum, redis, jemalloc, dial9, stdout, benchmarks).
+    /// Default template (axum, in-memory-or-forward store, jemalloc, dial9, stdout, benchmarks).
     #[test]
     fn validate() {
         ::battery_pack::testing::validate(env!("CARGO_MANIFEST_DIR")).unwrap();
@@ -34,21 +34,11 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_http_circuit_breaker() {
-        assert_data_eq!(
-            render(&[("downstream", "http-service"), ("circuit_breaker", "true")]),
-            file!["snapshots/http_circuit_breaker.txt"]
-        );
-    }
-
-    #[test]
     fn snapshot_minimal() {
         assert_data_eq!(
             render(&[
-                ("downstream", "none"),
                 ("dial9", "false"),
                 ("allocator", "mimalloc"),
-                ("metrics_output", "disk"),
                 ("benchmarks", "false"),
                 ("tower_timeout", "false"),
                 ("tower_catch_panic", "false"),
@@ -61,28 +51,23 @@ mod tests {
     // Feature combinations beyond the defaults. These share the `bp-validate` target cache with
     // `validate`, so dependencies compile once and each combo only rebuilds the generated crate.
 
+    /// Exercises the optional inbound rate-limit layer (off by default).
     #[test]
-    fn validate_http_downstream_with_circuit_breaker() {
-        validate_template_with(
-            env!("CARGO_MANIFEST_DIR"),
-            "service",
-            &[("downstream", "http-service"), ("circuit_breaker", "true")],
-        )
-        .unwrap();
+    fn validate_rate_limited() {
+        validate_template_with(env!("CARGO_MANIFEST_DIR"), "service", &[("rate_limit", "true")])
+            .unwrap();
     }
 
-    /// No downstream, no dial9, mimalloc, disk metrics, no benchmarks, and every Tower layer
-    /// disabled, exercising the "off" path of each toggle in one container-free combination.
+    /// No dial9, mimalloc, disk metrics, no benchmarks, and every Tower layer disabled, exercising
+    /// the "off" path of each toggle in one combination.
     #[test]
     fn validate_minimal() {
         validate_template_with(
             env!("CARGO_MANIFEST_DIR"),
             "service",
             &[
-                ("downstream", "none"),
                 ("dial9", "false"),
                 ("allocator", "mimalloc"),
-                ("metrics_output", "disk"),
                 ("benchmarks", "false"),
                 ("tower_timeout", "false"),
                 ("tower_catch_panic", "false"),
