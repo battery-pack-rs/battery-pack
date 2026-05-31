@@ -14,16 +14,15 @@ use tracing_subscriber::prelude::*;
 use crate::config::Config;
 use crate::metrics::Globals;
 
-/// Keeps telemetry alive. Dropping it flushes buffered logs and detaches the metric sink, so it
-/// must outlive request handling.
+/// Must outlive request handling: dropping it flushes buffered logs and detaches the metric sink.
 #[must_use = "dropping the guard stops log flushing and detaches the metric sink"]
 pub struct TelemetryGuard {
     _log: WorkerGuard,
     _metrics: AttachHandle,
 }
 
-/// Installs logs and metrics in one call. With `telemetry_dir` set, both roll into files there;
-/// otherwise logs go to stderr and metrics to stdout, on separate streams.
+/// With `telemetry_dir` set, logs and metrics roll into files there, otherwise logs go to stderr
+/// and metrics to stdout, on separate streams.
 pub fn init_telemetry(config: &Config) -> TelemetryGuard {
     TelemetryGuard {
         _log: init_tracing(&config.log_filter, config.telemetry_dir.as_deref()),
@@ -32,8 +31,7 @@ pub fn init_telemetry(config: &Config) -> TelemetryGuard {
 }
 
 fn init_tracing(log_filter: &str, telemetry_dir: Option<&Path>) -> WorkerGuard {
-    // Only the writer differs by destination; `non_blocking` erases its type, so both arms yield
-    // the same handle and the rest of the setup is shared.
+    // non_blocking erases the writer type, so both destinations yield the same handle.
     let (writer, guard) = match telemetry_dir {
         Some(dir) => tracing_appender::non_blocking(RollingFileAppender::new(
             Rotation::HOURLY,

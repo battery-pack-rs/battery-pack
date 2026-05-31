@@ -54,7 +54,7 @@ BENCH_DOWNSTREAM_URL=http://127.0.0.1:3001 cargo bench
 ## Debugging with dial9
 
 Run with the prod-ready flight recorder enabled (Tokio telemetry, cpu stack traces, heap profiling, and more) by enabling Dial9 environment variables.
-Locally, you can do this by sourcing by sourcing `dial9.env`:
+Locally, you can do this by sourcing `dial9.env`:
 
 ```bash
 set -a; source dial9.env; set +a

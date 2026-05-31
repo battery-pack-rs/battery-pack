@@ -42,12 +42,11 @@ pub async fn telemetry_middleware(mut req: Request, next: Next) -> Response {
     response
 }
 
-/// Holds slot guard for handler metrics before it is pulled out of request extensions.
+/// Clonable into request extensions. The Mutex and Option let a handler take the guard exactly once.
 #[derive(Clone)]
 struct HandlerMetricsHandle(Arc<Mutex<Option<SlotGuard<HandlerMetrics>>>>);
 
-/// Owned access to the request's [`HandlerMetrics`], obtained in a handler. Writes go to the
-/// parent record. The values flush into the request's metric when this drops.
+/// Handler access to [`HandlerMetrics`]. Writes flush into the request's record on drop.
 pub struct HandlerMetricsGuard(SlotGuard<HandlerMetrics>);
 
 impl std::ops::Deref for HandlerMetricsGuard {
@@ -76,8 +75,7 @@ impl<S: Send + Sync> FromRequestParts<S> for HandlerMetricsGuard {
     }
 }
 
-/// Maps a request to its operation. Unmatched routes record as `Other` rather than folding into an
-/// existing operation, so a new endpoint shows up as unclassified until it is added here.
+/// Unmatched routes record as `Other` so a new endpoint shows up as unclassified until added here.
 fn classify_operation(method: &Method, path: &str) -> Operation {
     match (method, path) {
         (&Method::POST, "/echo") => Operation::Echo,

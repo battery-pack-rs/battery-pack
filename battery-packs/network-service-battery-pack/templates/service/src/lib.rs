@@ -1,5 +1,5 @@
-//! Library surface: the service modules plus [`run`], the server orchestration. Tests and
-//! benchmarks exercise [`routes::router`] directly; the binary supplies the process-global setup.
+//! Service modules and [`run`], the server orchestration. The binary adds the process-global setup
+//! (telemetry, allocator). Tests and benchmarks drive [`routes::router`] directly.
 
 pub mod config;
 pub mod store;

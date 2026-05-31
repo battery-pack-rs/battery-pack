@@ -131,8 +131,8 @@ impl Config {
 
 
 ── src/lib.rs ──
-//! Library surface: the service modules plus [`run`], the server orchestration. Tests and
-//! benchmarks exercise [`routes::router`] directly; the binary supplies the process-global setup.
+//! Service modules and [`run`], the server orchestration. The binary adds the process-global setup
+//! (telemetry, allocator). Tests and benchmarks drive [`routes::router`] directly.
 
 pub mod config;
 pub mod metrics;
@@ -216,10 +216,8 @@ async fn main() -> std::process::ExitCode {
 
 
 ── src/metrics.rs ──
-//! Wide-event metrics for the service.
-//!
-//! One [`RequestMetrics`] record is emitted per request. The middleware owns the parent and
-//! opens [`HandlerMetrics`] as a slot the handler fills via the `HandlerMetricsHandle` extractor.
+//! Wide-event metrics: one [`RequestMetrics`] record per request. The middleware owns the parent
+//! and opens [`HandlerMetrics`] as a slot the handler fills through the [`HandlerMetricsGuard`] extractor.
 
 use std::time::{Duration, SystemTime};
 
@@ -235,8 +233,7 @@ use metrique::{Counter, CounterGuard};
 /// Re-exported so handlers can reach the guard alongside the metric types it writes into.
 pub use crate::middleware::HandlerMetricsGuard;
 
-/// Concurrent in-flight requests. The middleware increments it for each request's duration, so a
-/// record's `InFlight` shows the load the request was admitted under.
+/// Concurrent in-flight requests, tracked by the middleware for each request's duration.
 pub static IN_FLIGHT: Counter = Counter::new(0);
 
 /// Properties attached to every emitted record.
@@ -267,8 +264,7 @@ pub enum ErrorKind {
     Internal,
 }
 
-/// Everything below the middleware records here. The middleware opens it as a slot and the
-/// handler writes to it through the `HandlerMetricsHandle` extractor.
+/// Handler-set fields, flushed into the parent [`RequestMetrics`] when the guard drops.
 #[metrics(subfield_owned)]
 #[derive(Default)]
 pub struct HandlerMetrics {
@@ -292,15 +288,14 @@ pub struct HandlerMetrics {
 pub struct RequestMetrics {
     pub request_id: String,
     pub operation: Operation,
-    /// Live in-flight request count. The guard increments at init and decrements on drop, and
-    /// closes to the current count, so the record shows the load this request ran under.
+    /// In-flight count at close. The guard increments at init and decrements on drop.
     pub in_flight: CounterGuard<'static>,
     /// Request path, recorded as a property (high-cardinality: it contains the key).
     pub path: String,
-    /// The start time of the request (from when our router saw it)
+    /// When the router received the request.
     #[metrics(timestamp)]
     pub timestamp: SystemTime,
-    /// The full foreground duration of the request
+    /// Foreground request duration.
     #[metrics(unit = Millisecond)]
     pub duration: Timer,
     /// True unless the service itself failed (5xx). A 4xx is a client problem, still a success.
@@ -309,7 +304,7 @@ pub struct RequestMetrics {
     pub client_error: bool,
     /// If the request was a 5xx error
     pub server_error: bool,
-    /// Rendered via `ToString` so it is recorded as a string property, not a numeric metric.
+    /// A string property, not a numeric metric: status codes are dimensions, not measurements.
     #[metrics(format = ToString)]
     pub status_code: u16,
     pub error_kind: Option<ErrorKind>,
@@ -318,8 +313,7 @@ pub struct RequestMetrics {
 }
 
 impl RequestMetrics {
-    /// Opens a record bound to the global sink. The duration timer starts now, so it must be
-    /// called at the middleware boundary, not inside the handler.
+    /// Call at the middleware boundary, not in a handler: the duration timer starts now.
     pub fn init(request_id: String, operation: Operation, path: String) -> RequestMetricsGuard {
         RequestMetrics {
             request_id,
@@ -426,12 +420,11 @@ pub async fn telemetry_middleware(mut req: Request, next: Next) -> Response {
     response
 }
 
-/// Holds slot guard for handler metrics before it is pulled out of request extensions.
+/// Clonable into request extensions. The Mutex and Option let a handler take the guard exactly once.
 #[derive(Clone)]
 struct HandlerMetricsHandle(Arc<Mutex<Option<SlotGuard<HandlerMetrics>>>>);
 
-/// Owned access to the request's [`HandlerMetrics`], obtained in a handler. Writes go to the
-/// parent record. The values flush into the request's metric when this drops.
+/// Handler access to [`HandlerMetrics`]. Writes flush into the request's record on drop.
 pub struct HandlerMetricsGuard(SlotGuard<HandlerMetrics>);
 
 impl std::ops::Deref for HandlerMetricsGuard {
@@ -460,8 +453,7 @@ impl<S: Send + Sync> FromRequestParts<S> for HandlerMetricsGuard {
     }
 }
 
-/// Maps a request to its operation. Unmatched routes record as `Other` rather than folding into an
-/// existing operation, so a new endpoint shows up as unclassified until it is added here.
+/// Unmatched routes record as `Other` so a new endpoint shows up as unclassified until added here.
 fn classify_operation(method: &Method, path: &str) -> Operation {
     match (method, path) {
         (&Method::POST, "/echo") => Operation::Echo,
@@ -507,9 +499,7 @@ use tower_http::trace::TraceLayer;
 /// Largest request body accepted, rejected with 413 above this. Bounds memory used per request.
 const MAX_BODY_BYTES: usize = 1024 * 1024;
 
-/// State information shared across routes.
-///
-/// Fields must be cheaply clonable: axum clones this for every request.
+/// Shared state. Fields must be cheaply clonable: axum clones this for every request.
 #[derive(Clone)]
 pub struct AppState {
     pub store: Store,
@@ -825,8 +815,7 @@ impl ShutdownReason {
     }
 }
 
-/// Resolves once, on the first SIGINT or SIGTERM. Returns the trigger so the caller
-/// can measure drain time and record the reason after the server has stopped.
+/// Resolves on the first SIGINT or SIGTERM, returning the trigger so the caller can record the reason.
 pub(crate) async fn shutdown_signal() -> ShutdownReason {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
@@ -851,9 +840,8 @@ pub(crate) async fn shutdown_signal() -> ShutdownReason {
     }
 }
 
-/// Waits for a shutdown signal, triggers graceful drain through `drain_tx`, and waits up to
-/// `SHUTDOWN_DRAIN_TIMEOUT` for the server task to finish. Records the shutdown metric, including
-/// whether the drain completed in time.
+/// Drains in-flight requests on a shutdown signal, capped at `SHUTDOWN_DRAIN_TIMEOUT`, then records
+/// the shutdown metric (including whether the drain finished in time).
 pub async fn drain_on_signal(
     server: tokio::task::JoinHandle<anyhow::Result<()>>,
     drain_tx: tokio::sync::oneshot::Sender<()>,
@@ -889,9 +877,8 @@ pub async fn drain_on_signal(
 
 
 ── src/store.rs ──
-//! Item store. With no downstream URL it keeps items in memory, so the service runs with no
-//! dependencies; with a URL it forwards to `{url}/items/{key}` over a shared, reused client.
-//! See the connection-management skill for why the client is built once and shared.
+//! Key-value store: an in-memory map when no downstream URL is set, or an HTTP forwarder to
+//! `{url}/items/{key}` when one is.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -944,7 +931,7 @@ impl StoreError {
     }
 }
 
-/// Cheaply clonable handle to our backend.
+/// Backend handle, an in-memory map or an HTTP forwarder, cheap to clone.
 #[derive(Clone)]
 pub enum Store {
     InMemory(Arc<Mutex<HashMap<String, String>>>),
@@ -1020,8 +1007,8 @@ impl Store {
     }
 }
 
-/// Builds the shared client once. Reusing it keeps the connection pool and TLS sessions warm; the
-/// retry budget caps amplification at ~20% and retries idempotent GET/PUT 503s.
+/// Reuses one client so the connection pool and TLS sessions stay warm. The retry budget bounds
+/// amplification and retries idempotent GET/PUT 503s.
 fn build_client(downstream_url: &str) -> anyhow::Result<reqwest::Client> {
     // reqwest::Url handles ports, userinfo, and IPv6 literals that naive string splitting mangles.
     let host = reqwest::Url::parse(downstream_url)
@@ -1064,16 +1051,15 @@ use tracing_subscriber::prelude::*;
 use crate::config::Config;
 use crate::metrics::Globals;
 
-/// Keeps telemetry alive. Dropping it flushes buffered logs and detaches the metric sink, so it
-/// must outlive request handling.
+/// Must outlive request handling: dropping it flushes buffered logs and detaches the metric sink.
 #[must_use = "dropping the guard stops log flushing and detaches the metric sink"]
 pub struct TelemetryGuard {
     _log: WorkerGuard,
     _metrics: AttachHandle,
 }
 
-/// Installs logs and metrics in one call. With `telemetry_dir` set, both roll into files there;
-/// otherwise logs go to stderr and metrics to stdout, on separate streams.
+/// With `telemetry_dir` set, logs and metrics roll into files there, otherwise logs go to stderr
+/// and metrics to stdout, on separate streams.
 pub fn init_telemetry(config: &Config) -> TelemetryGuard {
     TelemetryGuard {
         _log: init_tracing(&config.log_filter, config.telemetry_dir.as_deref()),
@@ -1082,8 +1068,7 @@ pub fn init_telemetry(config: &Config) -> TelemetryGuard {
 }
 
 fn init_tracing(log_filter: &str, telemetry_dir: Option<&Path>) -> WorkerGuard {
-    // Only the writer differs by destination; `non_blocking` erases its type, so both arms yield
-    // the same handle and the rest of the setup is shared.
+    // non_blocking erases the writer type, so both destinations yield the same handle.
     let (writer, guard) = match telemetry_dir {
         Some(dir) => tracing_appender::non_blocking(RollingFileAppender::new(
             Rotation::HOURLY,

@@ -1,6 +1,5 @@
-//! Item store. With no downstream URL it keeps items in memory, so the service runs with no
-//! dependencies; with a URL it forwards to `{url}/items/{key}` over a shared, reused client.
-//! See the connection-management skill for why the client is built once and shared.
+//! Key-value store: an in-memory map when no downstream URL is set, or an HTTP forwarder to
+//! `{url}/items/{key}` when one is.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -53,7 +52,7 @@ impl StoreError {
     }
 }
 
-/// Cheaply clonable handle to our backend.
+/// Backend handle, an in-memory map or an HTTP forwarder, cheap to clone.
 #[derive(Clone)]
 pub enum Store {
     InMemory(Arc<Mutex<HashMap<String, String>>>),
@@ -125,8 +124,8 @@ impl Store {
     }
 }
 
-/// Builds the shared client once. Reusing it keeps the connection pool and TLS sessions warm; the
-/// retry budget caps amplification at ~20% and retries idempotent GET/PUT 503s.
+/// Reuses one client so the connection pool and TLS sessions stay warm. The retry budget bounds
+/// amplification and retries idempotent GET/PUT 503s.
 fn build_client(downstream_url: &str) -> anyhow::Result<reqwest::Client> {
     // reqwest::Url handles ports, userinfo, and IPv6 literals that naive string splitting mangles.
     let host = reqwest::Url::parse(downstream_url)

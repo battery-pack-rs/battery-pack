@@ -22,8 +22,7 @@ impl ShutdownReason {
     }
 }
 
-/// Resolves once, on the first SIGINT or SIGTERM. Returns the trigger so the caller
-/// can measure drain time and record the reason after the server has stopped.
+/// Resolves on the first SIGINT or SIGTERM, returning the trigger so the caller can record the reason.
 pub(crate) async fn shutdown_signal() -> ShutdownReason {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
@@ -48,9 +47,8 @@ pub(crate) async fn shutdown_signal() -> ShutdownReason {
     }
 }
 
-/// Waits for a shutdown signal, triggers graceful drain through `drain_tx`, and waits up to
-/// `SHUTDOWN_DRAIN_TIMEOUT` for the server task to finish. Records the shutdown metric, including
-/// whether the drain completed in time.
+/// Drains in-flight requests on a shutdown signal, capped at `SHUTDOWN_DRAIN_TIMEOUT`, then records
+/// the shutdown metric (including whether the drain finished in time).
 pub async fn drain_on_signal(
     server: tokio::task::JoinHandle<anyhow::Result<()>>,
     drain_tx: tokio::sync::oneshot::Sender<()>,

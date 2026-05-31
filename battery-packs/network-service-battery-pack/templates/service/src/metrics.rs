@@ -1,7 +1,5 @@
-//! Wide-event metrics for the service.
-//!
-//! One [`RequestMetrics`] record is emitted per request. The middleware owns the parent and
-//! opens [`HandlerMetrics`] as a slot the handler fills via the `HandlerMetricsHandle` extractor.
+//! Wide-event metrics: one [`RequestMetrics`] record per request. The middleware owns the parent
+//! and opens [`HandlerMetrics`] as a slot the handler fills through the [`HandlerMetricsGuard`] extractor.
 
 use std::time::{Duration, SystemTime};
 
@@ -17,8 +15,7 @@ use metrique::writer::value::ToString;
 /// Re-exported so handlers can reach the guard alongside the metric types it writes into.
 pub use crate::middleware::HandlerMetricsGuard;
 
-/// Concurrent in-flight requests. The middleware increments it for each request's duration, so a
-/// record's `InFlight` shows the load the request was admitted under.
+/// Concurrent in-flight requests, tracked by the middleware for each request's duration.
 pub static IN_FLIGHT: Counter = Counter::new(0);
 
 /// Properties attached to every emitted record.
@@ -49,8 +46,7 @@ pub enum ErrorKind {
     Internal,
 }
 
-/// Everything below the middleware records here. The middleware opens it as a slot and the
-/// handler writes to it through the `HandlerMetricsHandle` extractor.
+/// Handler-set fields, flushed into the parent [`RequestMetrics`] when the guard drops.
 #[metrics(subfield_owned)]
 #[derive(Default)]
 pub struct HandlerMetrics {
@@ -74,15 +70,14 @@ pub struct HandlerMetrics {
 pub struct RequestMetrics {
     pub request_id: String,
     pub operation: Operation,
-    /// Live in-flight request count. The guard increments at init and decrements on drop, and
-    /// closes to the current count, so the record shows the load this request ran under.
+    /// In-flight count at close. The guard increments at init and decrements on drop.
     pub in_flight: CounterGuard<'static>,
     /// Request path, recorded as a property (high-cardinality: it contains the key).
     pub path: String,
-    /// The start time of the request (from when our router saw it)
+    /// When the router received the request.
     #[metrics(timestamp)]
     pub timestamp: SystemTime,
-    /// The full foreground duration of the request
+    /// Foreground request duration.
     #[metrics(unit = Millisecond)]
     pub duration: Timer,
     /// True unless the service itself failed (5xx). A 4xx is a client problem, still a success.
@@ -91,7 +86,7 @@ pub struct RequestMetrics {
     pub client_error: bool,
     /// If the request was a 5xx error
     pub server_error: bool,
-    /// Rendered via `ToString` so it is recorded as a string property, not a numeric metric.
+    /// A string property, not a numeric metric: status codes are dimensions, not measurements.
     #[metrics(format = ToString)]
     pub status_code: u16,
     pub error_kind: Option<ErrorKind>,
@@ -100,8 +95,7 @@ pub struct RequestMetrics {
 }
 
 impl RequestMetrics {
-    /// Opens a record bound to the global sink. The duration timer starts now, so it must be
-    /// called at the middleware boundary, not inside the handler.
+    /// Call at the middleware boundary, not in a handler: the duration timer starts now.
     pub fn init(request_id: String, operation: Operation, path: String) -> RequestMetricsGuard {
         RequestMetrics {
             request_id,
