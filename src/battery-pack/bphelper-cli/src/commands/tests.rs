@@ -2137,10 +2137,55 @@ fn add_preserves_existing_features_on_re_add() {
         .map(|v| v.as_str().unwrap())
         .collect();
 
-    // INVERTED: This asserts the BUGGY behavior. Once fixed, flip to assert
-    // that indicators IS present.
+    // After fix: indicators should be preserved from the first add.
     assert!(
-        !features.contains(&"indicators"),
-        "BUG: indicators should be preserved but is currently wiped"
+        features.contains(&"indicators"),
+        "existing features should be preserved on re-add"
+    );
+}
+
+/// `--no-default-features` signals a fresh selection, so existing features
+/// should NOT be merged in.
+#[test]
+fn add_no_default_features_does_not_merge_existing() {
+    let tmp = make_temp_project();
+
+    // First add: install with indicators (gives default + indicators)
+    add(
+        "fancy",
+        "fancy-battery-pack",
+        &["indicators"],
+        FeatureMode::Default,
+        &[],
+        tmp.path(),
+    );
+
+    // Second add: --no-default-features -F indicators (fresh selection)
+    add(
+        "fancy",
+        "fancy-battery-pack",
+        &["indicators"],
+        FeatureMode::NoDefault,
+        &[],
+        tmp.path(),
+    );
+
+    let state = read_bp_state_toml(&tmp);
+    let entry = extract_state_entry(&state, "fancy-battery-pack").expect("state entry exists");
+    let features: Vec<&str> = entry
+        .get("features")
+        .and_then(|v| v.as_array())
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+
+    assert!(
+        features.contains(&"indicators"),
+        "explicitly requested feature should be present"
+    );
+    assert!(
+        !features.contains(&"default"),
+        "--no-default-features should not merge in previously stored default"
     );
 }
