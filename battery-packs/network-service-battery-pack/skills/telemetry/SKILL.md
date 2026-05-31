@@ -1,6 +1,6 @@
 ---
 name: telemetry
-description: Observability wiring for the network-service scaffold: metrique wide-event metrics, tracing logs, and optional dial9 runtime profiling
+description: Observability wiring for the network-service `service` template: metrique wide-event metrics, tracing logs, and optional dial9 runtime profiling
 ---
 
 # Telemetry
@@ -13,7 +13,7 @@ Every request emits a single `RequestMetrics` record carrying all of its metadat
 
 ## metrique and dial9 do different jobs
 
-This scaffold splits observability across two tools on purpose:
+The `service` template splits observability across two tools on purpose:
 
 - **metrique** owns the business and RED metrics (rate, errors, duration) you alarm and dashboard on. It also bridges Tokio runtime metrics (queue depth, busy ratio) via `subscribe_tokio_runtime_metrics`, fully populated only when `tokio_unstable` is set (the `dial9` feature sets it); otherwise the bridge reports a reduced subset.
 - **dial9** (optional, off by default) is an always-on Tokio profiler for root-cause work: poll timing, park/unpark, wake, per-task CPU. You reach for it when the metrics say "slow" but not "why".

@@ -1,6 +1,6 @@
 ---
 name: memory-allocator
-description: Choosing and profiling the global allocator (jemalloc, mimalloc, system) in the network-service scaffold
+description: Choosing and profiling the global allocator (jemalloc, mimalloc, system) in the network-service `service` template
 ---
 
 # Memory Allocator

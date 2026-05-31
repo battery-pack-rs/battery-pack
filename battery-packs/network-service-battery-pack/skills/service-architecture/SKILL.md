@@ -1,6 +1,6 @@
 ---
 name: service-architecture
-description: Request lifecycle, Tower layer ordering, and scaling choices for the network-service scaffold
+description: Request lifecycle, Tower layer ordering, and scaling choices in the network-service `service` template
 ---
 
 # Service Architecture
@@ -9,7 +9,7 @@ How a request flows through this service, why the middleware stack is ordered th
 
 ## Why axum, and when to drop to hyper
 
-The scaffold uses axum: its extractors and `Router` make handlers and middleware cheap to write, at a small per-request cost from cloning state and running extractors. Drop to raw hyper (the `hyper-util` examples) only when you need what axum hides: custom connection lifecycle, protocol upgrades, or the last allocation off a hot path.
+The `service` template uses axum: its extractors and `Router` make handlers and middleware cheap to write, at a small per-request cost from cloning state and running extractors. Drop to raw hyper (the `hyper-util` examples) only when you need what axum hides: custom connection lifecycle, protocol upgrades, or the last allocation off a hot path.
 
 ## The layer stack (read this before reordering it)
 
@@ -28,7 +28,7 @@ Anything that can *produce a status* (rate limit, panic, timeout, body limit) si
 
 ## Scaling the rate limit
 
-The scaffold ships a single global token bucket (`GlobalKeyExtractor`). To limit per client instead:
+The `service` template ships a single global token bucket (`GlobalKeyExtractor`). To limit per client instead:
 
 - Swap `GlobalKeyExtractor` for `PeerIpKeyExtractor`.
 - Serve with `into_make_service_with_connect_info::<SocketAddr>()` so the extractor can read the peer address from request extensions (tests then need a `SocketAddr` injected).
@@ -40,10 +40,10 @@ Behind a load balancer the peer IP is the balancer, so key off a trusted forward
 
 ## Optional additions
 
-These are deliberately not scaffolded; they are workload-specific and easy to misuse.
+The `service` template deliberately leaves these out; they are workload-specific and easy to misuse. Add each with `cargo bp add network-service -F <feature>` (this pulls the network-service pack's curated dependency versions into your project), then wire it as below.
 
-- **Read caching** (the pack's `cache` feature, `moka`): use its `future::Cache` in front of the HTTP forwarder backend. A cache changes the service's consistency contract; its failure mode is silent stale reads. Size the TTL against an explicit staleness budget.
-- **Load shedding** (the pack's `load-shed` feature): use tower's `ConcurrencyLimitLayer` paired with `LoadShedLayer`, do not hand-roll a counter check. The pair caps concurrent requests and sheds the overflow with a 503; a bare concurrency limit without `LoadShedLayer` queues the overflow without bound. Use the always-on `IN_FLIGHT` metric only to size the cap from observed concurrency, not as the shedding mechanism. Place it inside the recorder so the 503 is counted, but outside the rate limit and timeout.
+- **Read caching** (`cargo bp add network-service -F cache`, which adds `moka`): put its `future::Cache` in front of the HTTP forwarder backend. A cache changes the service's consistency contract; its failure mode is silent stale reads. Size the TTL against an explicit staleness budget.
+- **Load shedding** (`cargo bp add network-service -F load-shed`, which adds the tower layers): use `ConcurrencyLimitLayer` paired with `LoadShedLayer`, do not hand-roll a counter check. The pair caps concurrent requests and sheds the overflow with a 503; a bare concurrency limit without `LoadShedLayer` queues the overflow without bound. Use the always-on `IN_FLIGHT` metric only to size the cap from observed concurrency, not as the shedding mechanism. Place it inside the recorder so the 503 is counted, but outside the rate limit and timeout.
 
 ## Invariants
 
