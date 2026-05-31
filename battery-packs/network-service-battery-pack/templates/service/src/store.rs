@@ -20,15 +20,35 @@ const DOWNSTREAM_MAX_RETRIES: u32 = 2;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
+    #[error("downstream request timed out")]
+    Timeout(#[source] reqwest::Error),
     #[error("downstream request failed")]
-    Request(#[from] reqwest::Error),
+    Request(#[source] reqwest::Error),
+}
+
+impl From<reqwest::Error> for StoreError {
+    fn from(error: reqwest::Error) -> Self {
+        if error.is_timeout() {
+            StoreError::Timeout(error)
+        } else {
+            StoreError::Request(error)
+        }
+    }
 }
 
 impl StoreError {
+    /// Status to return to our client: 504 for a downstream timeout, 502 for any other failure.
+    pub fn status_code(&self) -> StatusCode {
+        match self {
+            StoreError::Timeout(_) => StatusCode::GATEWAY_TIMEOUT,
+            StoreError::Request(_) => StatusCode::BAD_GATEWAY,
+        }
+    }
+
     pub fn kind(&self) -> ErrorKind {
         match self {
-            StoreError::Request(e) if e.is_timeout() => ErrorKind::Timeout,
-            _ => ErrorKind::Downstream,
+            StoreError::Timeout(_) => ErrorKind::Timeout,
+            StoreError::Request(_) => ErrorKind::Downstream,
         }
     }
 }
@@ -55,7 +75,7 @@ impl Store {
         })
     }
 
-    /// One-shot startup reachability check. `None` for the in-memory store (nothing to probe).
+    /// Simple reachability check. `None` for the in-memory store (nothing to probe).
     pub async fn probe(&self) -> Option<Result<(), StoreError>> {
         match self {
             Store::InMemory(_) => None,
@@ -73,8 +93,6 @@ impl Store {
 
     pub async fn get(&self, key: &str) -> Result<Option<String>, StoreError> {
         match self {
-            // Lock spans only the map access, never an `.await`: holding a std Mutex across a
-            // yield point would block the worker thread.
             Store::InMemory(map) => Ok(map.lock().unwrap_or_else(|e| e.into_inner()).get(key).cloned()),
             Store::Http { client, base_url } => {
                 let resp = client.get(format!("{base_url}/items/{key}")).send().await?;

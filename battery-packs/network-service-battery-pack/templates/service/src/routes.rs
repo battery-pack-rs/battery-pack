@@ -129,10 +129,11 @@ async fn get_item(
         }
         Err(e) => {
             metrics.downstream_error_kind = Some(e.kind());
+            let status = e.status_code();
             let err = anyhow::anyhow!(e);
             metrics.downstream_error = Some(format!("{err:#}"));
             tracing::error!("downstream call failed: {err:#}");
-            Err(StatusCode::BAD_GATEWAY)
+            Err(status)
         }
     }
 }
@@ -156,10 +157,11 @@ async fn set_item(
         }
         Err(e) => {
             metrics.downstream_error_kind = Some(e.kind());
+            let status = e.status_code();
             let err = anyhow::anyhow!(e);
             metrics.downstream_error = Some(format!("{err:#}"));
             tracing::error!("downstream call failed: {err:#}");
-            Err(StatusCode::BAD_GATEWAY)
+            Err(status)
         }
     }
 }
