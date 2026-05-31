@@ -410,14 +410,11 @@ static ALLOC: dial9_tokio_telemetry::memory_profiling::Dial9Allocator<tikv_jemal
     dial9_tokio_telemetry::memory_profiling::Dial9Allocator::new(tikv_jemallocator::Jemalloc);
 use clap::Parser;
 
+use dial9_tokio_telemetry::{self as dial9, Dial9Config};
 use test_service::config::Config;
 use test_service::telemetry;
 
-fn dial9_config() -> dial9_tokio_telemetry::Dial9Config {
-    dial9_tokio_telemetry::Dial9Config::from_env()
-}
-
-#[dial9_tokio_telemetry::main(config = dial9_config)]
+#[dial9::main(config = Dial9Config::from_env)]
 async fn main() -> std::process::ExitCode {
     let config = Config::parse();
     // In-flight logs and metrics are flushed when this guard drops, on exit.
@@ -605,7 +602,7 @@ use crate::metrics::{ErrorKind, HandlerMetrics, Operation, RequestMetrics};
 
 /// Injects request context and metrics for use by handlers, and processes
 /// responses into more metrics.
-pub async fn telemetry_layer(mut req: Request, next: Next) -> Response {
+pub async fn telemetry_middleware(mut req: Request, next: Next) -> Response {
     let request_id = Uuid::now_v7().to_string();
     let operation = classify_operation(req.method(), req.uri().path());
     let span = tracing::info_span!("request", %request_id);
@@ -664,7 +661,7 @@ impl<S: Send + Sync> FromRequestParts<S> for HandlerMetricsGuard {
             .extensions
             .get::<HandlerMetricsHandle>()
             .and_then(|h| h.0.lock().unwrap_or_else(|e| e.into_inner()).take())
-            .expect("HandlerMetricsGuard taken twice, or telemetry_layer middleware not installed");
+            .expect("HandlerMetricsGuard taken twice, or telemetry_middleware not installed");
         Ok(HandlerMetricsGuard(guard))
     }
 }
@@ -707,7 +704,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
 use crate::downstream::Store;
-use crate::middleware::{HandlerMetricsGuard, telemetry_layer};
+use crate::middleware::{HandlerMetricsGuard, telemetry_middleware};
 
 /// Requests slower than this are aborted with 408 so a stalled handler cannot pin a connection.
 const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
@@ -749,9 +746,9 @@ pub fn router(state: AppState) -> Router {
         )
         // turn panics into 500 responses
         .layer(tower_http::catch_panic::CatchPanicLayer::new())
-        // telemetry_layer is applied last so it is the outermost layer and records the final status
+        // telemetry_middleware is applied last so it is the outermost layer and records the final status
         // even when an inner layer (timeout, catch-panic) produced the response.
-        .layer(axum::middleware::from_fn(telemetry_layer));
+        .layer(axum::middleware::from_fn(telemetry_middleware));
 
     // /health bypasses the middleware stack
     Router::new()

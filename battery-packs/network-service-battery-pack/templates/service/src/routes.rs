@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
 use crate::downstream::Store;
-use crate::middleware::{HandlerMetricsGuard, telemetry_layer};
+use crate::middleware::{HandlerMetricsGuard, telemetry_middleware};
 {% if rate_limit %}
 use tower_governor::GovernorLayer;
 use tower_governor::governor::GovernorConfigBuilder;
@@ -79,12 +79,12 @@ pub fn router(state: AppState) -> Router {
         .layer(tower_http::catch_panic::CatchPanicLayer::new())
         {% endif %}
         {% if rate_limit %}
-        // Applied inside telemetry_layer so a rejected (429) request is still recorded as a metric.
+        // Applied inside telemetry_middleware so a rejected (429) request is still recorded as a metric.
         .layer(GovernorLayer::new(governor))
         {% endif %}
-        // telemetry_layer is applied last so it is the outermost layer and records the final status
+        // telemetry_middleware is applied last so it is the outermost layer and records the final status
         // even when an inner layer (timeout, catch-panic) produced the response.
-        .layer(axum::middleware::from_fn(telemetry_layer));
+        .layer(axum::middleware::from_fn(telemetry_middleware));
 
     // /health bypasses the middleware stack
     Router::new()
