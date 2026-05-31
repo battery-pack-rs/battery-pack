@@ -2081,3 +2081,66 @@ fn render_status_text_no_warnings_omits_sync_hint() {
     assert!(text.contains("all dependencies up to date"));
     assert!(!text.contains("cargo bp sync"));
 }
+
+// ============================================================================
+// cli.add.features — re-adding preserves existing features
+// ============================================================================
+
+/// Regression test: `cargo bp add fancy -F indicators` followed by
+/// `cargo bp add fancy -F default` should preserve the indicators feature
+/// in battery-pack.toml rather than wiping it.
+#[test]
+fn add_preserves_existing_features_on_re_add() {
+    let tmp = make_temp_project();
+
+    // First add: install with indicators (gives default + indicators)
+    add(
+        "fancy",
+        "fancy-battery-pack",
+        &["indicators"],
+        FeatureMode::Default,
+        &[],
+        tmp.path(),
+    );
+
+    // Verify initial state has both features
+    let state = read_bp_state_toml(&tmp);
+    let entry = extract_state_entry(&state, "fancy-battery-pack").expect("state entry exists");
+    let features: Vec<&str> = entry
+        .get("features")
+        .and_then(|v| v.as_array())
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert!(features.contains(&"default"));
+    assert!(features.contains(&"indicators"));
+
+    // Second add: re-add with only explicit "default" feature flag.
+    // BUG: this wipes the previously stored "indicators" feature.
+    add(
+        "fancy",
+        "fancy-battery-pack",
+        &["default"],
+        FeatureMode::Default,
+        &[],
+        tmp.path(),
+    );
+
+    let state = read_bp_state_toml(&tmp);
+    let entry = extract_state_entry(&state, "fancy-battery-pack").expect("state entry exists");
+    let features: Vec<&str> = entry
+        .get("features")
+        .and_then(|v| v.as_array())
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+
+    // INVERTED: This asserts the BUGGY behavior. Once fixed, flip to assert
+    // that indicators IS present.
+    assert!(
+        !features.contains(&"indicators"),
+        "BUG: indicators should be preserved but is currently wiped"
+    );
+}
