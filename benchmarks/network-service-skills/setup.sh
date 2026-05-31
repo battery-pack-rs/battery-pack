@@ -53,6 +53,13 @@ cd "$TARGET"
 echo "Syncing symposium skills..."
 cargo agents sync --update fetch
 
+# Stopgap for https://github.com/symposium-dev/symposium/issues/210: `cargo agents sync`
+# installs skills for dependency packs (so dial9's sync, it is a real dep) but not for the
+# bp-new generator pack, so the network-service skills never land. Copy them in directly until
+# the issue is fixed.
+mkdir -p "$TARGET/.claude/skills"
+cp -r "$PACK/skills/." "$TARGET/.claude/skills/"
+
 echo ""
 echo "Done."
 cargo agents plugin list
