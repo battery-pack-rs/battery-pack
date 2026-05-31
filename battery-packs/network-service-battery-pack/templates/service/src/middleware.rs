@@ -42,7 +42,7 @@ pub async fn telemetry_middleware(mut req: Request, next: Next) -> Response {
     response
 }
 
-/// Clonable into request extensions. The Mutex and Option let a handler take the guard exactly once.
+/// Cloneable into request extensions. The Mutex and Option let a handler take the guard exactly once.
 #[derive(Clone)]
 struct HandlerMetricsHandle(Arc<Mutex<Option<SlotGuard<HandlerMetrics>>>>);
 

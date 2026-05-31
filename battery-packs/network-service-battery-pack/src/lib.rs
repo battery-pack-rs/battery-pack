@@ -54,8 +54,12 @@ mod tests {
     /// Exercises the optional inbound rate-limit layer (off by default).
     #[test]
     fn validate_rate_limited() {
-        validate_template_with(env!("CARGO_MANIFEST_DIR"), "service", &[("rate_limit", "true")])
-            .unwrap();
+        validate_template_with(
+            env!("CARGO_MANIFEST_DIR"),
+            "service",
+            &[("rate_limit", "true")],
+        )
+        .unwrap();
     }
 
     /// No dial9, mimalloc, disk metrics, no benchmarks, and every Tower layer disabled, exercising

@@ -420,7 +420,7 @@ pub async fn telemetry_middleware(mut req: Request, next: Next) -> Response {
     response
 }
 
-/// Clonable into request extensions. The Mutex and Option let a handler take the guard exactly once.
+/// Cloneable into request extensions. The Mutex and Option let a handler take the guard exactly once.
 #[derive(Clone)]
 struct HandlerMetricsHandle(Arc<Mutex<Option<SlotGuard<HandlerMetrics>>>>);
 
@@ -514,7 +514,7 @@ use tower_http::trace::TraceLayer;
 /// Largest request body accepted, rejected with 413 above this. Bounds memory used per request.
 const MAX_BODY_BYTES: usize = 1024 * 1024;
 
-/// Shared state. Fields must be cheaply clonable: axum clones this for every request.
+/// Shared state. Fields must be cheaply cloneable: axum clones this for every request.
 #[derive(Clone)]
 pub struct AppState {
     pub store: Store,

@@ -183,8 +183,7 @@ name = "managed"
 features = ["default"]
 "#;
 
-    let result =
-        super::resolve_bp_managed_content(cargo_toml, &bp_root, Some(state)).unwrap();
+    let result = super::resolve_bp_managed_content(cargo_toml, &bp_root, Some(state)).unwrap();
 
     assert!(
         !result.contains("bp-managed"),

@@ -565,7 +565,7 @@ pub async fn telemetry_middleware(mut req: Request, next: Next) -> Response {
     response
 }
 
-/// Clonable into request extensions. The Mutex and Option let a handler take the guard exactly once.
+/// Cloneable into request extensions. The Mutex and Option let a handler take the guard exactly once.
 #[derive(Clone)]
 struct HandlerMetricsHandle(Arc<Mutex<Option<SlotGuard<HandlerMetrics>>>>);
 
@@ -665,7 +665,7 @@ const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(16);
 /// Bounds time spent reading the request body, rejecting a slow client before the full request budget.
 const REQUEST_BODY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
-/// Shared state. Fields must be cheaply clonable: axum clones this for every request.
+/// Shared state. Fields must be cheaply cloneable: axum clones this for every request.
 #[derive(Clone)]
 pub struct AppState {
     pub store: Store,

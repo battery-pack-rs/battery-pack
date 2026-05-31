@@ -37,7 +37,7 @@ const RATE_LIMIT_BURST: u32 = 2000;
 const RATE_LIMIT_PER_SECOND: u64 = 1000;
 {% endif %}
 
-/// Shared state. Fields must be cheaply clonable: axum clones this for every request.
+/// Shared state. Fields must be cheaply cloneable: axum clones this for every request.
 #[derive(Clone)]
 pub struct AppState {
     pub store: Store,
