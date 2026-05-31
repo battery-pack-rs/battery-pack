@@ -34,10 +34,9 @@ dial9 is an always-on Tokio profiler: poll timing, wake events, CPU and (optiona
 - **Tracing filter:** the `Dial9TokioLayer` carries a `Targets` filter (this crate at TRACE, everything else at ERROR). Without aggressive filtering, SDK spans can flood the trace at over 100k events/s.
 - **Runtime config:** dial9 reads `DIAL9_*` env vars (`Dial9Config::from_env`). The generated `dial9.env` sets the common ones (`DIAL9_ENABLED=true`, `DIAL9_TRACE_DIR`, `DIAL9_CPU_PROFILE_ENABLED`, `DIAL9_MEMORY_PROFILE_ENABLED`); `source dial9.env` before running.
 - **CPU and schedule profiling (Linux)** need `kernel.perf_event_paranoid <= 1` (`sudo sysctl kernel.perf_event_paranoid=1`), and `kernel.kptr_restrict=0` to symbolize kernel frames.
-- **Task dumps** (`DIAL9_TASK_DUMP_ENABLED`, Linux only) capture an async backtrace of what each idle task is awaiting, useful for hangs. They add overhead, so enable them only while diagnosing.
+- **Task dumps** (`DIAL9_TASK_DUMP_ENABLED`) capture an async backtrace of what each idle task is awaiting, useful for hangs. The `taskdump` feature compiles only on Linux (aarch64/x86/x86_64) and is a hard compile error elsewhere; it also adds an extra wake per capture, so measure before enabling on a hot path.
 
-dial9 ships its own agent skills and a trace viewer that cover setup and analysis in depth, so this skill does not re-explain trace reading. Install the CLI with `cargo install --locked dial9` and browse traces with `dial9 serve --local-dir <dir>` (or the hosted viewer in the References); with Symposium, `cargo agents sync` auto-installs dial9's skills.
-
+dial9 ships its own agent skills and a trace viewer that cover setup and analysis in depth, so this skill does not re-explain trace reading. Install the CLI with `cargo install --locked dial9`, browse traces with `dial9 serve --local-dir <dir>`, and run `dial9 agents` to get its analysis skills and toolkit (with Symposium, `cargo agents sync` auto-installs them).
 
 ## Invariants
 
@@ -49,6 +48,7 @@ dial9 ships its own agent skills and a trace viewer that cover setup and analysi
 
 ## References
 
-- metrique rustdoc (`guide` module and `examples/`): https://docs.rs/metrique
-- dial9: https://github.com/dial9-rs/dial9-tokio-telemetry, hosted viewer https://dial9-tokio-telemetry.netlify.app/ (dial9 also installs its own agent skills)
+- metrique `_guide` module (longer-form docs): https://docs.rs/metrique/latest/metrique/_guide/
+- metrique examples (including EMF): https://github.com/awslabs/metrique/tree/main/metrique/examples
+- dial9: https://github.com/dial9-rs/dial9-tokio-telemetry (ships its own agent skills and viewer)
 - Allocator profiling: see the `memory-allocator` skill.
