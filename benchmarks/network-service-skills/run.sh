@@ -49,9 +49,8 @@ PHASE 2, layer on production features as follow-ups, using the service-architect
 When finished, make sure no server process you started is still running."
 
 echo ""
-echo "Running benchmark..."
+echo "Running benchmark (streaming below)..."
 echo "Target: $TARGET"
-echo "Log: $LOG.md"
 echo "---"
 echo ""
 
@@ -61,23 +60,65 @@ EXTRA_FLAGS=""
 [[ -n "$MODEL" ]] && EXTRA_FLAGS="$EXTRA_FLAGS --model $MODEL"
 [[ -n "$AGENT" ]] && EXTRA_FLAGS="$EXTRA_FLAGS --agent $AGENT"
 
+# Stream live to the terminal while capturing the raw event stream.
 cd "$TARGET"
 echo "$PROMPT" | claude -p --verbose --output-format stream-json \
     --allowed-tools "Read,Glob,Grep,Skill,Edit,Write,Bash" \
     $EXTRA_FLAGS \
     | tee "$LOG.raw" \
-    | jq -r --unbuffered 'select(.type == "assistant") | .message.content[]? | select(.type == "text" or .type == "thinking") | if .type == "thinking" then "<thinking>\n\(.thinking)\n</thinking>" else .text // empty end' \
-    | tee "$LOG.md"
+    | jq -r --unbuffered 'select(.type == "assistant") | .message.content[]? | select(.type == "text" or .type == "thinking") | if .type == "thinking" then "<thinking>\n\(.thinking)\n</thinking>" else .text // empty end'
+
+DURATION=$(($(date +%s) - START_TIME))
+
+# Assemble one self-contained, gist-ready report: summaries up top, raw stream at the bottom.
+transcript() { jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "text" or .type == "thinking") | if .type == "thinking" then "<thinking>\n\(.thinking)\n</thinking>" else .text // empty end' "$LOG.raw"; }
+result_line() { jq -r 'select(.type == "result") | "Turns: \(.num_turns // "?")  Cost: $\(.total_cost_usd // "?")"' "$LOG.raw" 2>/dev/null | head -1; }
+
+{
+    echo "# Benchmark: network-service-skills"
+    echo
+    echo "## Run"
+    echo "- Date: $(date -Iseconds)"
+    echo "- Model: ${MODEL:-default}"
+    echo "- Agent: ${AGENT:-default}"
+    echo "- Target: \`$TARGET\`"
+    echo "- Duration: ${DURATION}s"
+    echo "- $(result_line)"
+    echo
+    echo "## Skills invoked"
+    jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use" and .name == "Skill") | "- \(.input.skill)"' "$LOG.raw" | sort -u
+    echo
+    echo "## Bash commands"
+    echo '```'
+    jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use" and .name == "Bash") | .input.command' "$LOG.raw"
+    echo '```'
+    echo
+    echo "## Prompt"
+    echo '```text'
+    echo "$PROMPT"
+    echo '```'
+    echo
+    echo "## Transcript"
+    echo
+    transcript
+    echo
+    echo "---"
+    echo
+    echo "## Raw event stream"
+    echo "<details><summary>full JSON stream</summary>"
+    echo
+    # 4-backtick fence so triple-backticks inside the stream do not close it.
+    echo '````json'
+    cat "$LOG.raw"
+    echo '````'
+    echo
+    echo "</details>"
+} > "$LOG.md"
 
 echo ""
 echo "---"
-echo "Output: $LOG.md"
-echo "Duration: $(($(date +%s) - START_TIME))s"
-
-jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use" and .name == "Skill") | .input.skill' "$LOG.raw" > "$LOG.skills"
-jq -r 'select(.type == "assistant") | .message.content[]? | select(.type == "tool_use" and .name == "Bash") | .input.command' "$LOG.raw" > "$LOG.commands"
-
-echo "Skills: $LOG.skills  Commands: $LOG.commands"
+echo "Single gist-ready report: $LOG.md"
+echo "Duration: ${DURATION}s"
 echo ""
 echo "Evaluate with:"
 echo "  Evaluate $LOG.md against $SCRIPT_DIR/EXPECTED.md"

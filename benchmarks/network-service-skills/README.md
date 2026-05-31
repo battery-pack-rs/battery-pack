@@ -12,7 +12,7 @@ Manual testing harness that exercises the network-service battery pack's skills 
 ## What it does
 
 1. `setup.sh`: `cargo bp new network-service` with dial9, jemalloc, rate-limit, and benchmarks enabled, then `cargo agents sync` (which installs the pack's skills and, since the project depends on dial9, dial9's own agent skills).
-2. `run.sh`: runs `claude -p` with the two-phase prompt and captures streaming output, invoked skills, and bash commands. The server is backgrounded with redirected output and killed so the run does not hang; the agent uses `dial9 agents` rather than the long-running `dial9 serve` web UI.
+2. `run.sh`: runs `claude -p` with the two-phase prompt, streams it live, and assembles a single self-contained report at `$LOG.md` (`/tmp/network-service-skills-<timestamp>.md`) ready to paste into a gist: run metadata (prompt, model, agent, duration, turn/cost), the invoked skills and bash commands, the full transcript, and the raw JSON event stream collapsed at the bottom. The server is backgrounded with redirected output and killed so the run does not hang; the agent uses `dial9 agents` rather than the long-running `dial9 serve` web UI.
 
 ## Evaluating results
 
