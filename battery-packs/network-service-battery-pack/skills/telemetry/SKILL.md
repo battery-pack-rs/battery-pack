@@ -36,6 +36,7 @@ dial9 is off unless you build with the `dial9` feature, and even then does nothi
 - **Trace destination:** local disk by default. On ephemeral compute where local traces are lost on shutdown, enable the `worker-s3` feature to upload to S3, or use `with_custom_pipeline` for another destination; see dial9's docs to configure either.
 - **CPU and schedule profiling (Linux)** need relaxed perf permissions (`kernel.perf_event_paranoid`); see dial9's docs for the exact sysctls.
 - **Task dumps** (`DIAL9_TASK_DUMP_ENABLED`) capture an async backtrace of what each idle task is awaiting, useful for hangs. The `taskdump` feature compiles only on Linux (aarch64/x86/x86_64) and is a hard compile error elsewhere; it also adds an extra wake per capture, so measure before enabling on a hot path.
+- **Getting a useful trace:** a handful of requests barely fills a trace. Drive sustained load (a curl loop, or `oha`) and run with `--downstream-url` so the forwarding path is exercised, then analyze.
 
 dial9 ships its own agent skills and a trace viewer that cover setup and analysis in depth, so this skill does not re-explain trace reading. To install the CLI, run `cargo install --locked dial9`. Then `dial9 serve` opens the trace viewer and `dial9 agents` provides its analysis skills. With Symposium, `cargo agents sync` auto-installs them.
 

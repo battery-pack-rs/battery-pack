@@ -1,6 +1,6 @@
 # Expected Outcomes
 
-A single run covers two phases: bootstrap-and-observe, then layer on production features. Phase 1 confirms the scaffold works and is observable (no performance targets, quoting latency or throughput as a result is itself a failure). Phase 2 checks the agent can follow the skill breadcrumbs; the named pitfalls are the highest-signal items because they are exactly what the thin breadcrumbs point at.
+A single run covers two phases: bootstrap-and-observe, then layer on production features. Phase 1 confirms the generated service works and is observable (no performance targets, quoting latency or throughput as a result is itself a failure). Phase 2 checks the agent can follow the skill breadcrumbs; the named pitfalls are the highest-signal items because they are exactly what the thin breadcrumbs point at.
 
 ## Tool usage (run against `$LOG.raw`)
 

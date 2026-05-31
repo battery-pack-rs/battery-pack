@@ -25,6 +25,7 @@ Evaluate /tmp/network-service-skills-<timestamp>.md against benchmarks/network-s
 - `cargo-bp` and `symposium` installed (`cargo install cargo-bp symposium`)
 - `claude` CLI authenticated
 - `dial9` CLI for the trace poking (`cargo install --locked dial9`)
+- Optional: `oha` for load generation (the run falls back to a curl loop without it); running with `--downstream-url` makes the trace more representative by exercising the forwarding path
 - The generated `.cargo/config.toml` already sets the `tokio_unstable` and frame-pointer flags dial9 needs; dial9 CPU profiling may need relaxed `perf_event_paranoid` on the host
 - Battery-pack plugin source registered in `~/.symposium/config.toml`:
   ```toml
