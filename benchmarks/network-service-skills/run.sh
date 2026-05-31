@@ -123,7 +123,7 @@ echo "Single gist-ready report: $LOG.md"
 echo "Duration: ${DURATION}s"
 echo ""
 echo "Evaluate with:"
-echo "  Evaluate $LOG.md against $SCRIPT_DIR/EXPECTED.md"
+echo "  Evaluate $LOG.md against $SCRIPT_DIR/EXPECTED.md, then insert the findings as an '## Evaluation' section at the top of $LOG.md (just below the title)"
 
 # Safety net: kill anything the agent left bound to the default dev port.
 if command -v fuser >/dev/null 2>&1; then fuser -k 3000/tcp 2>/dev/null || true; fi
