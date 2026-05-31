@@ -1,0 +1,1 @@
+{% include "snippets/telemetry.rs" %}

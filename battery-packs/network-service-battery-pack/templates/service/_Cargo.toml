@@ -1,0 +1,82 @@
+[package]
+name = "{{ project_name }}"
+version = "0.1.0"
+edition = "2024"
+description = "{{ description }}"
+publish = false
+
+[dependencies]
+tokio = { bp-managed = true, features = ["full"] }
+serde = { bp-managed = true, features = ["derive"] }
+serde_json.bp-managed = true
+anyhow.bp-managed = true
+thiserror.bp-managed = true
+uuid = { bp-managed = true, features = ["v7"] }
+http.bp-managed = true
+clap = { bp-managed = true, features = ["derive", "env"] }
+
+tracing.bp-managed = true
+tracing-subscriber = { bp-managed = true, features = ["env-filter", "json"] }
+tracing-appender.bp-managed = true
+metrique = { bp-managed = true, features = ["json"] }
+metrique-util = { bp-managed = true, features = ["tokio-metrics-bridge"] }
+{%- if dial9 %}
+dial9-tokio-telemetry = { bp-managed = true, features = ["tracing-layer"] }
+{%- endif %}
+
+{%- if server_framework == "axum" %}
+axum.bp-managed = true
+{%- else %}
+hyper = { bp-managed = true, features = ["http1", "http2", "server"] }
+hyper-util = { bp-managed = true, features = ["tokio", "server", "service"] }
+{%- endif %}
+tower.bp-managed = true
+{%- if tower_timeout or tower_catch_panic or tower_on_early_drop %}
+tower-http = { bp-managed = true, features = [{% if tower_timeout %}"timeout", {% endif %}{% if tower_catch_panic %}"catch-panic", {% endif %}{% if tower_on_early_drop %}"on-early-drop", {% endif %}] }
+{%- endif %}
+{%- if rate_limit %}
+tower_governor = { bp-managed = true, default-features = false{% if server_framework == "axum" %}, features = ["axum"]{% endif %} }
+{%- endif %}
+
+{%- if downstream == "redis" %}
+redis = { bp-managed = true, features = ["tokio-comp", "connection-manager"] }
+{%- elif downstream == "http-service" %}
+reqwest = { bp-managed = true, features = ["json"] }
+{%- if circuit_breaker %}
+failsafe.bp-managed = true
+{%- endif %}
+{%- endif %}
+
+{%- if allocator == "jemalloc" %}
+
+# jemalloc is unavailable on MSVC, so gate the dependency to match the allocator setup.
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.7"
+{%- elif allocator == "mimalloc" %}
+mimalloc.bp-managed = true
+{%- endif %}
+
+[dev-dependencies]
+# util = tower::util::ServiceExt::oneshot, to drive the service in tests without a socket
+tower = { bp-managed = true, features = ["util"] }
+tracing-test = { version = "0.2", features = ["no-env-filter"] }
+metrique = { bp-managed = true, features = ["json", "test-util"] }
+{%- if benchmarks %}
+criterion = { bp-managed = true, features = ["async_tokio"] }
+{%- endif %}
+{%- if downstream == "redis" %}
+testcontainers = "0.27"
+testcontainers-modules = { version = "0.15", features = ["redis"] }
+{%- elif downstream == "http-service" %}
+httpmock = "0.7"
+{%- endif %}
+
+{%- if benchmarks %}
+
+[[bench]]
+name = "service"
+harness = false
+{%- endif %}
+
+[package.metadata.battery-pack]
+network-service-battery-pack = { features = [{% if server_framework == "axum" %}"axum-server"{% else %}"hyper-server"{% endif %}, "clap-config"{% if downstream == "redis" %}, "redis-client"{% elif downstream == "http-service" %}, "http-client"{% endif %}{% if dial9 %}, "dial9"{% endif %}{% if allocator == "jemalloc" %}, "jemalloc"{% elif allocator == "mimalloc" %}, "mimalloc-alloc"{% endif %}{% if rate_limit %}, "rate-limit"{% endif %}{% if circuit_breaker and downstream == "http-service" %}, "circuit-breaker"{% endif %}{% if benchmarks %}, "benchmarks"{% endif %}] }

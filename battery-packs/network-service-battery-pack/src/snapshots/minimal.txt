@@ -1,0 +1,641 @@
+── .cargo/config.toml ──
+# tokio_unstable exposes the Tokio runtime metrics that metrique-util samples. It is an API-stability flag (these APIs may change
+# between Tokio releases), not a correctness or production-safety concern.
+[build]
+rustflags = [
+    "--cfg", "tokio_unstable",
+]
+
+── Cargo.toml ──
+[package]
+name = "test-service"
+version = "0.1.0"
+edition = "2024"
+description = "A starter async network service."
+publish = false
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "2"
+uuid = { version = "1", features = ["v7"] }
+http = "1"
+clap = { version = "4", features = ["derive", "env"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
+metrique = { version = "0.1", features = ["json"] }
+metrique-util = { version = "0.1", features = ["tokio-metrics-bridge"] }
+axum = "0.8"
+tower = { version = "0.5", features = ["util"] }
+mimalloc = "0.1"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+tracing-test = { version = "0.2", features = ["no-env-filter"] }
+metrique = { version = "0.1", features = ["json", "test-util"] }
+
+[package.metadata.battery-pack]
+network-service-battery-pack = { features = ["axum-server", "clap-config", "mimalloc-alloc"] }
+
+
+── README.md ──
+# test-service
+
+A starter async network service.
+
+## Run
+```bash
+cargo run
+```
+
+The service binds `127.0.0.1:3000` by default. Logs (JSON) go to stderr and metrics (JSON) to stdout.
+
+## Endpoints
+
+```bash
+curl localhost:3000/health
+```
+
+## Test
+
+```bash
+cargo test
+```
+
+── src/config.rs ──
+//! Configuration from CLI args and environment variables.
+
+use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::time::Duration;
+
+use clap::Parser;
+
+/// Parses a millisecond count into a `Duration`.
+fn parse_millis(s: &str) -> Result<Duration, std::num::ParseIntError> {
+    s.parse().map(Duration::from_millis)
+}
+
+#[derive(Debug, Clone, Parser)]
+pub struct Config {
+    /// Address the HTTP server binds to.
+    #[arg(long, env = "BIND_ADDR", default_value = "127.0.0.1:3000")]
+    pub bind_addr: SocketAddr,
+
+    /// `tracing` filter directive, e.g. `info,test_service=debug`.
+    #[arg(long, env = "RUST_LOG", default_value = "info,test_service=debug")]
+    pub log_level: String,
+
+    /// Service name attached to every metric record.
+    #[arg(long, env = "SERVICE_NAME", default_value = "test-service")]
+    pub service_name: String,
+
+    /// Directory for rolling log and metric files.
+    #[arg(long, env = "TELEMETRY_DIR", default_value = "./telemetry")]
+    pub telemetry_dir: PathBuf,
+
+    /// How long to let in-flight requests drain before forcing shutdown, in milliseconds.
+    #[arg(long, env = "SHUTDOWN_DRAIN_TIMEOUT_MS", value_parser = parse_millis, default_value = "30000")]
+    pub shutdown_drain_timeout: Duration,
+}
+
+── src/lib.rs ──
+//! Library surface: the service modules plus [`run`], the server orchestration. Tests and
+//! benchmarks exercise [`routes::router`] directly; the binary supplies the process-global setup.
+
+pub mod config;
+pub mod metrics;
+pub mod middleware;
+pub mod routes;
+pub mod shutdown;
+pub mod telemetry;
+
+use anyhow::Context;
+
+use crate::config::Config;
+
+/// Serves until SIGINT/SIGTERM, then drains in-flight requests and records the shutdown metric.
+/// The tracing and metric sinks are installed by the binary and outlive this call.
+pub async fn run(config: Config) -> anyhow::Result<()> {
+    let app = routes::router(routes::build_state(&config).await?);
+    let listener = tokio::net::TcpListener::bind(config.bind_addr)
+        .await
+        .context("bind listener")?;
+    tracing::info!(addr = %config.bind_addr, "listening");
+
+    // Run the accept loop as its own task so the runtime schedules it like any other work
+    //. Shutdown coordination lives in `shutdown`.
+    let (drain_tx, drain_rx) = tokio::sync::oneshot::channel::<()>();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async move {
+                let _ = drain_rx.await;
+            })
+            .await
+            .expect("server error");
+    });
+
+    shutdown::drain_on_signal(server, drain_tx, config.shutdown_drain_timeout).await;
+    Ok(())
+}
+
+── src/main.rs ──
+#[global_allocator]
+static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
+use clap::Parser;
+
+use test_service::config::Config;
+use test_service::telemetry;
+
+#[tokio::main]
+async fn main() -> std::process::ExitCode {
+    let config = Config::parse();
+    // In-flight logs and metrics are flushed when this guard drops, on exit.
+    let _telemetry = telemetry::init_telemetry(&config);
+
+    let code: u8 = match test_service::run(config).await {
+        Ok(()) => 0,
+        Err(error) => {
+            tracing::error!("service exited with error: {error:#}");
+            1
+        }
+    };
+    test_service::metrics::record_process_exit(code);
+    std::process::ExitCode::from(code)
+}
+
+── src/metrics.rs ──
+//! Wide-event metrics for the service.
+//!
+//! One [`RequestMetrics`] record is emitted per request. The middleware owns the parent and
+//! opens [`HandlerMetrics`] as a slot the handler fills via the `HandlerMetricsHandle` extractor.
+
+use std::time::{Duration, SystemTime};
+
+use metrique::Slot;
+use metrique::ServiceMetrics;
+use metrique::timers::Timer;
+use metrique::unit::{Byte, Millisecond};
+use metrique::unit_of_work::metrics;
+use metrique::writer::Entry;
+
+/// Properties attached to every emitted record.
+#[derive(Entry)]
+#[entry]
+pub struct Globals {
+    pub service_name: String,
+}
+
+/// The operation a request maps to. `value(string)` keeps metric cardinality bounded.
+#[metrics(value(string))]
+#[derive(Clone, Copy)]
+pub enum Operation {
+    GetItem,
+    SetItem,
+    Echo,
+    Health,
+}
+
+/// Why a request or downstream call failed.
+#[metrics(value(string))]
+#[derive(Clone, Copy)]
+pub enum ErrorKind {
+    Timeout,
+    Downstream,
+    InvalidRequest,
+    Internal,
+}
+
+/// Everything below the middleware records here. The middleware opens it as a slot and the
+/// handler writes to it through the `HandlerMetricsHandle` extractor.
+#[metrics(subfield)]
+#[derive(Default)]
+pub struct HandlerMetrics {
+    /// Bytes of the value read or written, set by the handler.
+    #[metrics(unit = Byte)]
+    pub payload_bytes: usize,
+    pub downstream_success: bool,
+    pub downstream_error_kind: Option<ErrorKind>,
+    /// `None` when no downstream call was made.
+    #[metrics(unit = Millisecond)]
+    pub downstream_latency: Option<Duration>,
+}
+
+/// Per-request wide event. The middleware owns the guard and flushes it on drop.
+#[metrics(rename_all = "PascalCase")]
+pub struct RequestMetrics {
+    pub request_id: String,
+    pub operation: Operation,
+    #[metrics(timestamp)]
+    pub timestamp: SystemTime,
+    #[metrics(unit = Millisecond)]
+    pub duration: Timer,
+    pub success: bool,
+    pub status_code: u16,
+    pub error_kind: Option<ErrorKind>,
+    #[metrics(flatten)]
+    pub handler: Slot<HandlerMetrics>,
+}
+
+impl RequestMetrics {
+    /// Opens a record bound to the global sink. The duration timer starts now, so it must be
+    /// called at the middleware boundary, not inside the handler.
+    pub fn open(request_id: String, operation: Operation) -> RequestMetricsGuard {
+        RequestMetrics {
+            request_id,
+            operation,
+            timestamp: SystemTime::now(),
+            duration: Timer::start_now(),
+            success: false,
+            status_code: 0,
+            error_kind: None,
+            handler: Slot::default(),
+        }
+        .append_on_drop(ServiceMetrics::sink_or_discard())
+    }
+}
+
+/// Emitted once when the process drains and exits.
+#[metrics(rename_all = "PascalCase")]
+pub struct ShutdownMetrics {
+    #[metrics(timestamp)]
+    pub timestamp: SystemTime,
+    pub reason: &'static str,
+    pub drained: bool,
+    #[metrics(unit = Millisecond)]
+    pub drain_duration: Duration,
+}
+
+/// Records the shutdown metric as the process drains.
+pub fn record_shutdown(reason: &'static str, drained: bool, drain_duration: Duration) {
+    ShutdownMetrics {
+        timestamp: SystemTime::now(),
+        reason,
+        drained,
+        drain_duration,
+    }
+    .append_on_drop(ServiceMetrics::sink_or_discard());
+}
+
+/// Emitted once as the process exits, carrying the exit code (0 = success).
+#[metrics(rename_all = "PascalCase")]
+pub struct ProcessExitMetrics {
+    #[metrics(timestamp)]
+    pub timestamp: SystemTime,
+    pub exit_code: u8,
+}
+
+/// Records the process-exit metric just before the binary returns its exit code.
+pub fn record_process_exit(exit_code: u8) {
+    ProcessExitMetrics {
+        timestamp: SystemTime::now(),
+        exit_code,
+    }
+    .append_on_drop(ServiceMetrics::sink_or_discard());
+}
+
+── src/middleware.rs ──
+
+//! Request-metrics middleware and the guard a handler uses to record its own metrics.
+
+use std::sync::{Arc, Mutex};
+
+use axum::extract::{FromRequestParts, Request};
+use axum::middleware::Next;
+use axum::response::Response;
+use http::request::Parts;
+use http::{HeaderValue, Method, StatusCode};
+use metrique::{OnParentDrop, SlotGuard};
+use tracing::Instrument;
+use uuid::Uuid;
+
+use crate::metrics::{ErrorKind, HandlerMetrics, Operation, RequestMetrics};
+
+/// Open a per-request metric, and passes a slot via extensions for the handler
+/// to write additional fields to. The request metric will be flushed whether
+/// or not the handler is reached.
+pub async fn telemetry_layer(mut req: Request, next: Next) -> Response {
+    let request_id = Uuid::now_v7().to_string();
+    let operation = classify_operation(req.method(), req.uri().path());
+    let span = tracing::info_span!("request", %request_id);
+    let mut metrics = RequestMetrics::open(request_id.clone(), operation);
+
+    let slot = metrics.handler.open(OnParentDrop::Discard).expect("slot opened once");
+    req.extensions_mut()
+        .insert(HandlerMetricsHandle(Arc::new(Mutex::new(Some(slot)))));
+
+    let mut response = next.run(req).instrument(span).await;
+
+    let status = response.status();
+    metrics.status_code = status.as_u16();
+    metrics.success = status.is_success();
+    metrics.error_kind = classify_error(status);
+    if let Ok(value) = HeaderValue::from_str(&request_id) {
+        response.headers_mut().insert("x-request-id", value);
+    }
+    response
+}
+
+/// Holds slot guard for handler metrics before it is pulled out of request extensions.
+#[derive(Clone)]
+struct HandlerMetricsHandle(Arc<Mutex<Option<SlotGuard<HandlerMetrics>>>>);
+
+/// Owned access to the request's [`HandlerMetrics`], obtained in a handler. Writes go to the
+/// parent record. The values flush into the request's metric when this drops.
+pub struct HandlerMetricsGuard(SlotGuard<HandlerMetrics>);
+
+impl std::ops::Deref for HandlerMetricsGuard {
+    type Target = HandlerMetrics;
+    fn deref(&self) -> &HandlerMetrics {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for HandlerMetricsGuard {
+    fn deref_mut(&mut self) -> &mut HandlerMetrics {
+        &mut self.0
+    }
+}
+
+impl<S: Send + Sync> FromRequestParts<S> for HandlerMetricsGuard {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        let guard = parts
+            .extensions
+            .get::<HandlerMetricsHandle>()
+            .and_then(|h| h.0.lock().unwrap_or_else(|e| e.into_inner()).take())
+            .expect("HandlerMetricsGuard taken twice, or telemetry_layer middleware not installed");
+        Ok(HandlerMetricsGuard(guard))
+    }
+}
+
+fn classify_operation(method: &Method, path: &str) -> Operation {
+    match path {
+        "/health" => Operation::Health,
+        "/echo" => Operation::Echo,
+        _ if method == Method::GET => Operation::GetItem,
+        _ => Operation::SetItem,
+    }
+}
+
+fn classify_error(status: StatusCode) -> Option<ErrorKind> {
+    if status.is_success() {
+        return None;
+    }
+    Some(match status {
+        StatusCode::REQUEST_TIMEOUT => ErrorKind::Timeout,
+        StatusCode::BAD_GATEWAY | StatusCode::SERVICE_UNAVAILABLE | StatusCode::GATEWAY_TIMEOUT => {
+            ErrorKind::Downstream
+        }
+        s if s.is_client_error() => ErrorKind::InvalidRequest,
+        _ => ErrorKind::Internal,
+    })
+}
+
+── src/routes.rs ──
+
+//! Axum router, application state, and request handlers.
+
+use std::time::Duration;
+
+use axum::Router;
+use axum::extract::{Path, State};
+use axum::routing::get;
+use http::StatusCode;
+use metrique::timers::Timer;
+
+use crate::config::Config;
+use crate::middleware::{HandlerMetricsGuard, telemetry_layer};
+
+#[derive(Clone)]
+pub struct AppState {
+}
+pub async fn build_state(_config: &Config) -> anyhow::Result<AppState> {
+    Ok(AppState {})
+}
+
+pub fn router(state: AppState) -> Router {
+    let app = Router::new()
+        .route("/health", get(health))
+        .route("/echo", axum::routing::post(echo))
+        .with_state(state);
+
+    // `record_metrics` is applied last so it is the outermost layer and records the final
+    // status even when an inner layer (timeout, catch-panic) produced the response.
+    app
+        .layer(axum::middleware::from_fn(telemetry_layer))
+}
+
+async fn health() -> &'static str {
+    "ok"
+}
+/// Echoes the request body back.
+#[tracing::instrument(skip_all)]
+async fn echo(mut metrics: HandlerMetricsGuard, body: String) -> String {
+    metrics.payload_bytes = body.len();
+    body
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::{Body, to_bytes};
+    use http::Request;
+    use tower::ServiceExt;
+    fn test_state() -> AppState {
+        AppState {}
+    }
+
+    #[tokio::test]
+    async fn health_ok() {
+        let resp = router(test_state())
+            .oneshot(Request::get("/health").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    /// Installs a thread-local test sink, drives one request, and returns the single emitted
+    /// metric entry. `#[tokio::test]` runs on a current-thread runtime, so the thread-local sink
+    /// set here is the one the middleware records into.
+    async fn capture_metric(app: axum::Router, req: Request<Body>) -> metrique::test_util::TestEntry {
+        let metrique::test_util::TestEntrySink { inspector, sink } =
+            metrique::test_util::test_entry_sink();
+        let _guard = metrique::ServiceMetrics::set_test_sink(sink);
+        app.oneshot(req).await.unwrap();
+        let mut entries = inspector.entries();
+        assert_eq!(entries.len(), 1, "one record per request");
+        entries.pop().unwrap()
+    }
+
+    #[tokio::test]
+    async fn health_emits_metric() {
+        let m = capture_metric(
+            router(test_state()),
+            Request::get("/health").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(m.values["Operation"], "Health");
+        assert!(m.metrics["Success"].as_bool());
+        assert_eq!(m.metrics["StatusCode"].as_u64(), 200);
+    }
+    #[tokio::test]
+    async fn echo_returns_body() {
+        let got = router(test_state())
+            .oneshot(Request::post("/echo").body(Body::from("hello")).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(got.status(), StatusCode::OK);
+        let body = to_bytes(got.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(&body[..], b"hello");
+    }
+
+    #[tokio::test]
+    async fn echo_records_payload() {
+        let m = capture_metric(
+            router(test_state()),
+            Request::post("/echo").body(Body::from("hello")).unwrap(),
+        )
+        .await;
+        assert_eq!(m.values["Operation"], "Echo");
+        assert!(m.metrics["Success"].as_bool());
+        assert_eq!(m.metrics["PayloadBytes"].as_u64(), 5);
+    }
+}
+
+── src/shutdown.rs ──
+//! Graceful shutdown signal, shared across service types.
+
+/// What triggered shutdown. Recorded on the shutdown metric.
+#[derive(Clone, Copy)]
+pub enum ShutdownReason {
+    CtrlC,
+    Sigterm,
+}
+
+impl ShutdownReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ShutdownReason::CtrlC => "ctrl_c",
+            ShutdownReason::Sigterm => "sigterm",
+        }
+    }
+}
+
+/// Resolves once, on the first SIGINT or SIGTERM. Returns the trigger so the caller
+/// can measure drain time and record the reason after the server has stopped.
+pub async fn shutdown_signal() -> ShutdownReason {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("install SIGINT handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("install SIGTERM handler")
+            .recv()
+            .await;
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        biased;
+        _ = ctrl_c => ShutdownReason::CtrlC,
+        _ = terminate => ShutdownReason::Sigterm,
+    }
+}
+
+use std::time::{Duration, Instant};
+
+/// Waits for a shutdown signal, triggers graceful drain through `drain_tx`, and waits up to
+/// `timeout` for the server task to finish. Records the shutdown metric, including whether the
+/// drain completed in time.
+pub async fn drain_on_signal(
+    server: tokio::task::JoinHandle<()>,
+    drain_tx: tokio::sync::oneshot::Sender<()>,
+    timeout: Duration,
+) {
+    let reason = shutdown_signal().await;
+    tracing::info!(reason = reason.as_str(), "draining");
+    let start = Instant::now();
+    let _ = drain_tx.send(());
+
+    // Graceful shutdown waits for in-flight requests. A flood of slow requests
+    // can still out shutdown, so cap the wait and force exit if it elapses.
+    let drained = tokio::time::timeout(timeout, server).await.is_ok();
+    if !drained {
+        tracing::warn!(timeout_secs = timeout.as_secs(), "drain timed out, forcing shutdown");
+    }
+    crate::metrics::record_shutdown(reason.as_str(), drained, start.elapsed());
+}
+
+── src/telemetry.rs ──
+//! Tracing and metrics initialization.
+
+use metrique::ServiceMetrics;
+use metrique::json::Json;
+use metrique::writer::sink::AttachHandle;
+use metrique::writer::{AttachGlobalEntrySinkExt, EntryIoStreamExt, FormatExt};
+use metrique_util::{AttachGlobalEntrySinkTokioMetricsExt, TokioRuntimeMetricsConfig};
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::prelude::*;
+
+use crate::config::Config;
+use crate::metrics::Globals;
+
+/// Keeps telemetry alive. Dropping it flushes buffered logs and detaches the metric sink, so it
+/// must outlive request handling.
+#[must_use = "dropping the guard stops log flushing and detaches the metric sink"]
+pub struct TelemetryGuard {
+    _log: WorkerGuard,
+    _metrics: AttachHandle,
+}
+
+/// Installs logs and metrics in one call.
+/// Both roll into `telemetry_dir` as separate files (`application.log`, `metrics.log`).
+pub fn init_telemetry(config: &Config) -> TelemetryGuard {
+    TelemetryGuard {
+        _log: init_tracing(&config.log_level, &config.telemetry_dir),
+        _metrics: init_metrics(&config.service_name, &config.telemetry_dir),
+    }
+}
+
+fn init_tracing(log_level: &str, dir: &std::path::Path) -> WorkerGuard {
+    let (writer, guard) = tracing_appender::non_blocking(
+        tracing_appender::rolling::RollingFileAppender::new(
+            tracing_appender::rolling::Rotation::HOURLY,
+            dir,
+            "application.log",
+        ),
+    );
+    let registry = tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::new(log_level))
+        .with(tracing_subscriber::fmt::layer().json().with_writer(writer));
+    registry.init();
+    guard
+}
+
+fn init_metrics(service_name: &str, dir: &std::path::Path) -> AttachHandle {
+    let handle = ServiceMetrics::attach_to_stream(
+        Json::new()
+            .output_to_makewriter(tracing_appender::rolling::RollingFileAppender::new(
+                tracing_appender::rolling::Rotation::MINUTELY,
+                dir,
+                "metrics.log",
+            ))
+            .merge_globals(Globals {
+                service_name: service_name.to_string(),
+            }),
+    );
+    ServiceMetrics::subscribe_tokio_runtime_metrics(TokioRuntimeMetricsConfig::default());
+    handle
+}
+

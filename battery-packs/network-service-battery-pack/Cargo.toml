@@ -10,6 +10,9 @@ keywords = ["battery-pack", "axum", "tokio", "observability", "network"]
 [package.metadata.battery-pack]
 hidden = ["battery-pack", "snapbox"]
 
+[package.metadata.battery.templates]
+service = { path = "templates/service", description = "Resilient request-response service (axum or hyper) with observability, graceful shutdown, and a Redis or HTTP downstream" }
+
 [dependencies]
 battery-pack = { workspace = true }
 
@@ -31,13 +34,14 @@ serde_json = "1"
 anyhow = "1"
 thiserror = "2"
 uuid = { version = "1", features = ["v7"] }
+http = "1"
 
 # Servers (the template picks one).
 axum = { version = "0.8", optional = true }
 hyper = { version = "1", features = ["http1", "http2", "server"], optional = true }
 hyper-util = { version = "0.1", features = ["tokio", "server", "service"], optional = true }
 tower = { version = "0.5", optional = true }
-tower-http = { version = "0.6", features = ["timeout", "catch-panic"], optional = true }
+tower-http = { version = "0.6", features = ["timeout", "catch-panic", "on-early-drop"], optional = true }
 
 # Downstream clients (the template picks one).
 redis = { version = "1", features = ["tokio-comp", "connection-manager"], optional = true }
@@ -53,10 +57,12 @@ clap = { version = "4", features = ["derive", "env"], optional = true }
 # Benchmark suite (default-on in generated templates; async benches use the tokio executor).
 criterion = { version = "0.8", features = ["async_tokio"], optional = true }
 
-# Allocators are target-gated: jemalloc/mimalloc don't build under MSVC.
+# mimalloc builds everywhere, including MSVC, so it is a regular dependency.
+mimalloc = { version = "0.1", optional = true }
+
+# jemalloc does not build under MSVC, so it is target-gated.
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { version = "0.7", optional = true }
-mimalloc = { version = "0.1", optional = true }
 
 [build-dependencies]
 battery-pack = { workspace = true, features = ["build"] }
@@ -69,15 +75,15 @@ tower = { version = "0.5", features = ["util"] }
 
 [features]
 default = ["axum-server", "jemalloc", "clap-config"]
-axum-server = ["dep:axum", "dep:tower", "dep:tower-http"]
-hyper-server = ["dep:hyper", "dep:hyper-util", "dep:tower", "dep:tower-http"]
-redis-client = ["dep:redis"]
-http-client = ["dep:reqwest"]
-circuit-breaker = ["dep:failsafe"]
-rate-limit = ["dep:tower_governor", "dep:tower"]
-jemalloc = ["dep:tikv-jemallocator"]
-mimalloc-alloc = ["dep:mimalloc"]
-clap-config = ["dep:clap"]
-benchmarks = ["dep:criterion"]
+axum-server = ["axum", "tower", "tower-http"]
+hyper-server = ["hyper", "hyper-util", "tower", "tower-http"]
+redis-client = ["redis"]
+http-client = ["reqwest"]
+circuit-breaker = ["failsafe"]
+rate-limit = ["tower_governor", "tower"]
+jemalloc = ["tikv-jemallocator"]
+mimalloc-alloc = ["mimalloc"]
+clap-config = ["clap"]
+benchmarks = ["criterion"]
 # Enabling dial9 requires the `tokio_unstable` rustflag (see generated .cargo/config.toml).
-dial9 = ["dep:dial9-tokio-telemetry"]
+dial9 = ["dial9-tokio-telemetry"]
