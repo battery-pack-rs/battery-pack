@@ -181,7 +181,7 @@ pub(crate) enum BpCommands {
         define: Vec<(String, String)>,
 
         /// Emit machine-readable JSON instead of the default text output
-        #[arg(long)]
+        #[arg(long, conflicts_with_all = ["template", "define"])]
         json: bool,
     },
 

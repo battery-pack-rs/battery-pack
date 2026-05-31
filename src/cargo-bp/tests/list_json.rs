@@ -2,6 +2,7 @@
 
 use assert_cmd::Command;
 use cargo_bp_script::{ListCommand, SCHEMA_VERSION, parse_list};
+use snapbox::{assert_data_eq, str};
 use std::path::{Path, PathBuf};
 
 fn cargo_bp() -> Command {
@@ -87,10 +88,14 @@ fn list_json_with_filter() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let report = parse_list(&output.stdout).unwrap();
-    assert_eq!(report.filter.as_deref(), Some("fancy"));
-    assert_eq!(report.packs.len(), 1);
-    assert_eq!(report.packs[0].short_name, "fancy");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_data_eq!(
+        stdout.as_ref(),
+        str![[r#"
+{"schema_version":"1","filter":"fancy","packs":[{"short_name":"fancy","name":"fancy-battery-pack","version":"0.2.0","description":"A feature-rich test battery pack"}]}
+
+"#]]
+    );
 }
 
 #[test]
@@ -113,9 +118,14 @@ fn list_json_no_match_returns_empty_array() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let report = parse_list(&output.stdout).unwrap();
-    assert!(report.packs.is_empty());
-    assert_eq!(report.filter.as_deref(), Some("nonexistent-xyz"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_data_eq!(
+        stdout.as_ref(),
+        str![[r#"
+{"schema_version":"1","filter":"nonexistent-xyz","packs":[]}
+
+"#]]
+    );
 }
 
 #[test]

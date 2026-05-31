@@ -2,6 +2,7 @@
 
 use assert_cmd::Command;
 use cargo_bp_script::{SCHEMA_VERSION, ShowCommand, parse_show};
+use snapbox::{assert_data_eq, str};
 use std::path::{Path, PathBuf};
 
 fn cargo_bp() -> Command {
@@ -115,14 +116,14 @@ fn show_json_via_crate_source() {
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let report = parse_show(&output.stdout).unwrap();
-    assert_eq!(report.short_name, "basic");
-    assert_eq!(report.name, "basic-battery-pack");
-    assert_eq!(report.version, "0.1.0");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_data_eq!(
+        stdout.as_ref(),
+        str![[r#"
+{"schema_version":"1","short_name":"basic","name":"basic-battery-pack","version":"0.1.0","description":"A simple test battery pack","repository":null,"owners":[],"crates":["anyhow","eyre","thiserror"],"extends":[],"features":[{"name":"all-errors","crates":["anyhow","eyre","thiserror"]},{"name":"default","crates":["anyhow","thiserror"]}],"templates":[],"examples":[],"active_features":["default"]}
 
-    // basic-battery-pack has anyhow and thiserror as default crates.
-    assert!(report.crates.contains(&"anyhow".to_string()));
-    assert!(report.crates.contains(&"thiserror".to_string()));
+"#]]
+    );
 }
 
 #[test]
@@ -144,6 +145,35 @@ fn show_json_unknown_pack_fails() {
         output.stdout.is_empty(),
         "stdout should be empty on error, got: {:?}",
         String::from_utf8_lossy(&output.stdout),
+    );
+}
+
+#[test]
+fn show_json_conflicts_with_template() {
+    let fixture = fixtures_dir().join("fancy-battery-pack");
+
+    let output = cargo_bp()
+        .args([
+            "bp",
+            "show",
+            "--json",
+            "--template",
+            "default",
+            "--path",
+            &fixture.to_string_lossy(),
+            "fancy",
+        ])
+        .output()
+        .expect("failed to run cargo-bp");
+
+    assert!(
+        !output.status.success(),
+        "should fail when --json and --template are combined"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("cannot be used with"),
+        "expected conflict error, got: {stderr}"
     );
 }
 
