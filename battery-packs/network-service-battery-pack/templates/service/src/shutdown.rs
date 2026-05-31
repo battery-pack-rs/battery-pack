@@ -24,7 +24,7 @@ impl ShutdownReason {
 
 /// Resolves once, on the first SIGINT or SIGTERM. Returns the trigger so the caller
 /// can measure drain time and record the reason after the server has stopped.
-pub async fn shutdown_signal() -> ShutdownReason {
+pub(crate) async fn shutdown_signal() -> ShutdownReason {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
             .await
@@ -52,7 +52,7 @@ pub async fn shutdown_signal() -> ShutdownReason {
 /// `SHUTDOWN_DRAIN_TIMEOUT` for the server task to finish. Records the shutdown metric, including
 /// whether the drain completed in time.
 pub async fn drain_on_signal(
-    server: tokio::task::JoinHandle<()>,
+    server: tokio::task::JoinHandle<anyhow::Result<()>>,
     drain_tx: tokio::sync::oneshot::Sender<()>,
 ) {
     let reason = shutdown_signal().await;
@@ -61,13 +61,25 @@ pub async fn drain_on_signal(
     let _ = drain_tx.send(());
 
     // Graceful shutdown waits for in-flight requests. A flood of slow requests can still
-    // outlast our shutdown window, so cap the wait and force exit if it elapses.
-    let drained = tokio::time::timeout(SHUTDOWN_DRAIN_TIMEOUT, server).await.is_ok();
-    if !drained {
-        tracing::warn!(
-            timeout_secs = SHUTDOWN_DRAIN_TIMEOUT.as_secs(),
-            "drain timed out, forcing shutdown"
-        );
-    }
+    // outlast our shutdown window, so cap the wait and force exit if it elapses. Only a clean
+    // finish counts as drained: a server error or panic is a failure, not a graceful drain.
+    let drained = match tokio::time::timeout(SHUTDOWN_DRAIN_TIMEOUT, server).await {
+        Ok(Ok(Ok(()))) => true,
+        Ok(Ok(Err(e))) => {
+            tracing::error!("server stopped with an error: {e:#}");
+            false
+        }
+        Ok(Err(join_error)) => {
+            tracing::error!("server task panicked: {join_error}");
+            false
+        }
+        Err(_elapsed) => {
+            tracing::warn!(
+                timeout_secs = SHUTDOWN_DRAIN_TIMEOUT.as_secs(),
+                "drain timed out, forcing shutdown"
+            );
+            false
+        }
+    };
     crate::metrics::record_shutdown(reason.as_str(), drained, start.elapsed());
 }

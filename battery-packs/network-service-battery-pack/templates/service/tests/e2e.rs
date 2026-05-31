@@ -93,3 +93,32 @@ async fn forwards_items_through_a_downstream_instance() {
     assert!(logs, "no application log written to the telemetry dir");
     assert!(metrics, "no metrics written to the telemetry dir");
 }
+
+/// SIGTERM should drain in-flight work and exit cleanly (code 0).
+#[cfg(unix)]
+#[tokio::test]
+async fn exits_cleanly_on_sigterm() {
+    let bin = env!("CARGO_BIN_EXE_{{ project_name }}");
+    let port = free_port();
+    let client = reqwest::Client::new();
+    let mut child = Command::new(bin)
+        .args(["--port", &port.to_string()])
+        .kill_on_drop(true)
+        .spawn()
+        .expect("spawn instance");
+    wait_for_health(&client, &format!("http://127.0.0.1:{port}")).await;
+
+    let pid = child.id().expect("child has a pid");
+    let killed = Command::new("kill")
+        .args(["-TERM", &pid.to_string()])
+        .status()
+        .await
+        .expect("run kill");
+    assert!(killed.success(), "kill -TERM failed");
+
+    let status = tokio::time::timeout(Duration::from_secs(5), child.wait())
+        .await
+        .expect("did not exit within 5s")
+        .expect("await child");
+    assert!(status.success(), "expected a clean exit, got {status}");
+}

@@ -13,6 +13,9 @@ use metrique::unit_of_work::metrics;
 use metrique::writer::Entry;
 use metrique::writer::value::ToString;
 
+/// Re-exported so handlers can reach the guard alongside the metric types it writes into.
+pub use crate::middleware::HandlerMetricsGuard;
+
 /// Properties attached to every emitted record.
 #[derive(Entry)]
 #[entry]
@@ -61,7 +64,7 @@ pub struct HandlerMetrics {
     pub downstream_duration: Stopwatch,
 }
 
-/// Per-request wide event. The middleware owns the guard and flushes it on drop.
+/// Per-request wide event.
 #[metrics(rename_all = "PascalCase")]
 pub struct RequestMetrics {
     pub request_id: String,
@@ -91,11 +94,11 @@ pub struct RequestMetrics {
 impl RequestMetrics {
     /// Opens a record bound to the global sink. The duration timer starts now, so it must be
     /// called at the middleware boundary, not inside the handler.
-    pub fn init(request_id: String, operation: Operation) -> RequestMetricsGuard {
+    pub fn init(request_id: String, operation: Operation, path: String) -> RequestMetricsGuard {
         RequestMetrics {
             request_id,
             operation,
-            path: String::new(),
+            path,
             timestamp: SystemTime::now(),
             duration: Timer::start_now(),
             success: false,

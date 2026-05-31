@@ -61,17 +61,17 @@ With no `--downstream-url`, items are stored in memory, so this works with no de
 cargo run -- --downstream-url http://127.0.0.1:3001
 ```
 
-A second instance can be that downstream:
+A second instance can be that downstream. Use `--port` (the `PORT` env var works too) to move each one:
 
 ```bash
 # terminal 1 — backing store (in-memory):
-cargo run -- --bind-addr 127.0.0.1:3001
+cargo run -- --port 3001
 
 # terminal 2 — forwarder:
-cargo run -- --bind-addr 127.0.0.1:3000 --downstream-url http://127.0.0.1:3001
+cargo run -- --port 3000 --downstream-url http://127.0.0.1:3001
 ```
 
-The service binds `127.0.0.1:3000` by default. Logs go to stderr and metrics to stdout. Set `--telemetry-dir <dir>` to roll both into files there instead.
+The service binds `127.0.0.1:3000` by default; `--port` overrides just the port. Logs go to stderr and metrics to stdout. Set `--telemetry-dir <dir>` to roll both into files there instead.
 
 ## Endpoints
 
@@ -92,26 +92,41 @@ use clap::Parser;
 
 #[derive(Debug, Clone, Parser)]
 pub struct Config {
-    /// Address the HTTP server binds to.
+    /// Address the HTTP server binds to. Port is overridden by PORT if set.
     #[arg(long, env = "BIND_ADDR", default_value = "127.0.0.1:3000")]
     pub bind_addr: SocketAddr,
 
+    /// Overrides the port in `bind_addr`.
+    #[arg(long, env = "PORT")]
+    pub port: Option<u16>,
+
     /// `tracing` filter directive, e.g. `info,test_service=debug`.
     #[arg(long, env = "RUST_LOG", default_value = "info,test_service=debug")]
-    pub log_level: String,
+    pub log_filter: String,
 
     /// Service name attached to every metric record.
     #[arg(long, env = "SERVICE_NAME", default_value = "test-service")]
     pub service_name: String,
 
-    /// Directory for rolling log and metric files. When unset, logs go to stderr and metrics to
-    /// stdout.
+    /// Directory for rolling log and metric files.
+    /// When unset, logs go to stderr and metrics to stdout.
     #[arg(long, env = "TELEMETRY_DIR")]
     pub telemetry_dir: Option<PathBuf>,
 
-    /// Base URL of a downstream service to forward items to. When omitted, items are kept in memory.
+    /// Base URL of a downstream service to forward items to. When omitted, items are stored in memory.
     #[arg(long, env = "DOWNSTREAM_URL")]
     pub downstream_url: Option<String>,
+}
+
+impl Config {
+    /// Address to bind: `bind_addr` with its port replaced by `--port` when that is set.
+    pub fn socket_addr(&self) -> SocketAddr {
+        let mut addr = self.bind_addr;
+        if let Some(port) = self.port {
+            addr.set_port(port);
+        }
+        addr
+    }
 }
 
 
@@ -138,17 +153,18 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     let state = routes::build_state(&config)?;
     let probe_store = state.store.clone();
     let app = routes::router(state);
-    let listener = tokio::net::TcpListener::bind(config.bind_addr)
+    let addr = config.socket_addr();
+    let listener = tokio::net::TcpListener::bind(addr)
         .await
         .context("bind listener")?;
-    tracing::info!(addr = %config.bind_addr, "listening");
+    tracing::info!(%addr, "listening");
 
     // Smoke test that downstream is reachable. Only warn on unreachable, to avoid
     // cascading failure.
     tokio::spawn(async move {
         if let Some(result) = probe_store.probe().await {
             match result {
-                Ok(()) => tracing::debug!("downstream reachable"),
+                Ok(()) => tracing::debug!("downstream reachable at startup"),
                 Err(e) => tracing::warn!(
                     "downstream unreachable at startup (non-fatal): {:#}",
                     anyhow::anyhow!(e)
@@ -166,7 +182,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
                 let _ = drain_rx.await;
             })
             .await
-            .expect("server error");
+            .context("server error")
     });
 
     shutdown::drain_on_signal(server, drain_tx).await;
@@ -214,6 +230,9 @@ use metrique::unit::{Byte, Millisecond};
 use metrique::unit_of_work::metrics;
 use metrique::writer::Entry;
 use metrique::writer::value::ToString;
+
+/// Re-exported so handlers can reach the guard alongside the metric types it writes into.
+pub use crate::middleware::HandlerMetricsGuard;
 
 /// Properties attached to every emitted record.
 #[derive(Entry)]
@@ -263,7 +282,7 @@ pub struct HandlerMetrics {
     pub downstream_duration: Stopwatch,
 }
 
-/// Per-request wide event. The middleware owns the guard and flushes it on drop.
+/// Per-request wide event.
 #[metrics(rename_all = "PascalCase")]
 pub struct RequestMetrics {
     pub request_id: String,
@@ -293,11 +312,11 @@ pub struct RequestMetrics {
 impl RequestMetrics {
     /// Opens a record bound to the global sink. The duration timer starts now, so it must be
     /// called at the middleware boundary, not inside the handler.
-    pub fn init(request_id: String, operation: Operation) -> RequestMetricsGuard {
+    pub fn init(request_id: String, operation: Operation, path: String) -> RequestMetricsGuard {
         RequestMetrics {
             request_id,
             operation,
-            path: String::new(),
+            path,
             timestamp: SystemTime::now(),
             duration: Timer::start_now(),
             success: false,
@@ -373,9 +392,9 @@ pub async fn telemetry_middleware(mut req: Request, next: Next) -> Response {
     let request_id = Uuid::now_v7().to_string();
     let operation = classify_operation(req.method(), req.uri().path());
     let span = tracing::info_span!("request", %request_id);
-    let mut metrics = RequestMetrics::init(request_id.clone(), operation);
-    // Captured before `next.run` consumes the request, so it is recorded even on a timeout.
-    metrics.path = req.uri().path().to_string();
+    // path is captured now, before next.run consumes the request, so it survives a timeout.
+    let mut metrics =
+        RequestMetrics::init(request_id.clone(), operation, req.uri().path().to_string());
 
     let slot = metrics
         .handler
@@ -464,7 +483,7 @@ fn classify_error(status: StatusCode) -> Option<ErrorKind> {
 
 use axum::Json;
 use axum::Router;
-use axum::extract::{Path, State};
+use axum::extract::{DefaultBodyLimit, Path, State};
 use axum::routing::{get, post};
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -472,6 +491,9 @@ use serde::{Deserialize, Serialize};
 use crate::config::Config;
 use crate::middleware::{HandlerMetricsGuard, telemetry_middleware};
 use crate::store::Store;
+
+/// Largest request body accepted, rejected with 413 above this. Bounds memory used per request.
+const MAX_BODY_BYTES: usize = 1024 * 1024;
 
 /// State information shared across routes.
 ///
@@ -491,6 +513,8 @@ pub fn router(state: AppState) -> Router {
     let app = Router::new()
         .route("/items/{key}", get(get_item).put(set_item))
         .route("/echo", post(echo))
+        // Reject oversized bodies with 413 before they are buffered into memory.
+        .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         // telemetry_middleware is applied last so it is the outermost layer and records the final status
         // even when an inner layer (timeout, catch-panic) produced the response.
         .layer(axum::middleware::from_fn(telemetry_middleware));
@@ -768,7 +792,7 @@ impl ShutdownReason {
 
 /// Resolves once, on the first SIGINT or SIGTERM. Returns the trigger so the caller
 /// can measure drain time and record the reason after the server has stopped.
-pub async fn shutdown_signal() -> ShutdownReason {
+pub(crate) async fn shutdown_signal() -> ShutdownReason {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
             .await
@@ -796,7 +820,7 @@ pub async fn shutdown_signal() -> ShutdownReason {
 /// `SHUTDOWN_DRAIN_TIMEOUT` for the server task to finish. Records the shutdown metric, including
 /// whether the drain completed in time.
 pub async fn drain_on_signal(
-    server: tokio::task::JoinHandle<()>,
+    server: tokio::task::JoinHandle<anyhow::Result<()>>,
     drain_tx: tokio::sync::oneshot::Sender<()>,
 ) {
     let reason = shutdown_signal().await;
@@ -805,16 +829,26 @@ pub async fn drain_on_signal(
     let _ = drain_tx.send(());
 
     // Graceful shutdown waits for in-flight requests. A flood of slow requests can still
-    // outlast our shutdown window, so cap the wait and force exit if it elapses.
-    let drained = tokio::time::timeout(SHUTDOWN_DRAIN_TIMEOUT, server)
-        .await
-        .is_ok();
-    if !drained {
-        tracing::warn!(
-            timeout_secs = SHUTDOWN_DRAIN_TIMEOUT.as_secs(),
-            "drain timed out, forcing shutdown"
-        );
-    }
+    // outlast our shutdown window, so cap the wait and force exit if it elapses. Only a clean
+    // finish counts as drained: a server error or panic is a failure, not a graceful drain.
+    let drained = match tokio::time::timeout(SHUTDOWN_DRAIN_TIMEOUT, server).await {
+        Ok(Ok(Ok(()))) => true,
+        Ok(Ok(Err(e))) => {
+            tracing::error!("server stopped with an error: {e:#}");
+            false
+        }
+        Ok(Err(join_error)) => {
+            tracing::error!("server task panicked: {join_error}");
+            false
+        }
+        Err(_elapsed) => {
+            tracing::warn!(
+                timeout_secs = SHUTDOWN_DRAIN_TIMEOUT.as_secs(),
+                "drain timed out, forcing shutdown"
+            );
+            false
+        }
+    };
     crate::metrics::record_shutdown(reason.as_str(), drained, start.elapsed());
 }
 
@@ -835,7 +869,10 @@ use crate::metrics::ErrorKind;
 
 /// Per-request timeout for each downstream call. Kept short so a slow downstream surfaces as a
 /// fast 502 rather than consuming our own request budget.
-const DOWNSTREAM_TIMEOUT: Duration = Duration::from_millis(1000);
+const DOWNSTREAM_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Retry budget per request for idempotent downstream calls (GET/PUT on a 503).
+const DOWNSTREAM_MAX_RETRIES: u32 = 2;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -892,7 +929,8 @@ impl Store {
 
     pub async fn get(&self, key: &str) -> Result<Option<String>, StoreError> {
         match self {
-            // Lock spans only the map access, never an `.await`.
+            // Lock spans only the map access, never an `.await`: holding a std Mutex across a
+            // yield point would block the worker thread.
             Store::InMemory(map) => Ok(map
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
@@ -943,7 +981,7 @@ fn build_client(downstream_url: &str) -> anyhow::Result<reqwest::Client> {
         .pool_idle_timeout(Duration::from_secs(30))
         .retry(
             reqwest::retry::for_host(host)
-                .max_retries_per_request(3)
+                .max_retries_per_request(DOWNSTREAM_MAX_RETRIES)
                 .classify_fn(|rr| match (rr.method(), rr.status()) {
                     (&Method::GET | &Method::PUT, Some(StatusCode::SERVICE_UNAVAILABLE)) => {
                         rr.retryable()
@@ -985,12 +1023,12 @@ pub struct TelemetryGuard {
 /// otherwise logs go to stderr and metrics to stdout, on separate streams.
 pub fn init_telemetry(config: &Config) -> TelemetryGuard {
     TelemetryGuard {
-        _log: init_tracing(&config.log_level, config.telemetry_dir.as_deref()),
+        _log: init_tracing(&config.log_filter, config.telemetry_dir.as_deref()),
         _metrics: init_metrics(&config.service_name, config.telemetry_dir.as_deref()),
     }
 }
 
-fn init_tracing(log_level: &str, telemetry_dir: Option<&Path>) -> WorkerGuard {
+fn init_tracing(log_filter: &str, telemetry_dir: Option<&Path>) -> WorkerGuard {
     // Only the writer differs by destination; `non_blocking` erases its type, so both arms yield
     // the same handle and the rest of the setup is shared.
     let (writer, guard) = match telemetry_dir {
@@ -1002,7 +1040,7 @@ fn init_tracing(log_level: &str, telemetry_dir: Option<&Path>) -> WorkerGuard {
         None => tracing_appender::non_blocking(std::io::stderr()),
     };
     let registry = tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::new(log_level))
+        .with(tracing_subscriber::EnvFilter::new(log_filter))
         .with(tracing_subscriber::fmt::layer().json().with_writer(writer));
     registry.init();
     guard
@@ -1135,6 +1173,35 @@ async fn forwards_items_through_a_downstream_instance() {
     }
     assert!(logs, "no application log written to the telemetry dir");
     assert!(metrics, "no metrics written to the telemetry dir");
+}
+
+/// SIGTERM should drain in-flight work and exit cleanly (code 0).
+#[cfg(unix)]
+#[tokio::test]
+async fn exits_cleanly_on_sigterm() {
+    let bin = env!("CARGO_BIN_EXE_test-service");
+    let port = free_port();
+    let client = reqwest::Client::new();
+    let mut child = Command::new(bin)
+        .args(["--port", &port.to_string()])
+        .kill_on_drop(true)
+        .spawn()
+        .expect("spawn instance");
+    wait_for_health(&client, &format!("http://127.0.0.1:{port}")).await;
+
+    let pid = child.id().expect("child has a pid");
+    let killed = Command::new("kill")
+        .args(["-TERM", &pid.to_string()])
+        .status()
+        .await
+        .expect("run kill");
+    assert!(killed.success(), "kill -TERM failed");
+
+    let status = tokio::time::timeout(Duration::from_secs(5), child.wait())
+        .await
+        .expect("did not exit within 5s")
+        .expect("await child");
+    assert!(status.success(), "expected a clean exit, got {status}");
 }
 
 

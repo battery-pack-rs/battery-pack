@@ -14,17 +14,17 @@ With no `--downstream-url`, items are stored in memory, so this works with no de
 cargo run -- --downstream-url http://127.0.0.1:3001
 ```
 
-A second instance can be that downstream:
+A second instance can be that downstream. Use `--port` (the `PORT` env var works too) to move each one:
 
 ```bash
 # terminal 1 — backing store (in-memory):
-cargo run -- --bind-addr 127.0.0.1:3001
+cargo run -- --port 3001
 
 # terminal 2 — forwarder:
-cargo run -- --bind-addr 127.0.0.1:3000 --downstream-url http://127.0.0.1:3001
+cargo run -- --port 3000 --downstream-url http://127.0.0.1:3001
 ```
 
-The service binds `127.0.0.1:3000` by default. Logs go to stderr and metrics to stdout. Set `--telemetry-dir <dir>` to roll both into files there instead.
+The service binds `127.0.0.1:3000` by default; `--port` overrides just the port. Logs go to stderr and metrics to stdout. Set `--telemetry-dir <dir>` to roll both into files there instead.
 
 ## Endpoints
 
@@ -41,6 +41,12 @@ curl -X POST localhost:3000/echo -H 'content-type: application/json' --data '{"m
 
 ```bash
 cargo bench
+```
+
+Benchmarks hit each handler in-process over the in-memory store. Set `BENCH_DOWNSTREAM_URL` to instead measure the forwarding path against a running instance:
+
+```bash
+BENCH_DOWNSTREAM_URL=http://127.0.0.1:3001 cargo bench
 ```
 {%- endif %}
 {%- if dial9 %}

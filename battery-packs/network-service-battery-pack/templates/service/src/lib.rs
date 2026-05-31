@@ -24,17 +24,18 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     let state = routes::build_state(&config)?;
     let probe_store = state.store.clone();
     let app = routes::router(state);
-    let listener = tokio::net::TcpListener::bind(config.bind_addr)
+    let addr = config.socket_addr();
+    let listener = tokio::net::TcpListener::bind(addr)
         .await
         .context("bind listener")?;
-    tracing::info!(addr = %config.bind_addr, "listening");
+    tracing::info!(%addr, "listening");
 
     // Smoke test that downstream is reachable. Only warn on unreachable, to avoid
     // cascading failure.
     {% if dial9 %}dial9::spawn{% else %}tokio::spawn{% endif %}(async move {
         if let Some(result) = probe_store.probe().await {
             match result {
-                Ok(()) => tracing::debug!("downstream reachable"),
+                Ok(()) => tracing::debug!("downstream reachable at startup"),
                 Err(e) => tracing::warn!(
                     "downstream unreachable at startup (non-fatal): {:#}",
                     anyhow::anyhow!(e)
@@ -52,7 +53,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
                 let _ = drain_rx.await;
             })
             .await
-            .expect("server error");
+            .context("server error")
     });
 
     shutdown::drain_on_signal(server, drain_tx).await;

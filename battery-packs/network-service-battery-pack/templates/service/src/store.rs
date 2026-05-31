@@ -13,7 +13,10 @@ use crate::metrics::ErrorKind;
 
 /// Per-request timeout for each downstream call. Kept short so a slow downstream surfaces as a
 /// fast 502 rather than consuming our own request budget.
-const DOWNSTREAM_TIMEOUT: Duration = Duration::from_millis(1000);
+const DOWNSTREAM_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Retry budget per request for idempotent downstream calls (GET/PUT on a 503).
+const DOWNSTREAM_MAX_RETRIES: u32 = 2;
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -70,7 +73,8 @@ impl Store {
 
     pub async fn get(&self, key: &str) -> Result<Option<String>, StoreError> {
         match self {
-            // Lock spans only the map access, never an `.await`.
+            // Lock spans only the map access, never an `.await`: holding a std Mutex across a
+            // yield point would block the worker thread.
             Store::InMemory(map) => Ok(map.lock().unwrap_or_else(|e| e.into_inner()).get(key).cloned()),
             Store::Http { client, base_url } => {
                 let resp = client.get(format!("{base_url}/items/{key}")).send().await?;
@@ -117,7 +121,7 @@ fn build_client(downstream_url: &str) -> anyhow::Result<reqwest::Client> {
         .pool_idle_timeout(Duration::from_secs(30))
         .retry(
             reqwest::retry::for_host(host)
-                .max_retries_per_request(3)
+                .max_retries_per_request(DOWNSTREAM_MAX_RETRIES)
                 .classify_fn(|rr| match (rr.method(), rr.status()) {
                     (&Method::GET | &Method::PUT, Some(StatusCode::SERVICE_UNAVAILABLE)) => {
                         rr.retryable()

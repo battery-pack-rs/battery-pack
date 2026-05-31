@@ -19,9 +19,9 @@ pub async fn telemetry_middleware(mut req: Request, next: Next) -> Response {
     let request_id = Uuid::now_v7().to_string();
     let operation = classify_operation(req.method(), req.uri().path());
     let span = tracing::info_span!("request", %request_id);
-    let mut metrics = RequestMetrics::init(request_id.clone(), operation);
-    // Captured before `next.run` consumes the request, so it is recorded even on a timeout.
-    metrics.path = req.uri().path().to_string();
+    // path is captured now, before next.run consumes the request, so it survives a timeout.
+    let mut metrics =
+        RequestMetrics::init(request_id.clone(), operation, req.uri().path().to_string());
 
     let slot = metrics.handler.open(OnParentDrop::Discard).expect("slot opened more than once");
     req.extensions_mut()

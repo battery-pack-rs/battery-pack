@@ -2,7 +2,7 @@
 
 use axum::Router;
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{DefaultBodyLimit, Path, State};
 use axum::routing::{get, post};
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -16,9 +16,13 @@ use tower_governor::governor::GovernorConfigBuilder;
 use tower_governor::key_extractor::GlobalKeyExtractor;
 {% endif %}
 
+/// Largest request body accepted, rejected with 413 above this. Bounds memory used per request.
+const MAX_BODY_BYTES: usize = 1024 * 1024;
 {% if tower_timeout %}
-/// Requests slower than this are aborted with 408 so a stalled handler cannot pin a connection.
-const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+/// Caps total request lifetime, aborting with 408. Kept above `store`'s `DOWNSTREAM_TIMEOUT` times
+/// its retry attempts (1 + `DOWNSTREAM_MAX_RETRIES`) so a downstream call can use its full budget
+/// within one request.
+const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(16);
 {% endif %}
 {% if rate_limit %}
 /// Global ingress cap: one shared bucket allows bursts up to `RATE_LIMIT_BURST`, refilled at
@@ -53,6 +57,8 @@ pub fn router(state: AppState) -> Router {
     let app = Router::new()
         .route("/items/{key}", get(get_item).put(set_item))
         .route("/echo", post(echo))
+        // Reject oversized bodies with 413 before they are buffered into memory.
+        .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         {% if tower_timeout %}
         .layer(tower_http::timeout::TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,

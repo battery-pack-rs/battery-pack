@@ -26,12 +26,12 @@ pub struct TelemetryGuard {
 /// otherwise logs go to stderr and metrics to stdout, on separate streams.
 pub fn init_telemetry(config: &Config) -> TelemetryGuard {
     TelemetryGuard {
-        _log: init_tracing(&config.log_level, config.telemetry_dir.as_deref()),
+        _log: init_tracing(&config.log_filter, config.telemetry_dir.as_deref()),
         _metrics: init_metrics(&config.service_name, config.telemetry_dir.as_deref()),
     }
 }
 
-fn init_tracing(log_level: &str, telemetry_dir: Option<&Path>) -> WorkerGuard {
+fn init_tracing(log_filter: &str, telemetry_dir: Option<&Path>) -> WorkerGuard {
     // Only the writer differs by destination; `non_blocking` erases its type, so both arms yield
     // the same handle and the rest of the setup is shared.
     let (writer, guard) = match telemetry_dir {
@@ -43,7 +43,7 @@ fn init_tracing(log_level: &str, telemetry_dir: Option<&Path>) -> WorkerGuard {
         None => tracing_appender::non_blocking(std::io::stderr()),
     };
     let registry = tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::new(log_level))
+        .with(tracing_subscriber::EnvFilter::new(log_filter))
         .with(tracing_subscriber::fmt::layer().json().with_writer(writer));
     {% if dial9 %}
     // Filter aggressively: dial9 correlates with other signals and does not need every span.
