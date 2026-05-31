@@ -9,7 +9,7 @@ How a request flows through this service, why the middleware stack is ordered th
 
 ## Why axum, and when to drop to hyper
 
-The scaffold uses axum: its extractors and `Router` make handlers and middleware cheap to write, at a small per-request cost (a state clone and extractor runs). Drop to raw hyper (the `hyper-util` examples) only when you need what axum hides: custom connection lifecycle, protocol upgrades, or the last allocation off a hot path.
+The scaffold uses axum: its extractors and `Router` make handlers and middleware cheap to write, at a small per-request cost from cloning state and running extractors. Drop to raw hyper (the `hyper-util` examples) only when you need what axum hides: custom connection lifecycle, protocol upgrades, or the last allocation off a hot path.
 
 ## The layer stack (read this before reordering it)
 
@@ -42,8 +42,8 @@ Behind a load balancer the peer IP is the balancer, so key off a trusted forward
 
 These are deliberately not scaffolded; they are workload-specific and easy to misuse.
 
-- **Read caching** (the pack's `cache` feature, `moka`): use its `future::Cache` in front of the HTTP forwarder backend. A cache changes the service's consistency contract and its failure mode is silent stale reads, so size the TTL against an explicit staleness budget.
-- **Load shedding** (the pack's `load-shed` feature, tower's limit and load-shed layers): the scaffold already *measures* concurrency via the always-on `IN_FLIGHT` counter. To *bound* it, add `ConcurrencyLimitLayer` paired with `LoadShedLayer` (bare concurrency-limit queues unboundedly; the pair sheds with a 503). Size the cap off observed `IN_FLIGHT` rather than a guess. Place it inside the recorder so the 503 is counted, but outside the rate limit and timeout.
+- **Read caching** (the pack's `cache` feature, `moka`): use its `future::Cache` in front of the HTTP forwarder backend. A cache changes the service's consistency contract; its failure mode is silent stale reads. Size the TTL against an explicit staleness budget.
+- **Load shedding** (the pack's `load-shed` feature, tower's limit and load-shed layers): the scaffold already *measures* concurrency via the always-on `IN_FLIGHT` counter. To *bound* it, add `ConcurrencyLimitLayer` paired with `LoadShedLayer` (a bare concurrency limit queues requests without bound; the pair sheds with a 503). Size the cap off observed `IN_FLIGHT` rather than a guess. Place it inside the recorder so the 503 is counted, but outside the rate limit and timeout.
 
 ## Invariants
 
