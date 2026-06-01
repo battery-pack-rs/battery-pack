@@ -1329,17 +1329,38 @@ use std::time::{Duration, Instant};
 
 use tokio::process::Command;
 
-fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0")
+async fn free_port() -> u16 {
+    tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
         .unwrap()
         .local_addr()
         .unwrap()
         .port()
 }
 
+/// Names and byte lengths of everything in `dir`, for diagnosing a telemetry assertion failure.
+async fn dir_listing(dir: &std::path::Path) -> String {
+    let mut entries = match tokio::fs::read_dir(dir).await {
+        Ok(entries) => entries,
+        Err(_) => return String::new(),
+    };
+    let mut out = Vec::new();
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let len = tokio::fs::read(entry.path())
+            .await
+            .map(|b| b.len())
+            .unwrap_or(0);
+        out.push(format!(
+            "{} ({len} bytes)",
+            entry.file_name().to_string_lossy()
+        ));
+    }
+    out.join(", ")
+}
+
 /// Polls `/health` every 50ms until it succeeds, up to 3s.
 async fn wait_for_health(client: &reqwest::Client, base: &str) {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + Duration::from_secs(3);
     loop {
         if let Ok(resp) = client.get(format!("{base}/health")).send().await
             && resp.status().is_success()
@@ -1348,7 +1369,7 @@ async fn wait_for_health(client: &reqwest::Client, base: &str) {
         }
         assert!(
             Instant::now() < deadline,
-            "{base} was not healthy within 10s"
+            "{base} was not healthy within 3s"
         );
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
@@ -1357,8 +1378,8 @@ async fn wait_for_health(client: &reqwest::Client, base: &str) {
 #[tokio::test]
 async fn forwards_items_through_a_downstream_instance() {
     let bin = env!("CARGO_BIN_EXE_test-service");
-    let port_backing = free_port();
-    let port_forwarder = free_port();
+    let port_backing = free_port().await;
+    let port_forwarder = free_port().await;
     let client = reqwest::Client::new();
 
     // `kill_on_drop` stops the children when this test returns or panics; a tokio child otherwise
@@ -1405,44 +1426,34 @@ async fn forwards_items_through_a_downstream_instance() {
     assert_eq!(got.text().await.unwrap(), "v");
 
     // Telemetry rolls to disk: both files should appear with content (writers flush async).
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + Duration::from_secs(3);
     let (mut logs, mut metrics) = (false, false);
     while Instant::now() < deadline && !(logs && metrics) {
-        for entry in std::fs::read_dir(telemetry.path())
-            .expect("read telemetry dir")
-            .flatten()
-        {
+        let mut entries = tokio::fs::read_dir(telemetry.path())
+            .await
+            .expect("read telemetry dir");
+        while let Some(entry) = entries.next_entry().await.expect("read telemetry entry") {
             let name = entry.file_name().to_string_lossy().into_owned();
             // Read the bytes rather than trust the dir entry: on Windows the entry size lags behind
             // writes while the appender holds the file open, so metadata().len() reads 0 mid-run.
-            let len = std::fs::read(entry.path()).map(|b| b.len()).unwrap_or(0);
+            let len = tokio::fs::read(entry.path())
+                .await
+                .map(|b| b.len())
+                .unwrap_or(0);
             logs |= name.starts_with("application") && len > 0;
             metrics |= name.starts_with("metrics") && len > 0;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     // List what did land so a CI-only flake (slow flush, unexpected name) is diagnosable from the log.
-    let listing = || {
-        std::fs::read_dir(telemetry.path())
-            .into_iter()
-            .flatten()
-            .flatten()
-            .map(|e| {
-                let len = std::fs::read(e.path()).map(|b| b.len()).unwrap_or(0);
-                format!("{} ({len} bytes)", e.file_name().to_string_lossy())
-            })
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
+    let listing = dir_listing(telemetry.path()).await;
     assert!(
         logs,
-        "no application log in telemetry dir after 10s; contents: [{}]",
-        listing()
+        "no application log in telemetry dir after 3s; contents: [{listing}]"
     );
     assert!(
         metrics,
-        "no metrics in telemetry dir after 10s; contents: [{}]",
-        listing()
+        "no metrics in telemetry dir after 3s; contents: [{listing}]"
     );
 }
 
@@ -1451,7 +1462,7 @@ async fn forwards_items_through_a_downstream_instance() {
 #[tokio::test]
 async fn exits_cleanly_on_sigterm() {
     let bin = env!("CARGO_BIN_EXE_test-service");
-    let port = free_port();
+    let port = free_port().await;
     let client = reqwest::Client::new();
     let mut child = Command::new(bin)
         .args(["--port", &port.to_string()])
