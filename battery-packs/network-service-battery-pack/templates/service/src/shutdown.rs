@@ -10,24 +10,26 @@ const SHUTDOWN_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
 #[derive(Clone, Copy)]
 pub enum ShutdownReason {
     CtrlC,
-    Sigterm,
+    Terminate,
 }
 
 impl ShutdownReason {
     pub fn as_str(self) -> &'static str {
         match self {
             ShutdownReason::CtrlC => "ctrl_c",
-            ShutdownReason::Sigterm => "sigterm",
+            ShutdownReason::Terminate => "terminate",
         }
     }
 }
 
-/// Resolves on the first SIGINT or SIGTERM, returning the trigger so the caller can record the reason.
+/// Resolves on the first interrupt (Ctrl-C) or termination request, returning the trigger so the
+/// caller can record the reason. A termination request is SIGTERM on Unix, and a console-close or
+/// system-shutdown event on Windows.
 pub(crate) async fn shutdown_signal() -> ShutdownReason {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
             .await
-            .expect("install SIGINT handler");
+            .expect("install Ctrl-C handler");
     };
 
     #[cfg(unix)]
@@ -37,13 +39,26 @@ pub(crate) async fn shutdown_signal() -> ShutdownReason {
             .recv()
             .await;
     };
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    let terminate = async {
+        // Closest analogs to SIGTERM: ctrl_close fires when the console or app is closed,
+        // ctrl_shutdown when the system is going down. Windows caps the handler grace period, so a
+        // long drain can still be cut short by the OS.
+        let mut close = tokio::signal::windows::ctrl_close().expect("install ctrl-close handler");
+        let mut shutdown =
+            tokio::signal::windows::ctrl_shutdown().expect("install ctrl-shutdown handler");
+        tokio::select! {
+            _ = close.recv() => {}
+            _ = shutdown.recv() => {}
+        }
+    };
+    #[cfg(not(any(unix, windows)))]
     let terminate = std::future::pending::<()>();
 
     tokio::select! {
         biased;
         _ = ctrl_c => ShutdownReason::CtrlC,
-        _ = terminate => ShutdownReason::Sigterm,
+        _ = terminate => ShutdownReason::Terminate,
     }
 }
 
