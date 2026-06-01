@@ -1,6 +1,6 @@
 # network-service-battery-pack
 
-Curated dependencies, templates, and skills for building simple but resilient async network services in Rust.
+Opinionated, curated dependencies, templates, and skills for building simple but resilient async network services in Rust.
 
 ## Generate a service
 

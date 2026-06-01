@@ -2,10 +2,10 @@
 name = "network-service-battery-pack"
 version = "0.1.0"
 edition = "2024"
-description = "Battery pack for resilient async network services in Rust"
+description = "Opinionated battery pack for resilient async network services in Rust"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/battery-pack-rs/battery-pack"
-keywords = ["battery-pack", "axum", "tokio", "observability", "network"]
+keywords = ["battery-pack", "opinionated", "axum", "tokio", "observability"]
 
 [package.metadata.battery-pack]
 hidden = ["battery-pack", "snapbox"]
