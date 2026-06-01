@@ -28,7 +28,7 @@ done
 
 [[ -z "$TARGET" ]] && usage
 BP_SOURCE="${BP_SOURCE:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
-PACK="$BP_SOURCE/battery-packs/network-service-battery-pack"
+PACK="$BP_SOURCE/opinionated-battery-packs/network-service-battery-pack"
 
 if [[ "$CLEAN" == true ]]; then
     echo "Removing $TARGET..."

@@ -30,7 +30,7 @@ Evaluate /tmp/network-service-skills-<timestamp>.md against benchmarks/network-s
 - Battery-pack plugin source registered in `~/.symposium/config.toml`:
   ```toml
   plugin-source = [
-      { name = "network-service", path = "/path/to/battery-pack/battery-packs/network-service-battery-pack" },
+      { name = "network-service", path = "/path/to/battery-pack/opinionated-battery-packs/network-service-battery-pack" },
   ]
   ```
 
