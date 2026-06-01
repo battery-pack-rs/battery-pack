@@ -29,6 +29,20 @@ async fn dir_listing(dir: &std::path::Path) -> String {
     out.join(", ")
 }
 
+/// After a graceful exit, the shutdown metric must be in the sink's file: proof the drain ran and
+/// the metric sink flushed on shutdown.
+async fn assert_shutdown_metric(dir: &std::path::Path) {
+    let mut entries = tokio::fs::read_dir(dir).await.expect("read telemetry dir");
+    let mut found = false;
+    while let Some(entry) = entries.next_entry().await.expect("read telemetry entry") {
+        if entry.file_name().to_string_lossy().starts_with("metrics") {
+            let body = tokio::fs::read_to_string(entry.path()).await.unwrap_or_default();
+            found |= body.contains("DrainDuration");
+        }
+    }
+    assert!(found, "no shutdown metric written; dir: [{}]", dir_listing(dir).await);
+}
+
 /// Polls `/health` every 50ms until it succeeds, up to 3s.
 async fn wait_for_health(client: &reqwest::Client, base: &str) {
     let deadline = Instant::now() + Duration::from_secs(3);
@@ -114,15 +128,21 @@ async fn forwards_items_through_a_downstream_instance() {
     assert!(metrics, "no metrics in telemetry dir after 3s; contents: [{listing}]");
 }
 
-/// SIGTERM should drain in-flight work and exit cleanly (code 0).
+/// SIGTERM should drain in-flight work, flush the shutdown metric, and exit cleanly (code 0).
 #[cfg(unix)]
 #[tokio::test]
 async fn exits_cleanly_on_sigterm() {
     let bin = env!("CARGO_BIN_EXE_{{ project_name }}");
     let port = free_port().await;
+    let telemetry = tempfile::tempdir().expect("create telemetry dir");
     let client = reqwest::Client::new();
     let mut child = Command::new(bin)
-        .args(["--port", &port.to_string()])
+        .args([
+            "--port",
+            &port.to_string(),
+            "--telemetry-dir",
+            &telemetry.path().to_string_lossy(),
+        ])
         .kill_on_drop(true)
         .spawn()
         .expect("spawn instance");
@@ -141,4 +161,47 @@ async fn exits_cleanly_on_sigterm() {
         .expect("did not exit within 5s")
         .expect("await child");
     assert!(status.success(), "expected a clean exit, got {status}");
+    assert_shutdown_metric(telemetry.path()).await;
+}
+
+/// Ctrl-Break should drain, flush the shutdown metric, and exit cleanly: the Windows SIGTERM analog.
+#[cfg(windows)]
+#[tokio::test]
+async fn exits_cleanly_on_ctrl_break() {
+    // There is no std way to send a console control event, so link the one kernel32 call directly.
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GenerateConsoleCtrlEvent(ctrl_event: u32, process_group_id: u32) -> i32;
+    }
+    const CTRL_BREAK_EVENT: u32 = 1;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+
+    let bin = env!("CARGO_BIN_EXE_{{ project_name }}");
+    let port = free_port().await;
+    let telemetry = tempfile::tempdir().expect("create telemetry dir");
+    let client = reqwest::Client::new();
+    // Own process group (its id is the pid) so the Ctrl-Break reaches only this child, not the runner.
+    let mut child = Command::new(bin)
+        .args([
+            "--port",
+            &port.to_string(),
+            "--telemetry-dir",
+            &telemetry.path().to_string_lossy(),
+        ])
+        .creation_flags(CREATE_NEW_PROCESS_GROUP)
+        .kill_on_drop(true)
+        .spawn()
+        .expect("spawn instance");
+    wait_for_health(&client, &format!("http://127.0.0.1:{port}")).await;
+
+    let pid = child.id().expect("child has a pid");
+    let sent = unsafe { GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid) };
+    assert_ne!(sent, 0, "GenerateConsoleCtrlEvent failed");
+
+    let status = tokio::time::timeout(Duration::from_secs(5), child.wait())
+        .await
+        .expect("did not exit within 5s")
+        .expect("await child");
+    assert!(status.success(), "expected a clean exit, got {status}");
+    assert_shutdown_metric(telemetry.path()).await;
 }

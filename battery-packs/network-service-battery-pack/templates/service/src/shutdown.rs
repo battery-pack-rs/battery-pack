@@ -41,15 +41,16 @@ pub(crate) async fn shutdown_signal() -> ShutdownReason {
     };
     #[cfg(windows)]
     let terminate = async {
-        // Closest analogs to SIGTERM: ctrl_close fires when the console or app is closed,
-        // ctrl_shutdown when the system is going down. Windows caps the handler grace period, so a
-        // long drain can still be cut short by the OS.
+        // SIGTERM analogs on Windows: console close, system shutdown, and Ctrl-Break. Windows caps
+        // the handler grace period, so a long drain can still be cut short by the OS.
         let mut close = tokio::signal::windows::ctrl_close().expect("install ctrl-close handler");
         let mut shutdown =
             tokio::signal::windows::ctrl_shutdown().expect("install ctrl-shutdown handler");
+        let mut brk = tokio::signal::windows::ctrl_break().expect("install ctrl-break handler");
         tokio::select! {
             _ = close.recv() => {}
             _ = shutdown.recv() => {}
+            _ = brk.recv() => {}
         }
     };
     #[cfg(not(any(unix, windows)))]
