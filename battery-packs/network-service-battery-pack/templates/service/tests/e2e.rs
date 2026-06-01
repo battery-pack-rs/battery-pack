@@ -16,14 +16,14 @@ fn free_port() -> u16 {
 
 /// Polls `/health` every 50ms until it succeeds, up to 3s.
 async fn wait_for_health(client: &reqwest::Client, base: &str) {
-    let deadline = Instant::now() + Duration::from_secs(30);
+    let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         if let Ok(resp) = client.get(format!("{base}/health")).send().await
             && resp.status().is_success()
         {
             return;
         }
-        assert!(Instant::now() < deadline, "{base} was not healthy within 30s");
+        assert!(Instant::now() < deadline, "{base} was not healthy within 10s");
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 }
@@ -79,12 +79,14 @@ async fn forwards_items_through_a_downstream_instance() {
     assert_eq!(got.text().await.unwrap(), "v");
 
     // Telemetry rolls to disk: both files should appear with content (writers flush async).
-    let deadline = Instant::now() + Duration::from_secs(30);
+    let deadline = Instant::now() + Duration::from_secs(10);
     let (mut logs, mut metrics) = (false, false);
     while Instant::now() < deadline && !(logs && metrics) {
         for entry in std::fs::read_dir(telemetry.path()).expect("read telemetry dir").flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            let len = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            // Read the bytes rather than trust the dir entry: on Windows the entry size lags behind
+            // writes while the appender holds the file open, so metadata().len() reads 0 mid-run.
+            let len = std::fs::read(entry.path()).map(|b| b.len()).unwrap_or(0);
             logs |= name.starts_with("application") && len > 0;
             metrics |= name.starts_with("metrics") && len > 0;
         }
@@ -97,14 +99,14 @@ async fn forwards_items_through_a_downstream_instance() {
             .flatten()
             .flatten()
             .map(|e| {
-                let len = e.metadata().map(|m| m.len()).unwrap_or(0);
+                let len = std::fs::read(e.path()).map(|b| b.len()).unwrap_or(0);
                 format!("{} ({len} bytes)", e.file_name().to_string_lossy())
             })
             .collect::<Vec<_>>()
             .join(", ")
     };
-    assert!(logs, "no application log in telemetry dir after 30s; contents: [{}]", listing());
-    assert!(metrics, "no metrics in telemetry dir after 30s; contents: [{}]", listing());
+    assert!(logs, "no application log in telemetry dir after 10s; contents: [{}]", listing());
+    assert!(metrics, "no metrics in telemetry dir after 10s; contents: [{}]", listing());
 }
 
 /// SIGTERM should drain in-flight work and exit cleanly (code 0).
