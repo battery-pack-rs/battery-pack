@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-cli-v0.8.2...bphelper-cli-v0.9.0) - 2026-06-03
+
+### Added
+
+- *(bphelper-cli)* resolve bp-managed active packs from `battery-pack.toml` ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(test)* add `validate_template_with` for exercising placeholder combinations ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+
+### Fixed
+
+- *(validate)* merge patches into a template's `.cargo/config.toml` instead of overwriting ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(template)* use a trailing slash in `starts_with` to prevent false prefix matches ([#134](https://github.com/battery-pack-rs/battery-pack/pull/134))
+- *(template)* render template paths and tests OS-agnostically on Windows ([#134](https://github.com/battery-pack-rs/battery-pack/pull/134))
+
+### Other
+
+- *(battery-pack)* migrate templates to `battery-pack.toml`, drop unused dep ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(templates)* trim `.rs` whitespace, run rustfmt after render, and assert `cargo fmt --check` on validate ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+
 ## [0.8.2](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-cli-v0.8.1...bphelper-cli-v0.8.2) - 2026-05-17
 
 ### Added

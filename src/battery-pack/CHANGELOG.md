@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.5](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.5.4...battery-pack-v0.5.5) - 2026-06-03
+
+### Added
+
+- *(backend-service-battery-pack)* new opinionated async backend service pack ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(bphelper-cli)* resolve bp-managed active packs from `battery-pack.toml` ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(test)* add `validate_template_with` for exercising placeholder combinations ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(cargo-bp-script)* add JSON output for `list` and `show` commands ([#140](https://github.com/battery-pack-rs/battery-pack/pull/140))
+- *(ci-battery-pack)* add optional cross-platform testing job ([#136](https://github.com/battery-pack-rs/battery-pack/pull/136))
+
+### Fixed
+
+- *(test)* migrate default_template snapshot to `battery-pack.toml` ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(template)* render template paths and tests OS-agnostically on Windows ([#134](https://github.com/battery-pack-rs/battery-pack/pull/134))
+- *(validate)* merge patches into a template's `.cargo/config.toml` instead of overwriting ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(template)* use a trailing slash in `starts_with` to prevent false prefix matches ([#134](https://github.com/battery-pack-rs/battery-pack/pull/134))
+- *(manifest)* include non-optional base deps when features are active ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(cargo-bp)* address PR review: conflict guard and snapbox tests ([#140](https://github.com/battery-pack-rs/battery-pack/pull/140))
+- *(test)* make snapshot tests cross-platform for `.exe` ([#138](https://github.com/battery-pack-rs/battery-pack/pull/138))
+- *(test)* add `[EXE]` to help snapshots for Windows compat ([#138](https://github.com/battery-pack-rs/battery-pack/pull/138))
+
+### Other
+
+- *(battery-pack)* migrate templates to `battery-pack.toml`, drop unused dep ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(templates)* trim `.rs` whitespace, run rustfmt after render, and assert `cargo fmt --check` on validate ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(backend-service-battery-pack)* rename from network-service-battery-pack ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+
 ## [0.5.4](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.5.3...battery-pack-v0.5.4) - 2026-05-17
 
 ### Added
