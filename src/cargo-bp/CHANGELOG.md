@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.6](https://github.com/battery-pack-rs/battery-pack/compare/cargo-bp-v0.5.5...cargo-bp-v0.5.6) - 2026-06-03
+
+### Added
+
+- *(cargo-bp-script)* add JSON output for `list` and `show` commands
+- *(bphelper-cli)* resolve bp-managed active packs from battery-pack.toml
+- *(validate)* add validate_template_with for exercising placeholder combinations
+
+### Fixed
+
+- *(cargo-bp)* address PR review — conflict guard and snapbox tests
+- render template paths and tests OS-agnostically on Windows
+- *(network-service)* correct clonable typo and apply rustfmt
+- *(validate)* merge patches into a template's .cargo/config.toml instead of overwriting
+- *(template)* use trailing slash in starts_with to prevent false prefix matches
+
+### Other
+
+- Merge pull request #142 from jlizen/feat/network-service-battery-pack
+- *(battery-pack)* migrate templates to battery-pack.toml, drop unused dep
+- *(templates)* trim .rs whitespace more aggressively, rustfmt after render, rustfmt on validate
+- *(template)* add path normalization and _Cargo.toml rename coverage
+- tidy whitespace + .gitignore EOF newline
+- *(template)* Windows path bugs in template validation
+
 ## [0.5.5](https://github.com/battery-pack-rs/battery-pack/compare/cargo-bp-v0.5.4...cargo-bp-v0.5.5) - 2026-05-17
 
 ### Added

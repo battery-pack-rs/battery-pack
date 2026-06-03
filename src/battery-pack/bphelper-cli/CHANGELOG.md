@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-cli-v0.8.2...bphelper-cli-v0.9.0) - 2026-06-03
+
+### Added
+
+- *(bphelper-cli)* resolve bp-managed active packs from battery-pack.toml
+- *(validate)* add validate_template_with for exercising placeholder combinations
+
+### Fixed
+
+- *(network-service)* correct clonable typo and apply rustfmt
+- *(validate)* merge patches into a template's .cargo/config.toml instead of overwriting
+- *(template)* use trailing slash in starts_with to prevent false prefix matches
+- render template paths and tests OS-agnostically on Windows
+
+### Other
+
+- Merge pull request #142 from jlizen/feat/network-service-battery-pack
+- *(battery-pack)* migrate templates to battery-pack.toml, drop unused dep
+- *(templates)* trim .rs whitespace more aggressively, rustfmt after render, rustfmt on validate
+- *(template)* add path normalization and _Cargo.toml rename coverage
+- tidy whitespace + .gitignore EOF newline
+- *(template)* Windows path bugs in template validation
+
 ## [0.8.2](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-cli-v0.8.1...bphelper-cli-v0.8.2) - 2026-05-17
 
 ### Added

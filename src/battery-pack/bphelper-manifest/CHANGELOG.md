@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.6](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-manifest-v0.5.5...bphelper-manifest-v0.5.6) - 2026-06-03
+
+### Fixed
+
+- *(manifest)* include non-optional base deps when features are active
+
+### Other
+
+- *(templates)* trim .rs whitespace more aggressively, rustfmt after render, rustfmt on validate
+- *(manifest)* capture non-optional deps dropped when features active
+
 ## [0.5.5](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-manifest-v0.5.4...bphelper-manifest-v0.5.5) - 2026-04-30
 
 ### Added

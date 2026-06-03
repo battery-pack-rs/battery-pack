@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.5](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.5.4...battery-pack-v0.5.5) - 2026-06-03
+
+### Added
+
+- *(bphelper-cli)* resolve bp-managed active packs from battery-pack.toml
+- *(validate)* add validate_template_with for exercising placeholder combinations
+- *(cargo-bp-script)* add JSON output for `list` and `show` commands
+- *(ci-battery-pack)* add optional cross-platform testing job
+
+### Fixed
+
+- *(with_template)* migrate default_template snapshot to battery-pack.toml
+- *(network-service)* correct clonable typo and apply rustfmt
+- render template paths and tests OS-agnostically on Windows
+- *(validate)* merge patches into a template's .cargo/config.toml instead of overwriting
+- *(template)* use trailing slash in starts_with to prevent false prefix matches
+- *(manifest)* include non-optional base deps when features are active
+- *(cargo-bp)* address PR review — conflict guard and snapbox tests
+- *(ci-battery-pack)* make snapshot tests cross-platform for .exe
+- *(cli-battery-pack)* add [EXE] to help snapshots for Windows compat
+
+### Other
+
+- Merge pull request #142 from jlizen/feat/network-service-battery-pack
+- *(battery-pack)* migrate templates to battery-pack.toml, drop unused dep
+- *(templates)* trim .rs whitespace more aggressively, rustfmt after render, rustfmt on validate
+- rename network-service-battery-pack to backend-service-battery-pack
+- *(template)* add path normalization and _Cargo.toml rename coverage
+- tidy whitespace + .gitignore EOF newline
+- *(template)* Windows path bugs in template validation
+- *(manifest)* capture non-optional deps dropped when features active
+- *(cargo-bp)* unify data-gathering and rendering for list/show
+- Merge pull request #128 from jlizen/feat/ci-bp-skill
+
 ## [0.5.4](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.5.3...battery-pack-v0.5.4) - 2026-05-17
 
 ### Added
