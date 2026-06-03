@@ -13,20 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - *(backend-service-battery-pack)* new opinionated async backend service pack ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
 - *(bphelper-cli)* resolve bp-managed active packs from `battery-pack.toml` ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
-- *(validate)* add `validate_template_with` for exercising placeholder combinations ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
-- *(cargo-bp-script)* add JSON output for `list` and `show` commands
-- *(ci-battery-pack)* add optional cross-platform testing job ([#128](https://github.com/battery-pack-rs/battery-pack/pull/128))
+- *(test)* add `validate_template_with` for exercising placeholder combinations ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(cargo-bp-script)* add JSON output for `list` and `show` commands ([#140](https://github.com/battery-pack-rs/battery-pack/pull/140))
+- *(ci-battery-pack)* add optional cross-platform testing job ([#136](https://github.com/battery-pack-rs/battery-pack/pull/136))
 
 ### Fixed
 
-- *(with_template)* migrate default_template snapshot to `battery-pack.toml` ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
-- *(template)* render template paths and tests OS-agnostically on Windows ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(test)* migrate default_template snapshot to `battery-pack.toml` ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(template)* render template paths and tests OS-agnostically on Windows ([#134](https://github.com/battery-pack-rs/battery-pack/pull/134))
 - *(validate)* merge patches into a template's `.cargo/config.toml` instead of overwriting ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
-- *(template)* use a trailing slash in `starts_with` to prevent false prefix matches ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(template)* use a trailing slash in `starts_with` to prevent false prefix matches ([#134](https://github.com/battery-pack-rs/battery-pack/pull/134))
 - *(manifest)* include non-optional base deps when features are active ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
-- *(cargo-bp)* address PR review: conflict guard and snapbox tests ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
-- *(ci-battery-pack)* make snapshot tests cross-platform for `.exe` ([#128](https://github.com/battery-pack-rs/battery-pack/pull/128))
-- *(cli-battery-pack)* add `[EXE]` to help snapshots for Windows compat
+- *(cargo-bp)* address PR review: conflict guard and snapbox tests ([#140](https://github.com/battery-pack-rs/battery-pack/pull/140))
+- *(test)* make snapshot tests cross-platform for `.exe` ([#138](https://github.com/battery-pack-rs/battery-pack/pull/138))
+- *(test)* add `[EXE]` to help snapshots for Windows compat ([#138](https://github.com/battery-pack-rs/battery-pack/pull/138))
 
 ### Other
 

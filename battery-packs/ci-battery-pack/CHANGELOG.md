@@ -11,11 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- *(ci-battery-pack)* add optional cross-platform testing job ([#128](https://github.com/battery-pack-rs/battery-pack/pull/128))
+- *(ci-battery-pack)* add optional cross-platform testing job ([#136](https://github.com/battery-pack-rs/battery-pack/pull/136))
 
 ### Fixed
 
-- *(ci-battery-pack)* make snapshot tests cross-platform for `.exe` ([#128](https://github.com/battery-pack-rs/battery-pack/pull/128))
+- *(test)* make snapshot tests cross-platform for `.exe` ([#138](https://github.com/battery-pack-rs/battery-pack/pull/138))
 
 ### Other
 

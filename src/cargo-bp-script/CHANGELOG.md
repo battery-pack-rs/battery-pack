@@ -11,8 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- *(cargo-bp-script)* add JSON output for `list` and `show` commands
+- *(cargo-bp-script)* add JSON output for `list` and `show` commands ([#140](https://github.com/battery-pack-rs/battery-pack/pull/140))
 
 ### Other
 
-- *(cargo-bp)* unify data-gathering and rendering for list/show
+- *(cargo-bp)* unify data-gathering and rendering for `list`/`show` ([#140](https://github.com/battery-pack-rs/battery-pack/pull/140))

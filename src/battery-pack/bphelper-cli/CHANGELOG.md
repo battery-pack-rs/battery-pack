@@ -12,13 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - *(bphelper-cli)* resolve bp-managed active packs from `battery-pack.toml` ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
-- *(validate)* add `validate_template_with` for exercising placeholder combinations ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(test)* add `validate_template_with` for exercising placeholder combinations ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
 
 ### Fixed
 
 - *(validate)* merge patches into a template's `.cargo/config.toml` instead of overwriting ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
-- *(template)* use a trailing slash in `starts_with` to prevent false prefix matches ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
-- *(template)* render template paths and tests OS-agnostically on Windows ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(template)* use a trailing slash in `starts_with` to prevent false prefix matches ([#134](https://github.com/battery-pack-rs/battery-pack/pull/134))
+- *(template)* render template paths and tests OS-agnostically on Windows ([#134](https://github.com/battery-pack-rs/battery-pack/pull/134))
 
 ### Other
 
