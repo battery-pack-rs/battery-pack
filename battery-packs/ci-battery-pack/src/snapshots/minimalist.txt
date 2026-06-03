@@ -345,9 +345,6 @@ rust-version = "[..]"
 description = "TODO: add description"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/test-owner/test-project"
-
-[package.metadata.battery-pack]
-ci-battery-pack = { features = [] }
 ── README.md ──
 # test-project
 
@@ -365,6 +362,12 @@ Licensed under either of:
 - MIT license ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
 
 at your option.
+── battery-pack.toml ──
+version = 1
+
+[[battery-pack]]
+name = "ci"
+features = []
 ── deny.toml ──
 # https://embarkstudios.github.io/cargo-deny/
 

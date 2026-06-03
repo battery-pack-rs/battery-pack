@@ -1,0 +1,5 @@
+version = 1
+
+[[battery-pack]]
+name = "ci"
+features = [{% if all or benchmarks %}"benchmarks", {% endif %}{% if all or fuzzing %}"fuzzing", {% endif %}{% if all or xtask %}"xtask"{% endif %}]

@@ -276,9 +276,18 @@ impl BatteryPackSpec {
         }
 
         // [impl format.features.dev-build-always]
-        // Dev/build deps are never gated by Cargo features, so always include them.
+        // Crates listed in a feature are gated by feature selection. Non-optional normal deps
+        // that belong to no feature are unconditional base deps, so always include them.
+        // Dev/build deps are never gated by Cargo features either.
+        let featured: std::collections::BTreeSet<&str> = self
+            .features
+            .values()
+            .flat_map(|names| names.iter().map(String::as_str))
+            .collect();
         for (name, spec) in &self.crates {
-            if spec.dep_kind != DepKind::Normal && !self.is_hidden(name) {
+            let unconditional = spec.dep_kind != DepKind::Normal
+                || (!spec.optional && !featured.contains(name.as_str()));
+            if unconditional && !self.is_hidden(name) {
                 result.entry(name.clone()).or_insert_with(|| spec.clone());
             }
         }
@@ -2572,5 +2581,33 @@ tokio = { version = "1", optional = true }
         assert_eq!(compare_versions("1", "1.0"), Ordering::Equal);
         assert_eq!(compare_versions("1", "2"), Ordering::Less);
         assert_eq!(compare_versions("1.0.210", "1.0.100"), Ordering::Greater);
+    }
+
+    #[test]
+    fn resolve_crates_keeps_non_optional_deps_with_active_features() {
+        let manifest = r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+
+            [dependencies]
+            anyhow = "1"
+            clap = { version = "4", optional = true }
+
+            [features]
+            cli = ["clap"]
+        "#;
+        let spec = parse_battery_pack(manifest).unwrap();
+        let resolved = spec.resolve_crates(&["cli"]);
+        assert!(
+            resolved.contains_key("clap"),
+            "feature-gated dep is present"
+        );
+        // Non-optional normal deps are unconditional in Cargo, so they must be present
+        // even when explicit features are active.
+        assert!(
+            resolved.contains_key("anyhow"),
+            "non-optional dep is present regardless of active features"
+        );
     }
 }

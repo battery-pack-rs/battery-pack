@@ -9,7 +9,6 @@ readme = "README.md"
 keywords = ["battery-pack", "error-handling", "anyhow", "thiserror", "symposium"]
 
 [dependencies]
-battery-pack = { workspace = true }
 anyhow = { version = "1", optional = true }
 thiserror = { version = "2", optional = true }
 

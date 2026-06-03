@@ -24,8 +24,6 @@ clippy-sarif = { path = "templates/clippy-sarif", description = "Clippy with Git
 hidden = ["battery-pack", "snapbox"]
 
 [dependencies]
-battery-pack = { workspace = true }
-
 # Benchmarking
 criterion = { version = "0.8", features = ["html_reports"], optional = true }
 

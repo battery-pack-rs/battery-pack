@@ -1,0 +1,61 @@
+[package]
+name = "{{ project_name }}"
+version = "0.1.0"
+edition = "2024"
+description = "{{ description }}"
+publish = false
+
+[dependencies]
+tokio = { bp-managed = true, features = ["full"] }
+serde = { bp-managed = true, features = ["derive"] }
+serde_json.bp-managed = true
+anyhow.bp-managed = true
+thiserror.bp-managed = true
+http.bp-managed = true
+clap = { bp-managed = true, features = ["derive", "env"] }
+
+tracing.bp-managed = true
+tracing-subscriber = { bp-managed = true, features = ["env-filter", "json"] }
+tracing-appender.bp-managed = true
+metrique = { bp-managed = true, features = ["json"] }
+metrique-util = { bp-managed = true, features = ["tokio-metrics-bridge"] }
+{%- if dial9 %}
+dial9-tokio-telemetry = { bp-managed = true, features = ["tracing-layer", "cpu-profiling", "memory-profiling"] }
+{%- endif %}
+
+axum.bp-managed = true
+tower.bp-managed = true
+tower-http = { bp-managed = true, features = ["trace", "request-id"{% if tower_timeout %}, "timeout"{% endif %}{% if tower_catch_panic %}, "catch-panic"{% endif %}{% if tower_on_early_drop %}, "on-early-drop"{% endif %}] }
+{%- if rate_limit %}
+tower_governor = { bp-managed = true, default-features = false, features = ["axum"] }
+{%- endif %}
+
+reqwest.bp-managed = true
+
+{%- if allocator == "jemalloc" %}
+
+# jemalloc is unavailable on MSVC, so gate the dependency to match the allocator setup.
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.7"
+{%- elif allocator == "mimalloc" %}
+mimalloc.bp-managed = true
+{%- endif %}
+
+[dev-dependencies]
+# util = tower::util::ServiceExt::oneshot, to drive the service in tests without a socket
+tower = { bp-managed = true, features = ["util"] }
+tracing-test = { version = "0.2", features = ["no-env-filter"] }
+metrique = { bp-managed = true, features = ["json", "test-util"] }
+{%- if benchmarks %}
+criterion = { bp-managed = true, features = ["async_tokio"] }
+{%- endif %}
+# Spawn the real binary and tempdir for telemetry in the e2e test; reqwest (a normal dep) is the client.
+tempfile = "3"
+
+{%- if benchmarks %}
+
+[[bench]]
+name = "service"
+harness = false
+{%- endif %}
+

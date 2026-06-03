@@ -10,5 +10,3 @@ description = "{{ project_description }}"
 # versions managed by your battery pack:
 # clap.bp-managed = true
 
-[package.metadata.battery-pack]
-{{ project_name }} = { features = ["default"] }

@@ -1,0 +1,1395 @@
+── .cargo/config.toml ──
+# No special build flags are needed. The dial9 feature adds tokio_unstable and frame pointers here.
+
+
+── Cargo.toml ──
+[package]
+name = "test-service"
+version = "0.1.0"
+edition = "2024"
+description = "A starter async backend service."
+publish = false
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "2"
+http = "1"
+clap = { version = "4", features = ["derive", "env"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
+metrique = { version = "0.1", features = ["json"] }
+metrique-util = { version = "0.1", features = ["tokio-metrics-bridge"] }
+axum = "0.8"
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["trace", "request-id"] }
+reqwest = { version = "0.13", features = ["json"] }
+mimalloc = "0.1"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+tracing-test = { version = "0.2", features = ["no-env-filter"] }
+metrique = { version = "0.1", features = ["json", "test-util"] }
+# Spawn the real binary and tempdir for telemetry in the e2e test; reqwest (a normal dep) is the client.
+tempfile = "3"
+
+
+── README.md ──
+# test-service
+
+A starter async backend service.
+
+## Run
+
+```bash
+cargo run
+```
+
+With no `--downstream-url`, items are stored in memory, so this works with no dependencies. Point it at a downstream to forward items there instead:
+
+```bash
+cargo run -- --downstream-url http://127.0.0.1:3001
+```
+
+A second instance can be that downstream. Use `--port` (the `PORT` env var works too) to move each one:
+
+```bash
+# terminal 1 — backing store (in-memory):
+cargo run -- --port 3001
+
+# terminal 2 — forwarder:
+cargo run -- --port 3000 --downstream-url http://127.0.0.1:3001
+```
+
+The service binds `127.0.0.1:3000` by default; `--port` overrides just the port. Logs go to stderr and metrics to stdout. Set `--telemetry-dir <dir>` to roll both into files there instead.
+
+## Endpoints
+
+```bash
+curl localhost:3000/health
+curl -X PUT localhost:3000/items/greeting --data 'hello'
+curl localhost:3000/items/greeting
+curl -X POST localhost:3000/echo -H 'content-type: application/json' --data '{"message":"hi"}'
+```
+
+── battery-pack.toml ──
+version = 1
+
+[[battery-pack]]
+name = "backend-service"
+features = ["axum-server", "http-client", "clap-config", "mimalloc-alloc"]
+
+── src/config.rs ──
+//! Configuration from CLI args and environment variables.
+
+use std::net::SocketAddr;
+use std::path::PathBuf;
+
+use clap::Parser;
+
+#[derive(Debug, Clone, Parser)]
+pub struct Config {
+    /// Address the HTTP server binds to. Port is overridden by PORT if set.
+    #[arg(long, env = "BIND_ADDR", default_value = "127.0.0.1:3000")]
+    pub bind_addr: SocketAddr,
+
+    /// Overrides the port in `bind_addr`.
+    #[arg(long, env = "PORT")]
+    pub port: Option<u16>,
+
+    /// `tracing` filter directive, e.g. `info,test_service=debug`.
+    #[arg(long, env = "RUST_LOG", default_value = "info,test_service=debug")]
+    pub log_filter: String,
+
+    /// Service name attached to every metric record.
+    #[arg(long, env = "SERVICE_NAME", default_value = "test-service")]
+    pub service_name: String,
+
+    /// Directory for rolling log and metric files.
+    /// When unset, logs go to stderr and metrics to stdout.
+    #[arg(long, env = "TELEMETRY_DIR")]
+    pub telemetry_dir: Option<PathBuf>,
+
+    /// Base URL of a downstream service to forward items to. When omitted, items are stored in memory.
+    #[arg(long, env = "DOWNSTREAM_URL")]
+    pub downstream_url: Option<String>,
+}
+
+impl Config {
+    /// Address to bind: `bind_addr` with its port replaced by `--port` when that is set.
+    pub fn socket_addr(&self) -> SocketAddr {
+        let mut addr = self.bind_addr;
+        if let Some(port) = self.port {
+            addr.set_port(port);
+        }
+        addr
+    }
+}
+
+
+── src/lib.rs ──
+//! Service modules and [`run`], the server orchestration. The binary adds the process-global setup
+//! (telemetry, allocator). Tests and benchmarks drive [`routes::router`] directly.
+
+pub mod config;
+pub mod metrics;
+pub mod middleware;
+pub mod routes;
+pub mod shutdown;
+pub mod store;
+pub mod telemetry;
+
+use anyhow::Context;
+
+use crate::config::Config;
+
+/// Serves until SIGINT/SIGTERM, then drains in-flight requests and records the shutdown metric.
+/// The tracing and metric sinks are installed by the binary and outlive this call.
+pub async fn run(config: Config) -> anyhow::Result<()> {
+    tracing::info!(?config, "starting up");
+    let state = routes::build_state(&config)?;
+    let probe_store = state.store.clone();
+    let app = routes::router(state);
+    let addr = config.socket_addr();
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .context("bind listener")?;
+    tracing::info!(%addr, "listening");
+
+    // Smoke test that downstream is reachable. Only warn on unreachable, to avoid
+    // cascading failure.
+    tokio::spawn(async move {
+        if let Some(result) = probe_store.probe().await {
+            match result {
+                Ok(()) => tracing::debug!("downstream reachable at startup"),
+                Err(e) => tracing::warn!(
+                    "downstream unreachable at startup (non-fatal): {:#}",
+                    anyhow::anyhow!(e)
+                ),
+            }
+        }
+    });
+
+    // Run the server in a task so we hold its JoinHandle: that lets us trigger graceful shutdown
+    // and cap how long we wait for in-flight requests to drain before forcing exit.
+    let (drain_tx, drain_rx) = tokio::sync::oneshot::channel::<()>();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async move {
+                let _ = drain_rx.await;
+            })
+            .await
+            .context("server error")
+    });
+
+    shutdown::drain_on_signal(server, drain_tx).await;
+    Ok(())
+}
+
+
+── src/main.rs ──
+#[global_allocator]
+static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+use clap::Parser;
+
+use test_service::config::Config;
+use test_service::telemetry;
+#[tokio::main]
+async fn main() -> std::process::ExitCode {
+    let config = Config::parse();
+    // In-flight logs and metrics are flushed when this guard drops, on exit.
+    let _telemetry = telemetry::init_telemetry(&config);
+
+    let code: u8 = match test_service::run(config).await {
+        Ok(()) => 0,
+        Err(error) => {
+            tracing::error!("service exited with error: {error:#}");
+            1
+        }
+    };
+    test_service::metrics::record_process_exit(code);
+    std::process::ExitCode::from(code)
+}
+
+
+── src/metrics.rs ──
+//! Wide-event metrics: one [`RequestMetrics`] record per request. The middleware owns the parent
+//! and opens [`HandlerMetrics`] as a slot the handler fills through the [`HandlerMetricsGuard`] extractor.
+
+use std::time::{Duration, SystemTime};
+
+use metrique::ServiceMetrics;
+use metrique::Slot;
+use metrique::timers::{Stopwatch, Timer};
+use metrique::unit::{Byte, Millisecond};
+use metrique::unit_of_work::metrics;
+use metrique::writer::Entry;
+use metrique::writer::value::ToString;
+use metrique::{Counter, CounterGuard};
+
+/// Re-exported so handlers can reach the guard alongside the metric types it writes into.
+pub use crate::middleware::HandlerMetricsGuard;
+
+/// Concurrent in-flight requests, tracked by the middleware for each request's duration.
+pub static IN_FLIGHT: Counter = Counter::new(0);
+
+/// Properties attached to every emitted record.
+#[derive(Entry)]
+#[entry]
+pub struct Globals {
+    pub service_name: String,
+}
+
+/// The operation a request maps to.
+#[metrics(value(string))]
+#[derive(Clone, Copy)]
+pub enum Operation {
+    GetItem,
+    SetItem,
+    Echo,
+    /// A request that matched no known route.
+    Other,
+}
+
+/// Why a request or downstream call failed.
+#[metrics(value(string))]
+#[derive(Clone, Copy)]
+pub enum ErrorKind {
+    Timeout,
+    Downstream,
+    InvalidRequest,
+    Internal,
+}
+
+/// Handler-set fields, flushed into the parent [`RequestMetrics`] when the guard drops.
+#[metrics(subfield_owned)]
+#[derive(Default)]
+pub struct HandlerMetrics {
+    /// Bytes of the value read or written, set by the handler.
+    #[metrics(unit = Byte)]
+    pub payload_bytes: usize,
+    /// `None` for operations that make no downstream call.
+    pub downstream_success: Option<bool>,
+    /// Whether a lookup found the key. `None` for operations that do not look one up.
+    pub found: Option<bool>,
+    pub downstream_error_kind: Option<ErrorKind>,
+    /// The downstream failure chain, recorded as a property for debugging.
+    pub downstream_error: Option<String>,
+    /// Duration of the downstream call, if started.
+    #[metrics(unit = Millisecond)]
+    pub downstream_duration: Stopwatch,
+}
+
+/// Per-request wide event.
+#[metrics(rename_all = "PascalCase")]
+pub struct RequestMetrics {
+    pub request_id: String,
+    pub operation: Operation,
+    /// In-flight count at close. The guard increments at init and decrements on drop.
+    pub in_flight: CounterGuard<'static>,
+    /// Request path, recorded as a property (high-cardinality: it contains the key).
+    pub path: String,
+    /// When the router received the request.
+    #[metrics(timestamp)]
+    pub timestamp: SystemTime,
+    /// Foreground request duration.
+    #[metrics(unit = Millisecond)]
+    pub duration: Timer,
+    /// True unless the service itself failed (5xx). A 4xx is a client problem, still a success.
+    pub success: bool,
+    /// If the request was a 4xx error
+    pub client_error: bool,
+    /// If the request was a 5xx error
+    pub server_error: bool,
+    /// A string property, not a numeric metric: status codes are dimensions, not measurements.
+    #[metrics(format = ToString)]
+    pub status_code: u16,
+    pub error_kind: Option<ErrorKind>,
+    #[metrics(flatten)]
+    pub handler: Slot<HandlerMetrics>,
+}
+
+impl RequestMetrics {
+    /// Call at the middleware boundary, not in a handler: the duration timer starts now.
+    pub fn init(request_id: String, operation: Operation, path: String) -> RequestMetricsGuard {
+        RequestMetrics {
+            request_id,
+            operation,
+            in_flight: IN_FLIGHT.increment_scoped().0,
+            path,
+            timestamp: SystemTime::now(),
+            duration: Timer::start_now(),
+            success: false,
+            client_error: false,
+            server_error: false,
+            status_code: 0,
+            error_kind: None,
+            handler: Slot::default(),
+        }
+        .append_on_drop(ServiceMetrics::sink_or_discard())
+    }
+}
+
+/// Emitted once when the process drains and exits.
+#[metrics(rename_all = "PascalCase")]
+pub struct ShutdownMetrics {
+    #[metrics(timestamp)]
+    pub timestamp: SystemTime,
+    pub reason: &'static str,
+    pub drained: bool,
+    #[metrics(unit = Millisecond)]
+    pub drain_duration: Duration,
+}
+
+/// Records the shutdown metric as the process drains.
+pub fn record_shutdown(reason: &'static str, drained: bool, drain_duration: Duration) {
+    ShutdownMetrics {
+        timestamp: SystemTime::now(),
+        reason,
+        drained,
+        drain_duration,
+    }
+    .append_on_drop(ServiceMetrics::sink_or_discard());
+}
+
+/// Emitted once as the process exits, carrying the exit code (0 = success).
+#[metrics(rename_all = "PascalCase")]
+pub struct ProcessExitMetrics {
+    #[metrics(timestamp)]
+    pub timestamp: SystemTime,
+    pub exit_code: u8,
+}
+
+/// Records the process-exit metric just before the binary returns its exit code.
+pub fn record_process_exit(exit_code: u8) {
+    ProcessExitMetrics {
+        timestamp: SystemTime::now(),
+        exit_code,
+    }
+    .append_on_drop(ServiceMetrics::sink_or_discard());
+}
+
+
+── src/middleware.rs ──
+//! Request-metrics middleware and the guard a handler uses to record its own metrics.
+
+use std::sync::{Arc, Mutex};
+
+use axum::extract::{FromRequestParts, Request};
+use axum::middleware::Next;
+use axum::response::Response;
+use http::request::Parts;
+use http::{Method, StatusCode};
+use metrique::{OnParentDrop, SlotGuard};
+use tower_http::request_id::RequestId;
+
+use crate::metrics::{ErrorKind, HandlerMetrics, Operation, RequestMetrics};
+
+/// Records a wide-event metric per request, and exposes a [`HandlerMetricsGuard`] slot for handlers.
+/// The request id and tracing span come from the tower-http layers wrapping this one.
+pub async fn telemetry_middleware(mut req: Request, next: Next) -> Response {
+    let request_id = req
+        .extensions()
+        .get::<RequestId>()
+        .and_then(|id| id.header_value().to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    let operation = classify_operation(req.method(), req.uri().path());
+    // path is captured now, before next.run consumes the request, so it survives a timeout.
+    let mut metrics = RequestMetrics::init(request_id, operation, req.uri().path().to_string());
+
+    let slot = metrics
+        .handler
+        .open(OnParentDrop::Discard)
+        .expect("slot opened more than once");
+    req.extensions_mut()
+        .insert(HandlerMetricsHandle(Arc::new(Mutex::new(Some(slot)))));
+
+    let response = next.run(req).await;
+
+    let status = response.status();
+    metrics.status_code = status.as_u16();
+    metrics.client_error = status.is_client_error();
+    metrics.server_error = status.is_server_error();
+    // A 4xx is the client's fault, not ours, so only a 5xx counts against success.
+    metrics.success = !status.is_server_error();
+    metrics.error_kind = classify_error(status);
+    response
+}
+
+/// Cloneable into request extensions. The Mutex and Option let a handler take the guard exactly once.
+#[derive(Clone)]
+struct HandlerMetricsHandle(Arc<Mutex<Option<SlotGuard<HandlerMetrics>>>>);
+
+/// Handler access to [`HandlerMetrics`]. Writes flush into the request's record on drop.
+pub struct HandlerMetricsGuard(SlotGuard<HandlerMetrics>);
+
+impl std::ops::Deref for HandlerMetricsGuard {
+    type Target = HandlerMetrics;
+    fn deref(&self) -> &HandlerMetrics {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for HandlerMetricsGuard {
+    fn deref_mut(&mut self) -> &mut HandlerMetrics {
+        &mut self.0
+    }
+}
+
+impl<S: Send + Sync> FromRequestParts<S> for HandlerMetricsGuard {
+    type Rejection = StatusCode;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        match parts
+            .extensions
+            .get::<HandlerMetricsHandle>()
+            .and_then(|h| h.0.lock().unwrap_or_else(|e| e.into_inner()).take())
+        {
+            Some(guard) => Ok(HandlerMetricsGuard(guard)),
+            // The slot is installed by telemetry_middleware. Reaching here means a route uses this
+            // extractor without that layer, so fail observably rather than panic on live traffic.
+            None => {
+                tracing::error!(
+                    "HandlerMetricsGuard unavailable: telemetry_middleware not on this route"
+                );
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        }
+    }
+}
+
+/// Matches the router's single-segment `/items/{key}`, so a probe to `/items/a/b` records as Other.
+fn is_item_path(path: &str) -> bool {
+    path.strip_prefix("/items/")
+        .is_some_and(|key| !key.is_empty() && !key.contains('/'))
+}
+
+/// Unmatched routes record as `Other` so a new endpoint shows up as unclassified until added here.
+fn classify_operation(method: &Method, path: &str) -> Operation {
+    match (method, path) {
+        (&Method::POST, "/echo") => Operation::Echo,
+        (&Method::GET, p) if is_item_path(p) => Operation::GetItem,
+        (&Method::PUT, p) if is_item_path(p) => Operation::SetItem,
+        _ => Operation::Other,
+    }
+}
+
+fn classify_error(status: StatusCode) -> Option<ErrorKind> {
+    if status.is_success() {
+        return None;
+    }
+    Some(match status {
+        StatusCode::REQUEST_TIMEOUT => ErrorKind::Timeout,
+        StatusCode::BAD_GATEWAY | StatusCode::SERVICE_UNAVAILABLE | StatusCode::GATEWAY_TIMEOUT => {
+            ErrorKind::Downstream
+        }
+        s if s.is_client_error() => ErrorKind::InvalidRequest,
+        _ => ErrorKind::Internal,
+    })
+}
+
+
+── src/routes.rs ──
+//! Axum router, application state, and request handlers.
+
+use axum::Json;
+use axum::Router;
+use axum::extract::{DefaultBodyLimit, Path, State};
+use axum::routing::{get, post};
+use http::StatusCode;
+use serde::{Deserialize, Serialize};
+
+use crate::config::Config;
+use crate::middleware::{HandlerMetricsGuard, telemetry_middleware};
+use crate::store::Store;
+use tower_http::request_id::{
+    MakeRequestUuid, PropagateRequestIdLayer, RequestId, SetRequestIdLayer,
+};
+use tower_http::trace::TraceLayer;
+
+/// Largest request body accepted, rejected with 413 above this. Bounds memory used per request.
+const MAX_BODY_BYTES: usize = 1024 * 1024;
+
+/// Shared state. Fields must be cheaply cloneable: axum clones this for every request.
+#[derive(Clone)]
+pub struct AppState {
+    pub store: Store,
+}
+
+pub fn build_state(config: &Config) -> anyhow::Result<AppState> {
+    let store = Store::new(config.downstream_url.as_deref())?;
+    Ok(AppState { store })
+}
+
+pub fn router(state: AppState) -> Router {
+    let app = Router::new()
+        .route("/items/{key}", get(get_item).put(set_item))
+        .route("/echo", post(echo))
+        // Reject oversized bodies with 413 before they are buffered into memory.
+        .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
+        // Outermost recorder: captures the final status even when an inner layer produced it.
+        .layer(axum::middleware::from_fn(telemetry_middleware))
+        // The span carries the request id so handler logs correlate; metrics already cover latency.
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|req: &axum::extract::Request| {
+                    let request_id = req
+                        .extensions()
+                        .get::<RequestId>()
+                        .and_then(|id| id.header_value().to_str().ok())
+                        .unwrap_or_default();
+                    tracing::info_span!(
+                        "request",
+                        %request_id,
+                        method = %req.method(),
+                        path = %req.uri().path()
+                    )
+                })
+                .on_request(())
+                .on_response(())
+                .on_failure(()),
+        )
+        // Keep an incoming x-request-id or generate one, and echo it back on the response.
+        .layer(PropagateRequestIdLayer::x_request_id())
+        .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid));
+
+    // /health bypasses the middleware stack
+    Router::new()
+        .route("/health", get(health))
+        .merge(app)
+        .with_state(state)
+}
+
+async fn health() -> &'static str {
+    "ok"
+}
+
+#[tracing::instrument(skip(state, metrics), fields(key = %key))]
+async fn get_item(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+    mut metrics: HandlerMetricsGuard,
+) -> Result<String, StatusCode> {
+    let result = {
+        let _timing = metrics.downstream_duration.start();
+        state.store.get(&key).await
+    };
+    match result {
+        Ok(Some(value)) => {
+            metrics.downstream_success = Some(true);
+            metrics.found = Some(true);
+            metrics.payload_bytes = value.len();
+            tracing::debug!(found = true, "get_item");
+            Ok(value)
+        }
+        Ok(None) => {
+            metrics.downstream_success = Some(true);
+            metrics.found = Some(false);
+            tracing::debug!(found = false, "get_item");
+            Err(StatusCode::NOT_FOUND)
+        }
+        Err(e) => {
+            metrics.downstream_error_kind = Some(e.kind());
+            let status = e.status_code();
+            let err = anyhow::anyhow!(e);
+            metrics.downstream_error = Some(format!("{err:#}"));
+            tracing::error!("downstream call failed: {err:#}");
+            Err(status)
+        }
+    }
+}
+
+#[tracing::instrument(skip(state, metrics, body), fields(key = %key))]
+async fn set_item(
+    State(state): State<AppState>,
+    Path(key): Path<String>,
+    mut metrics: HandlerMetricsGuard,
+    body: String,
+) -> Result<StatusCode, StatusCode> {
+    metrics.payload_bytes = body.len();
+    let result = {
+        let _timing = metrics.downstream_duration.start();
+        state.store.set(&key, &body).await
+    };
+    match result {
+        Ok(()) => {
+            metrics.downstream_success = Some(true);
+            Ok(StatusCode::NO_CONTENT)
+        }
+        Err(e) => {
+            metrics.downstream_error_kind = Some(e.kind());
+            let status = e.status_code();
+            let err = anyhow::anyhow!(e);
+            metrics.downstream_error = Some(format!("{err:#}"));
+            tracing::error!("downstream call failed: {err:#}");
+            Err(status)
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct EchoRequest {
+    pub message: String,
+}
+
+#[derive(Serialize)]
+pub struct EchoResponse {
+    pub message: String,
+}
+
+/// Echoes a JSON body back. A malformed body is rejected with 422.
+#[tracing::instrument(skip_all)]
+async fn echo(
+    mut metrics: HandlerMetricsGuard,
+    Json(req): Json<EchoRequest>,
+) -> Json<EchoResponse> {
+    metrics.payload_bytes = req.message.len();
+    Json(EchoResponse {
+        message: req.message,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::{Body, to_bytes};
+    use http::Request;
+    use tower::ServiceExt;
+
+    fn test_state() -> AppState {
+        AppState {
+            store: Store::InMemory(Default::default()),
+        }
+    }
+
+    /// Installs a thread-local test sink, drives one request, and returns the single emitted
+    /// metric entry. `#[tokio::test]` runs on a current-thread runtime, so the thread-local sink
+    /// set here is the one the middleware records into.
+    async fn capture_metric(
+        app: axum::Router,
+        req: Request<Body>,
+    ) -> metrique::test_util::TestEntry {
+        let metrique::test_util::TestEntrySink { inspector, sink } =
+            metrique::test_util::test_entry_sink();
+        let _guard = metrique::ServiceMetrics::set_test_sink(sink);
+        app.oneshot(req).await.unwrap();
+        let mut entries = inspector.entries();
+        assert_eq!(entries.len(), 1, "one record per request");
+        entries.pop().unwrap()
+    }
+
+    #[tokio::test]
+    async fn health_ok() {
+        let resp = router(test_state())
+            .oneshot(Request::get("/health").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn health_emits_no_metric() {
+        let metrique::test_util::TestEntrySink { inspector, sink } =
+            metrique::test_util::test_entry_sink();
+        let _guard = metrique::ServiceMetrics::set_test_sink(sink);
+        router(test_state())
+            .oneshot(Request::get("/health").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert!(
+            inspector.entries().is_empty(),
+            "/health bypasses the telemetry layer"
+        );
+    }
+
+    #[tracing_test::traced_test]
+    #[tokio::test]
+    async fn get_item_is_instrumented() {
+        let _ = router(test_state())
+            .oneshot(Request::get("/items/abc").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert!(logs_contain("get_item"));
+    }
+
+    #[tokio::test]
+    async fn set_then_get_returns_value() {
+        let app = router(test_state());
+        let put = app
+            .clone()
+            .oneshot(Request::put("/items/k").body(Body::from("v")).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(put.status(), StatusCode::NO_CONTENT);
+
+        let got = app
+            .oneshot(Request::get("/items/k").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(got.status(), StatusCode::OK);
+        let body = to_bytes(got.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(&body[..], b"v");
+    }
+
+    #[tokio::test]
+    async fn get_missing_is_not_found() {
+        let got = router(test_state())
+            .oneshot(Request::get("/items/nope").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(got.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn set_records_payload_and_downstream_success() {
+        let m = capture_metric(
+            router(test_state()),
+            Request::put("/items/k").body(Body::from("hello")).unwrap(),
+        )
+        .await;
+        assert_eq!(m.values["Operation"], "SetItem");
+        assert!(m.metrics["DownstreamSuccess"].as_bool());
+        assert_eq!(m.metrics["PayloadBytes"].as_u64(), 5);
+    }
+
+    #[tokio::test]
+    async fn missing_key_records_invalid_request() {
+        let m = capture_metric(
+            router(test_state()),
+            Request::get("/items/nope").body(Body::empty()).unwrap(),
+        )
+        .await;
+        assert_eq!(m.values["StatusCode"], "404");
+        assert_eq!(m.values["ErrorKind"], "InvalidRequest");
+        assert!(m.metrics["ClientError"].as_bool());
+        assert!(!m.metrics["ServerError"].as_bool());
+        assert!(m.metrics["Success"].as_bool()); // a 4xx is the client's fault, still a success
+        assert_eq!(m.values["Path"], "/items/nope");
+        assert!(!m.metrics["Found"].as_bool());
+    }
+
+    #[tokio::test]
+    async fn echo_returns_json() {
+        let got = router(test_state())
+            .oneshot(
+                Request::post("/echo")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"message":"hi"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(got.status(), StatusCode::OK);
+        let body = to_bytes(got.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(&body[..], br#"{"message":"hi"}"#);
+    }
+
+    #[tokio::test]
+    async fn echo_records_payload() {
+        let m = capture_metric(
+            router(test_state()),
+            Request::post("/echo")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"message":"hello"}"#))
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(m.values["Operation"], "Echo");
+        assert!(m.metrics["Success"].as_bool());
+        assert_eq!(m.metrics["PayloadBytes"].as_u64(), 5);
+    }
+}
+
+
+── src/shutdown.rs ──
+//! Graceful shutdown signal and drain coordination.
+
+use std::time::{Duration, Instant};
+
+/// How long to let in-flight requests finish before forcing exit. Match this to your deployment's
+/// termination grace period (e.g. Kubernetes `terminationGracePeriodSeconds`).
+const SHUTDOWN_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// What triggered shutdown. Recorded on the shutdown metric.
+#[derive(Clone, Copy)]
+pub enum ShutdownReason {
+    CtrlC,
+    Terminate,
+}
+
+impl ShutdownReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ShutdownReason::CtrlC => "ctrl_c",
+            ShutdownReason::Terminate => "terminate",
+        }
+    }
+}
+
+/// Resolves on the first interrupt (Ctrl-C) or termination request, returning the trigger so the
+/// caller can record the reason. A termination request is SIGTERM on Unix, and a console-close or
+/// system-shutdown event on Windows.
+pub(crate) async fn shutdown_signal() -> ShutdownReason {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("install Ctrl-C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("install SIGTERM handler")
+            .recv()
+            .await;
+    };
+    #[cfg(windows)]
+    let terminate = async {
+        // SIGTERM analogs on Windows: console close, system shutdown, and Ctrl-Break. Windows caps
+        // the handler grace period, so a long drain can still be cut short by the OS.
+        let mut close = tokio::signal::windows::ctrl_close().expect("install ctrl-close handler");
+        let mut shutdown =
+            tokio::signal::windows::ctrl_shutdown().expect("install ctrl-shutdown handler");
+        let mut brk = tokio::signal::windows::ctrl_break().expect("install ctrl-break handler");
+        tokio::select! {
+            _ = close.recv() => {}
+            _ = shutdown.recv() => {}
+            _ = brk.recv() => {}
+        }
+    };
+    #[cfg(not(any(unix, windows)))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        biased;
+        _ = ctrl_c => ShutdownReason::CtrlC,
+        _ = terminate => ShutdownReason::Terminate,
+    }
+}
+
+/// Drains in-flight requests on a shutdown signal, capped at `SHUTDOWN_DRAIN_TIMEOUT`, then records
+/// the shutdown metric (including whether the drain finished in time).
+pub async fn drain_on_signal(
+    server: tokio::task::JoinHandle<anyhow::Result<()>>,
+    drain_tx: tokio::sync::oneshot::Sender<()>,
+) {
+    let reason = shutdown_signal().await;
+    tracing::info!(reason = reason.as_str(), "draining");
+    let start = Instant::now();
+    let _ = drain_tx.send(());
+
+    // Graceful shutdown waits for in-flight requests. A flood of slow requests can still
+    // outlast our shutdown window, so cap the wait and force exit if it elapses. Only a clean
+    // finish counts as drained: a server error or panic is a failure, not a graceful drain.
+    let abort = server.abort_handle();
+    let drained = match tokio::time::timeout(SHUTDOWN_DRAIN_TIMEOUT, server).await {
+        Ok(Ok(Ok(()))) => true,
+        Ok(Ok(Err(e))) => {
+            tracing::error!("server stopped with an error: {e:#}");
+            false
+        }
+        Ok(Err(join_error)) => {
+            tracing::error!("server task panicked: {join_error}");
+            false
+        }
+        Err(_elapsed) => {
+            tracing::warn!(
+                timeout_secs = SHUTDOWN_DRAIN_TIMEOUT.as_secs(),
+                "drain timed out, forcing shutdown"
+            );
+            // Cancel rather than detach, so in-flight work does not outlive this call.
+            abort.abort();
+            false
+        }
+    };
+    crate::metrics::record_shutdown(reason.as_str(), drained, start.elapsed());
+}
+
+
+── src/store.rs ──
+//! Key-value store: an in-memory map when no downstream URL is set, or an HTTP forwarder to
+//! `{url}/items/{key}` when one is.
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use anyhow::Context;
+use http::{Method, StatusCode};
+
+use crate::metrics::ErrorKind;
+
+/// Per-request timeout for each downstream call. Kept short so a slow downstream surfaces as a
+/// fast 502 rather than consuming our own request budget.
+const DOWNSTREAM_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Retry budget per request for idempotent downstream calls (GET/PUT on a 503).
+const DOWNSTREAM_MAX_RETRIES: u32 = 2;
+
+#[derive(Debug, thiserror::Error)]
+pub enum StoreError {
+    #[error("downstream request timed out")]
+    Timeout(#[source] reqwest::Error),
+    #[error("downstream request failed")]
+    Request(#[source] reqwest::Error),
+}
+
+impl From<reqwest::Error> for StoreError {
+    fn from(error: reqwest::Error) -> Self {
+        if error.is_timeout() {
+            StoreError::Timeout(error)
+        } else {
+            StoreError::Request(error)
+        }
+    }
+}
+
+impl StoreError {
+    /// Status to return to our client: 504 for a downstream timeout, 502 for any other failure.
+    pub fn status_code(&self) -> StatusCode {
+        match self {
+            StoreError::Timeout(_) => StatusCode::GATEWAY_TIMEOUT,
+            StoreError::Request(_) => StatusCode::BAD_GATEWAY,
+        }
+    }
+
+    pub fn kind(&self) -> ErrorKind {
+        match self {
+            StoreError::Timeout(_) => ErrorKind::Timeout,
+            StoreError::Request(_) => ErrorKind::Downstream,
+        }
+    }
+}
+
+/// Backend handle, an in-memory map or an HTTP forwarder, cheap to clone.
+#[derive(Clone)]
+pub enum Store {
+    InMemory(Arc<Mutex<HashMap<String, String>>>),
+    Http {
+        client: reqwest::Client,
+        base_url: reqwest::Url,
+    },
+}
+
+impl Store {
+    /// In-memory when `downstream_url` is `None`, otherwise an HTTP forwarder.
+    pub fn new(downstream_url: Option<&str>) -> anyhow::Result<Self> {
+        Ok(match downstream_url {
+            Some(url) => {
+                let base_url = reqwest::Url::parse(url).context("parse downstream URL")?;
+                Store::Http {
+                    client: build_client(&base_url)?,
+                    base_url,
+                }
+            }
+            None => Store::InMemory(Default::default()),
+        })
+    }
+
+    /// Simple reachability check. `None` for the in-memory store (nothing to probe).
+    pub async fn probe(&self) -> Option<Result<(), StoreError>> {
+        match self {
+            Store::InMemory(_) => None,
+            Store::Http { client, base_url } => Some(
+                client
+                    .get(join(base_url, &["health"]))
+                    .send()
+                    .await
+                    .and_then(|resp| resp.error_for_status())
+                    .map(|_| ())
+                    .map_err(StoreError::from),
+            ),
+        }
+    }
+
+    pub async fn get(&self, key: &str) -> Result<Option<String>, StoreError> {
+        match self {
+            Store::InMemory(map) => Ok(map
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get(key)
+                .cloned()),
+            Store::Http { client, base_url } => {
+                let resp = client.get(join(base_url, &["items", key])).send().await?;
+                if resp.status() == StatusCode::NOT_FOUND {
+                    return Ok(None);
+                }
+                Ok(Some(resp.error_for_status()?.text().await?))
+            }
+        }
+    }
+
+    pub async fn set(&self, key: &str, value: &str) -> Result<(), StoreError> {
+        match self {
+            Store::InMemory(map) => {
+                map.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert(key.to_string(), value.to_string());
+                Ok(())
+            }
+            Store::Http { client, base_url } => {
+                client
+                    .put(join(base_url, &["items", key]))
+                    .body(value.to_string())
+                    .send()
+                    .await?
+                    .error_for_status()?;
+                Ok(())
+            }
+        }
+    }
+}
+
+/// Builds a request URL by appending path segments to the base, percent-encoding each so a key
+/// containing '/' or other URL metacharacters cannot alter the downstream path.
+fn join(base: &reqwest::Url, segments: &[&str]) -> reqwest::Url {
+    let mut url = base.clone();
+    url.path_segments_mut()
+        .expect("downstream base URL can be a base")
+        .pop_if_empty()
+        .extend(segments);
+    url
+}
+
+/// Reuses one client so the connection pool and TLS sessions stay warm. The retry budget bounds
+/// amplification and retries idempotent GET/PUT 503s.
+fn build_client(base_url: &reqwest::Url) -> anyhow::Result<reqwest::Client> {
+    // Scope the retry budget to the downstream host.
+    let host = base_url.host_str().unwrap_or_default().to_string();
+    reqwest::Client::builder()
+        .timeout(DOWNSTREAM_TIMEOUT)
+        .pool_max_idle_per_host(16)
+        .pool_idle_timeout(Duration::from_secs(30))
+        .retry(
+            reqwest::retry::for_host(host)
+                .max_retries_per_request(DOWNSTREAM_MAX_RETRIES)
+                .classify_fn(|rr| match (rr.method(), rr.status()) {
+                    (&Method::GET | &Method::PUT, Some(StatusCode::SERVICE_UNAVAILABLE)) => {
+                        rr.retryable()
+                    }
+                    _ => rr.success(),
+                }),
+        )
+        .build()
+        .context("build downstream HTTP client")
+}
+
+
+── src/telemetry.rs ──
+//! Tracing and metrics initialization.
+
+use std::path::Path;
+
+use metrique::ServiceMetrics;
+use metrique::json::Json;
+use metrique::writer::sink::AttachHandle;
+use metrique::writer::{AttachGlobalEntrySinkExt, EntryIoStreamExt, FormatExt};
+use metrique_util::{AttachGlobalEntrySinkTokioMetricsExt, TokioRuntimeMetricsConfig};
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_appender::rolling::{RollingFileAppender, Rotation};
+use tracing_subscriber::prelude::*;
+
+use crate::config::Config;
+use crate::metrics::Globals;
+
+/// Must outlive request handling: dropping it flushes buffered logs and detaches the metric sink.
+#[must_use = "dropping the guard stops log flushing and detaches the metric sink"]
+pub struct TelemetryGuard {
+    _log: WorkerGuard,
+    _metrics: AttachHandle,
+}
+
+/// With `telemetry_dir` set, logs and metrics roll into files there, otherwise logs go to stderr
+/// and metrics to stdout, on separate streams.
+pub fn init_telemetry(config: &Config) -> TelemetryGuard {
+    TelemetryGuard {
+        _log: init_tracing(&config.log_filter, config.telemetry_dir.as_deref()),
+        _metrics: init_metrics(&config.service_name, config.telemetry_dir.as_deref()),
+    }
+}
+
+fn init_tracing(log_filter: &str, telemetry_dir: Option<&Path>) -> WorkerGuard {
+    // non_blocking erases the writer type, so both destinations yield the same handle.
+    let (writer, guard) = match telemetry_dir {
+        Some(dir) => tracing_appender::non_blocking(RollingFileAppender::new(
+            Rotation::HOURLY,
+            dir,
+            "application.log",
+        )),
+        None => tracing_appender::non_blocking(std::io::stderr()),
+    };
+    let registry = tracing_subscriber::registry()
+        .with(tracing_subscriber::EnvFilter::new(log_filter))
+        .with(tracing_subscriber::fmt::layer().json().with_writer(writer));
+    registry.init();
+    guard
+}
+
+fn init_metrics(service_name: &str, telemetry_dir: Option<&Path>) -> AttachHandle {
+    let globals = Globals {
+        service_name: service_name.to_string(),
+    };
+    // The stream type depends on the writer, so build it (with the shared globals) inside each arm.
+    let handle = match telemetry_dir {
+        Some(dir) => ServiceMetrics::attach_to_stream(
+            Json::new()
+                .output_to_makewriter(RollingFileAppender::new(
+                    Rotation::MINUTELY,
+                    dir,
+                    "metrics.log",
+                ))
+                .merge_globals(globals),
+        ),
+        None => ServiceMetrics::attach_to_stream(
+            Json::new()
+                .output_to_makewriter(|| std::io::stdout().lock())
+                .merge_globals(globals),
+        ),
+    };
+    // Always on: without tokio_unstable (set only by the dial9 feature) the unstable runtime
+    // counters read zero while the rest still report, so the bridge degrades rather than breaks.
+    ServiceMetrics::subscribe_tokio_runtime_metrics(TokioRuntimeMetricsConfig::default());
+    handle
+}
+
+
+── tests/e2e.rs ──
+//! End-to-end test against the real binary. Spawns two instances of this service: one with no
+//! downstream URL (the in-memory backing store) and one pointed at it (the forwarder), then drives
+//! item get/set over HTTP and checks that telemetry was emitted.
+
+use std::time::{Duration, Instant};
+
+use tokio::process::Command;
+
+async fn free_port() -> u16 {
+    tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
+}
+
+/// Names and byte lengths of everything in `dir`, for diagnosing a telemetry assertion failure.
+async fn dir_listing(dir: &std::path::Path) -> String {
+    let mut entries = match tokio::fs::read_dir(dir).await {
+        Ok(entries) => entries,
+        Err(_) => return String::new(),
+    };
+    let mut out = Vec::new();
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let len = tokio::fs::read(entry.path())
+            .await
+            .map(|b| b.len())
+            .unwrap_or(0);
+        out.push(format!(
+            "{} ({len} bytes)",
+            entry.file_name().to_string_lossy()
+        ));
+    }
+    out.join(", ")
+}
+
+/// After a graceful exit, the shutdown metric must be in the sink's file: proof the drain ran and
+/// the metric sink flushed on shutdown.
+async fn assert_shutdown_metric(dir: &std::path::Path) {
+    let mut entries = tokio::fs::read_dir(dir).await.expect("read telemetry dir");
+    let mut found = false;
+    while let Some(entry) = entries.next_entry().await.expect("read telemetry entry") {
+        if entry.file_name().to_string_lossy().starts_with("metrics") {
+            let body = tokio::fs::read_to_string(entry.path())
+                .await
+                .unwrap_or_default();
+            found |= body.contains("DrainDuration");
+        }
+    }
+    assert!(
+        found,
+        "no shutdown metric written; dir: [{}]",
+        dir_listing(dir).await
+    );
+}
+
+/// Polls `/health` every 50ms until it succeeds, up to 3s.
+async fn wait_for_health(client: &reqwest::Client, base: &str) {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        if let Ok(resp) = client.get(format!("{base}/health")).send().await
+            && resp.status().is_success()
+        {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "{base} was not healthy within 3s"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+#[tokio::test]
+async fn forwards_items_through_a_downstream_instance() {
+    let bin = env!("CARGO_BIN_EXE_test-service");
+    let port_backing = free_port().await;
+    let port_forwarder = free_port().await;
+    let client = reqwest::Client::new();
+
+    // `kill_on_drop` stops the children when this test returns or panics; a tokio child otherwise
+    // keeps running after its handle is dropped. Backing store: no downstream URL, so in-memory.
+    let _backing = Command::new(bin)
+        .args(["--bind-addr", &format!("127.0.0.1:{port_backing}")])
+        .kill_on_drop(true)
+        .spawn()
+        .expect("spawn backing instance");
+    // Forward to the backing instance, and route telemetry to a temp dir so we can assert on it.
+    let telemetry = tempfile::tempdir().expect("create telemetry dir");
+    let _forwarder = Command::new(bin)
+        .args([
+            "--bind-addr",
+            &format!("127.0.0.1:{port_forwarder}"),
+            "--downstream-url",
+            &format!("http://127.0.0.1:{port_backing}"),
+            "--telemetry-dir",
+            &telemetry.path().to_string_lossy(),
+        ])
+        .kill_on_drop(true)
+        .spawn()
+        .expect("spawn forwarder");
+
+    let backing_base = format!("http://127.0.0.1:{port_backing}");
+    let forwarder_base = format!("http://127.0.0.1:{port_forwarder}");
+    wait_for_health(&client, &backing_base).await;
+    wait_for_health(&client, &forwarder_base).await;
+
+    // PUT to the forwarder, which stores it in the backing instance; GET reads it back through both.
+    let put = client
+        .put(format!("{forwarder_base}/items/k"))
+        .body("v")
+        .send()
+        .await
+        .expect("put");
+    assert_eq!(put.status(), reqwest::StatusCode::NO_CONTENT);
+    let got = client
+        .get(format!("{forwarder_base}/items/k"))
+        .send()
+        .await
+        .expect("get");
+    assert_eq!(got.status(), reqwest::StatusCode::OK);
+    assert_eq!(got.text().await.unwrap(), "v");
+
+    // Telemetry rolls to disk: both files should appear with content (writers flush async).
+    let deadline = Instant::now() + Duration::from_secs(3);
+    let (mut logs, mut metrics) = (false, false);
+    while Instant::now() < deadline && !(logs && metrics) {
+        let mut entries = tokio::fs::read_dir(telemetry.path())
+            .await
+            .expect("read telemetry dir");
+        while let Some(entry) = entries.next_entry().await.expect("read telemetry entry") {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            // Read the bytes rather than trust the dir entry: on Windows the entry size lags behind
+            // writes while the appender holds the file open, so metadata().len() reads 0 mid-run.
+            let len = tokio::fs::read(entry.path())
+                .await
+                .map(|b| b.len())
+                .unwrap_or(0);
+            logs |= name.starts_with("application") && len > 0;
+            metrics |= name.starts_with("metrics") && len > 0;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    // List what did land so a CI-only flake (slow flush, unexpected name) is diagnosable from the log.
+    let listing = dir_listing(telemetry.path()).await;
+    assert!(
+        logs,
+        "no application log in telemetry dir after 3s; contents: [{listing}]"
+    );
+    assert!(
+        metrics,
+        "no metrics in telemetry dir after 3s; contents: [{listing}]"
+    );
+}
+
+/// SIGTERM should drain in-flight work, flush the shutdown metric, and exit cleanly (code 0).
+#[cfg(unix)]
+#[tokio::test]
+async fn exits_cleanly_on_sigterm() {
+    let bin = env!("CARGO_BIN_EXE_test-service");
+    let port = free_port().await;
+    let telemetry = tempfile::tempdir().expect("create telemetry dir");
+    let client = reqwest::Client::new();
+    let mut child = Command::new(bin)
+        .args([
+            "--port",
+            &port.to_string(),
+            "--telemetry-dir",
+            &telemetry.path().to_string_lossy(),
+        ])
+        .kill_on_drop(true)
+        .spawn()
+        .expect("spawn instance");
+    wait_for_health(&client, &format!("http://127.0.0.1:{port}")).await;
+
+    let pid = child.id().expect("child has a pid");
+    let killed = Command::new("kill")
+        .args(["-TERM", &pid.to_string()])
+        .status()
+        .await
+        .expect("run kill");
+    assert!(killed.success(), "kill -TERM failed");
+
+    let status = tokio::time::timeout(Duration::from_secs(5), child.wait())
+        .await
+        .expect("did not exit within 5s")
+        .expect("await child");
+    assert!(status.success(), "expected a clean exit, got {status}");
+    assert_shutdown_metric(telemetry.path()).await;
+}
+
+/// Ctrl-Break should drain, flush the shutdown metric, and exit cleanly: the Windows SIGTERM analog.
+#[cfg(windows)]
+#[tokio::test]
+async fn exits_cleanly_on_ctrl_break() {
+    // There is no std way to send a console control event, so link the one kernel32 call directly.
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GenerateConsoleCtrlEvent(ctrl_event: u32, process_group_id: u32) -> i32;
+    }
+    const CTRL_BREAK_EVENT: u32 = 1;
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+
+    let bin = env!("CARGO_BIN_EXE_test-service");
+    let port = free_port().await;
+    let telemetry = tempfile::tempdir().expect("create telemetry dir");
+    let client = reqwest::Client::new();
+    // Own process group (its id is the pid) so the Ctrl-Break reaches only this child, not the runner.
+    let mut child = Command::new(bin)
+        .args([
+            "--port",
+            &port.to_string(),
+            "--telemetry-dir",
+            &telemetry.path().to_string_lossy(),
+        ])
+        .creation_flags(CREATE_NEW_PROCESS_GROUP)
+        .kill_on_drop(true)
+        .spawn()
+        .expect("spawn instance");
+    wait_for_health(&client, &format!("http://127.0.0.1:{port}")).await;
+
+    let pid = child.id().expect("child has a pid");
+    let sent = unsafe { GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, pid) };
+    assert_ne!(sent, 0, "GenerateConsoleCtrlEvent failed");
+
+    let status = tokio::time::timeout(Duration::from_secs(5), child.wait())
+        .await
+        .expect("did not exit within 5s")
+        .expect("await child");
+    assert!(status.success(), "expected a clean exit, got {status}");
+    assert_shutdown_metric(telemetry.path()).await;
+}
+
+

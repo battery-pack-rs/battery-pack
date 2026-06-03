@@ -1,0 +1,40 @@
+[placeholders.description]
+type = "string"
+prompt = "What does this service do?"
+default = "A starter async backend service."
+
+[placeholders.allocator]
+type = "select"
+prompt = "Global allocator"
+options = ["jemalloc", "mimalloc", "system"]
+default = "jemalloc"
+
+[placeholders.dial9]
+type = "bool"
+prompt = "Include the dial9 Tokio flight recorder?"
+default = "true"
+
+[placeholders.benchmarks]
+type = "bool"
+prompt = "Include a criterion benchmark?"
+default = "true"
+
+[placeholders.tower_timeout]
+type = "bool"
+prompt = "Apply request and body timeout layers?"
+default = "true"
+
+[placeholders.tower_catch_panic]
+type = "bool"
+prompt = "Apply a catch-panic layer (isolates a panicking handler to one request)?"
+default = "true"
+
+[placeholders.tower_on_early_drop]
+type = "bool"
+prompt = "Detect responses dropped before completion (client disconnects or drops body)?"
+default = "true"
+
+[placeholders.rate_limit]
+type = "bool"
+prompt = "Apply an inbound rate-limit layer (governor)?"
+default = "false"

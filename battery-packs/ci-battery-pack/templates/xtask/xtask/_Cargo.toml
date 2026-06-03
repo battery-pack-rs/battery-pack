@@ -8,5 +8,3 @@ publish = false
 xshell.bp-managed = true
 xflags.bp-managed = true
 
-[package.metadata.battery-pack]
-ci-battery-pack = { features = ["xtask"] }
