@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- *(battery-pack)* migrate templates to battery-pack.toml, drop unused dep
+- *(battery-pack)* migrate templates to `battery-pack.toml`, drop unused dep ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
 
 ## [0.6.3](https://github.com/battery-pack-rs/battery-pack/compare/error-battery-pack-v0.6.2...error-battery-pack-v0.6.3) - 2026-05-17
 

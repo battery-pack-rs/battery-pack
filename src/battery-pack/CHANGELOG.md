@@ -11,35 +11,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- *(bphelper-cli)* resolve bp-managed active packs from battery-pack.toml
-- *(validate)* add validate_template_with for exercising placeholder combinations
+- *(backend-service-battery-pack)* new opinionated async backend service pack ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(bphelper-cli)* resolve bp-managed active packs from `battery-pack.toml` ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(validate)* add `validate_template_with` for exercising placeholder combinations ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
 - *(cargo-bp-script)* add JSON output for `list` and `show` commands
-- *(ci-battery-pack)* add optional cross-platform testing job
+- *(ci-battery-pack)* add optional cross-platform testing job ([#128](https://github.com/battery-pack-rs/battery-pack/pull/128))
 
 ### Fixed
 
-- *(with_template)* migrate default_template snapshot to battery-pack.toml
-- *(network-service)* correct clonable typo and apply rustfmt
-- render template paths and tests OS-agnostically on Windows
-- *(validate)* merge patches into a template's .cargo/config.toml instead of overwriting
-- *(template)* use trailing slash in starts_with to prevent false prefix matches
-- *(manifest)* include non-optional base deps when features are active
-- *(cargo-bp)* address PR review — conflict guard and snapbox tests
-- *(ci-battery-pack)* make snapshot tests cross-platform for .exe
-- *(cli-battery-pack)* add [EXE] to help snapshots for Windows compat
+- *(with_template)* migrate default_template snapshot to `battery-pack.toml` ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(template)* render template paths and tests OS-agnostically on Windows ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(validate)* merge patches into a template's `.cargo/config.toml` instead of overwriting ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(template)* use a trailing slash in `starts_with` to prevent false prefix matches ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(manifest)* include non-optional base deps when features are active ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(cargo-bp)* address PR review: conflict guard and snapbox tests ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(ci-battery-pack)* make snapshot tests cross-platform for `.exe` ([#128](https://github.com/battery-pack-rs/battery-pack/pull/128))
+- *(cli-battery-pack)* add `[EXE]` to help snapshots for Windows compat
 
 ### Other
 
-- Merge pull request #142 from jlizen/feat/network-service-battery-pack
-- *(battery-pack)* migrate templates to battery-pack.toml, drop unused dep
-- *(templates)* trim .rs whitespace more aggressively, rustfmt after render, rustfmt on validate
-- rename network-service-battery-pack to backend-service-battery-pack
-- *(template)* add path normalization and _Cargo.toml rename coverage
-- tidy whitespace + .gitignore EOF newline
-- *(template)* Windows path bugs in template validation
-- *(manifest)* capture non-optional deps dropped when features active
-- *(cargo-bp)* unify data-gathering and rendering for list/show
-- Merge pull request #128 from jlizen/feat/ci-bp-skill
+- *(battery-pack)* migrate templates to `battery-pack.toml`, drop unused dep ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(templates)* trim `.rs` whitespace, run rustfmt after render, and assert `cargo fmt --check` on validate ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(backend-service-battery-pack)* rename from network-service-battery-pack ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
 
 ## [0.5.4](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.5.3...battery-pack-v0.5.4) - 2026-05-17
 

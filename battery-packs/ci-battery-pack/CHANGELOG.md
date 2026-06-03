@@ -11,17 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- *(ci-battery-pack)* add optional cross-platform testing job
+- *(ci-battery-pack)* add optional cross-platform testing job ([#128](https://github.com/battery-pack-rs/battery-pack/pull/128))
 
 ### Fixed
 
-- *(ci-battery-pack)* make snapshot tests cross-platform for .exe
+- *(ci-battery-pack)* make snapshot tests cross-platform for `.exe` ([#128](https://github.com/battery-pack-rs/battery-pack/pull/128))
 
 ### Other
 
-- *(battery-pack)* migrate templates to battery-pack.toml, drop unused dep
-- *(templates)* trim .rs whitespace more aggressively, rustfmt after render, rustfmt on validate
-- Merge pull request #128 from jlizen/feat/ci-bp-skill
+- *(battery-pack)* migrate templates to `battery-pack.toml`, drop unused dep ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
 
 ## [0.1.4](https://github.com/battery-pack-rs/battery-pack/compare/ci-battery-pack-v0.1.3...ci-battery-pack-v0.1.4) - 2026-04-30
 

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.1](https://github.com/battery-pack-rs/battery-pack/compare/backend-service-battery-pack-v0.1.0...backend-service-battery-pack-v0.1.1) - 2026-06-03
 
+### Added
+
+- *(backend-service-battery-pack)* opinionated battery pack that scaffolds an async backend service (axum) with metrique wide-event metrics, structured tracing, optional dial9 flight-recorder integration, jemalloc/mimalloc allocator selection, graceful shutdown with drain metrics, an in-memory or HTTP-forwarding downstream, and a Tower middleware stack, plus telemetry, memory-allocator, and service-architecture skills ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+
 ### Other
 
-- rename network-service-battery-pack to backend-service-battery-pack
+- *(backend-service-battery-pack)* rename from network-service-battery-pack ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))

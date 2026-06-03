@@ -11,24 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- *(bphelper-cli)* resolve bp-managed active packs from battery-pack.toml
-- *(validate)* add validate_template_with for exercising placeholder combinations
+- *(bphelper-cli)* resolve bp-managed active packs from `battery-pack.toml` ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(validate)* add `validate_template_with` for exercising placeholder combinations ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
 
 ### Fixed
 
-- *(network-service)* correct clonable typo and apply rustfmt
-- *(validate)* merge patches into a template's .cargo/config.toml instead of overwriting
-- *(template)* use trailing slash in starts_with to prevent false prefix matches
-- render template paths and tests OS-agnostically on Windows
+- *(validate)* merge patches into a template's `.cargo/config.toml` instead of overwriting ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(template)* use a trailing slash in `starts_with` to prevent false prefix matches ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(template)* render template paths and tests OS-agnostically on Windows ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
 
 ### Other
 
-- Merge pull request #142 from jlizen/feat/network-service-battery-pack
-- *(battery-pack)* migrate templates to battery-pack.toml, drop unused dep
-- *(templates)* trim .rs whitespace more aggressively, rustfmt after render, rustfmt on validate
-- *(template)* add path normalization and _Cargo.toml rename coverage
-- tidy whitespace + .gitignore EOF newline
-- *(template)* Windows path bugs in template validation
+- *(battery-pack)* migrate templates to `battery-pack.toml`, drop unused dep ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+- *(templates)* trim `.rs` whitespace, run rustfmt after render, and assert `cargo fmt --check` on validate ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
 
 ## [0.8.2](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-cli-v0.8.1...bphelper-cli-v0.8.2) - 2026-05-17
 

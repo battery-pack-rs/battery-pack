@@ -11,12 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- *(manifest)* include non-optional base deps when features are active
+- *(manifest)* include non-optional base deps when features are active ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
 
 ### Other
 
-- *(templates)* trim .rs whitespace more aggressively, rustfmt after render, rustfmt on validate
-- *(manifest)* capture non-optional deps dropped when features active
+- *(templates)* trim `.rs` whitespace, run rustfmt after render, and assert `cargo fmt --check` on validate ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
 
 ## [0.5.5](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-manifest-v0.5.4...bphelper-manifest-v0.5.5) - 2026-04-30
 
