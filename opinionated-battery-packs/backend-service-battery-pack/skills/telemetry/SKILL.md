@@ -1,6 +1,6 @@
 ---
 name: telemetry
-description: Observability wiring for the network-service `service` template: metrique wide-event metrics, tracing logs, and optional dial9 runtime profiling
+description: Observability wiring for the backend-service `service` template: metrique wide-event metrics, tracing logs, and optional dial9 runtime profiling
 ---
 
 # Telemetry

@@ -28,7 +28,7 @@ done
 
 [[ -z "$TARGET" ]] && usage
 BP_SOURCE="${BP_SOURCE:-$(cd "$SCRIPT_DIR/../.." && pwd)}"
-PACK="$BP_SOURCE/opinionated-battery-packs/network-service-battery-pack"
+PACK="$BP_SOURCE/opinionated-battery-packs/backend-service-battery-pack"
 
 if [[ "$CLEAN" == true ]]; then
     echo "Removing $TARGET..."
@@ -41,8 +41,8 @@ if [[ ! -f "$TARGET/Cargo.toml" ]]; then
     PARENT="$(dirname "$TARGET")"
     NAME="$(basename "$TARGET")"
     mkdir -p "$PARENT"
-    echo "Generating network-service into $TARGET..."
-    (cd "$PARENT" && cargo bp new network-service-battery-pack \
+    echo "Generating backend-service into $TARGET..."
+    (cd "$PARENT" && cargo bp new backend-service-battery-pack \
         --name "$NAME" --template service --path "$PACK" --non-interactive \
         -d dial9=true -d allocator=jemalloc -d rate_limit=true -d benchmarks=true)
     (cd "$TARGET" && git init -q && git add -A && git commit -qm "scaffold" >/dev/null)
@@ -55,7 +55,7 @@ cargo agents sync --update fetch
 
 # Stopgap for https://github.com/symposium-dev/symposium/issues/210: `cargo agents sync`
 # installs skills for dependency packs (so dial9's sync, it is a real dep) but not for the
-# bp-new generator pack, so the network-service skills never land. Copy them in directly until
+# bp-new generator pack, so the backend-service skills never land. Copy them in directly until
 # the issue is fixed.
 mkdir -p "$TARGET/.claude/skills"
 cp -r "$PACK/skills/." "$TARGET/.claude/skills/"

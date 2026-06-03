@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TARGET="/tmp/network-service-skills-target"
+TARGET="/tmp/backend-service-skills-target"
 BP_SOURCE=""
 CLEAN=""
 MODEL=""
@@ -12,7 +12,7 @@ usage() {
     echo "Usage: ./run.sh [--target <path>] [--bp-source <path>] [--model <model>] [--agent <agent>] [--clean]"
     echo ""
     echo "Options:"
-    echo "  --target      Path to the generated service (default: /tmp/network-service-skills-target)"
+    echo "  --target      Path to the generated service (default: /tmp/backend-service-skills-target)"
     echo "  --bp-source   Path to the battery-pack repo (default: inferred from script location)"
     echo "  --model       Model to use (default: agent's configured default)"
     echo "  --agent       Agent to use (default: agent's configured default)"
@@ -38,13 +38,13 @@ if [[ ! -d "$TARGET/.claude/skills/telemetry" ]] || [[ -n "$CLEAN" ]]; then
     "$SCRIPT_DIR/setup.sh" --target "$TARGET" --bp-source "$BP_SOURCE" $CLEAN
 fi
 
-LOG="/tmp/network-service-skills-$(date +%Y%m%d-%H%M%S)"
+LOG="/tmp/backend-service-skills-$(date +%Y%m%d-%H%M%S)"
 
-PROMPT="This project was generated from the network-service battery pack. It ships companion skills, and because it depends on dial9 it also has dial9's own agent skills available. Work in two phases.
+PROMPT="This project was generated from the backend-service battery pack. It ships companion skills, and because it depends on dial9 it also has dial9's own agent skills available. Work in two phases.
 
 PHASE 1, bootstrap and observe. Build and run the service locally. IMPORTANT: run the server in the background with its output redirected to a log file (for example 'cargo run > server.log 2>&1 &') so it does not hold this session open, and kill it when you are done with it. Exercise each endpoint with curl: PUT and GET /items/{key}, POST /echo, GET /health. Confirm it emits structured logs and wide-event metrics. Then enable dial9 by setting its environment variables (see dial9.env) and confirm it writes trace files. Drive a brief burst of load against it (a loop of a few hundred curls, or 'oha' if available) so the trace reflects real activity, then use dial9's agent tooling (the 'dial9 agents' skills and toolkit) to analyze the trace and describe what the runtime was doing under load. Do NOT start 'dial9 serve' (it is a long-running web UI that will block this session); use the scripted agent analysis instead. Run the criterion benchmarks ('cargo bench') to completion. Report what you observed at each step, but do NOT draw performance conclusions; the goal is only to confirm the generated service bootstraps, runs, and is observable.
 
-PHASE 2, layer on production features as follow-ups, using the service-architecture skill as your guide (the skill gives breadcrumbs, so read the referenced crates' docs to fill in details). The skill's 'cargo bp add network-service -F <feature>' commands need '--path ${BP_SOURCE}/opinionated-battery-packs/network-service-battery-pack' added in this benchmark because the pack is local rather than published; otherwise follow the skill as written. Make these changes and present the code for each: (1) upgrade the rate limiter from a global bucket to per-client (per-IP); (2) add a read-through cache in front of the HTTP forwarder; (3) add load shedding that returns 503 when in-flight concurrency exceeds a bound. For each, name the specific implementation footgun the skill flags (the easy-to-get-wrong part of wiring the feature, not the reason to use it) and show how your code avoids it. After implementing the three features, run the service with dial9 enabled again, drive another burst of load, and analyze the new trace, noting any effect the features have (rate-limit rejections, cache hits, shed responses).
+PHASE 2, layer on production features as follow-ups, using the service-architecture skill as your guide (the skill gives breadcrumbs, so read the referenced crates' docs to fill in details). The skill's 'cargo bp add backend-service -F <feature>' commands need '--path ${BP_SOURCE}/opinionated-battery-packs/backend-service-battery-pack' added in this benchmark because the pack is local rather than published; otherwise follow the skill as written. Make these changes and present the code for each: (1) upgrade the rate limiter from a global bucket to per-client (per-IP); (2) add a read-through cache in front of the HTTP forwarder; (3) add load shedding that returns 503 when in-flight concurrency exceeds a bound. For each, name the specific implementation footgun the skill flags (the easy-to-get-wrong part of wiring the feature, not the reason to use it) and show how your code avoids it. After implementing the three features, run the service with dial9 enabled again, drive another burst of load, and analyze the new trace, noting any effect the features have (rate-limit rejections, cache hits, shed responses).
 
 When finished, make sure no server process you started is still running. Do not run a separate self-review pass or spawn another agent to review your work; just implement, confirm it builds and tests pass, and report."
 
@@ -77,7 +77,7 @@ DURATION=$(($(date +%s) - START_TIME))
 result_line() { jq -r 'select(.type == "result") | "Turns: \(.num_turns // "?")  Cost: $\(.total_cost_usd // "?")"' "$LOG.raw" 2>/dev/null | head -1; }
 
 {
-    echo "# Benchmark: network-service-skills"
+    echo "# Benchmark: backend-service-skills"
     echo
     echo "## Run"
     echo "- Date: $(date -Iseconds)"

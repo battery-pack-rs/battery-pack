@@ -1,5 +1,13 @@
 ── .cargo/config.toml ──
-# No special build flags are needed. The dial9 feature adds tokio_unstable and frame pointers here.
+# dial9 needs tokio_unstable for its runtime hooks and frame pointers to symbolize stacks.
+# tokio_unstable also lets the tokio-metrics bridge report Tokio's full runtime counters; without
+# it the bridge still runs on a reduced subset. These are API-stability flags (the APIs may shift
+# between Tokio releases), not a correctness or production-safety concern.
+[build]
+rustflags = [
+    "--cfg", "tokio_unstable",
+    "-C", "force-frame-pointers=yes",
+]
 
 
 ── Cargo.toml ──
@@ -7,7 +15,7 @@
 name = "test-service"
 version = "0.1.0"
 edition = "2024"
-description = "A starter async network service."
+description = "A starter async backend service."
 publish = false
 
 [dependencies]
@@ -23,24 +31,33 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-appender = "0.2"
 metrique = { version = "0.1", features = ["json"] }
 metrique-util = { version = "0.1", features = ["tokio-metrics-bridge"] }
+dial9-tokio-telemetry = { version = "0.3", features = ["tracing-layer", "cpu-profiling", "memory-profiling"] }
 axum = "0.8"
 tower = { version = "0.5", features = ["util"] }
-tower-http = { version = "0.6", features = ["trace", "request-id"] }
+tower-http = { version = "0.6", features = ["trace", "request-id", "timeout", "catch-panic", "on-early-drop"] }
 reqwest = { version = "0.13", features = ["json"] }
-mimalloc = "0.1"
+
+# jemalloc is unavailable on MSVC, so gate the dependency to match the allocator setup.
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.7"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
 metrique = { version = "0.1", features = ["json", "test-util"] }
+criterion = { version = "0.8", features = ["async_tokio"] }
 # Spawn the real binary and tempdir for telemetry in the e2e test; reqwest (a normal dep) is the client.
 tempfile = "3"
+
+[[bench]]
+name = "service"
+harness = false
 
 
 ── README.md ──
 # test-service
 
-A starter async network service.
+A starter async backend service.
 
 ## Run
 
@@ -75,12 +92,120 @@ curl localhost:3000/items/greeting
 curl -X POST localhost:3000/echo -H 'content-type: application/json' --data '{"message":"hi"}'
 ```
 
+## Benchmark
+
+```bash
+cargo bench
+```
+
+Benchmarks hit each handler in-process over the in-memory store. Set `BENCH_DOWNSTREAM_URL` to instead measure the forwarding path against a running instance:
+
+```bash
+BENCH_DOWNSTREAM_URL=http://127.0.0.1:3001 cargo bench
+```
+
+## Debugging with dial9
+
+Run with the prod-ready flight recorder enabled (Tokio telemetry, cpu stack traces, heap profiling, and more) by enabling Dial9 environment variables.
+Locally, you can do this by sourcing `dial9.env`:
+
+```bash
+set -a; source dial9.env; set +a
+cargo run
+```
+
+Drive some traffic at the running service (a curl loop, or `oha`) so the trace captures real work. Then inspect it with the dial9 viewer:
+
+```bash
+cargo install dial9
+dial9 serve --local-dir /tmp/dial9-traces
+```
+
+Or analyze it with the agent toolkit:
+
+```bash
+dial9 agents
+```
+
 ── battery-pack.toml ──
 version = 1
 
 [[battery-pack]]
-name = "network-service"
-features = ["axum-server", "http-client", "clap-config", "mimalloc-alloc"]
+name = "backend-service"
+features = ["axum-server", "http-client", "clap-config", "dial9", "jemalloc", "benchmarks"]
+
+── benches/service.rs ──
+//! Benchmarks the router end to end via `tower::oneshot`, without binding a socket.
+
+use axum::body::Body;
+use criterion::{Criterion, criterion_group, criterion_main};
+use http::Request;
+use tower::ServiceExt;
+
+use test_service::routes::{self, AppState};
+use test_service::store::Store;
+
+fn state() -> AppState {
+    // Set BENCH_DOWNSTREAM_URL to benchmark against a real downstream; unset uses the in-memory store.
+    let store = Store::new(std::env::var("BENCH_DOWNSTREAM_URL").ok().as_deref())
+        .expect("build benchmark store");
+    AppState { store }
+}
+
+fn bench_route(
+    c: &mut Criterion,
+    rt: &tokio::runtime::Runtime,
+    app: &axum::Router,
+    name: &str,
+    make_request: impl Fn() -> Request<Body>,
+) {
+    c.bench_function(name, |b| {
+        b.to_async(rt).iter(|| {
+            let app = app.clone();
+            let request = make_request();
+            async move { app.oneshot(request).await.unwrap() }
+        })
+    });
+}
+
+fn handlers(c: &mut Criterion) {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let app = routes::router(state());
+
+    // /health bypasses the middleware stack; the rest exercise it. set_item/get_item also hit the
+    // store, so they reflect BENCH_DOWNSTREAM_URL (in-memory when unset, the second server when set).
+    // set_item runs first, so get_item benchmarks a hit rather than a miss.
+    bench_route(c, &rt, &app, "health", || {
+        Request::get("/health").body(Body::empty()).unwrap()
+    });
+    bench_route(c, &rt, &app, "set_item", || {
+        Request::put("/items/bench")
+            .body(Body::from("value"))
+            .unwrap()
+    });
+    bench_route(c, &rt, &app, "get_item", || {
+        Request::get("/items/bench").body(Body::empty()).unwrap()
+    });
+    bench_route(c, &rt, &app, "echo", || {
+        Request::post("/echo")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"message":"hi"}"#))
+            .unwrap()
+    });
+}
+
+criterion_group!(benches, handlers);
+criterion_main!(benches);
+
+
+── dial9.env ──
+DIAL9_ENABLED=true
+DIAL9_TRACE_DIR=/tmp/dial9-traces
+DIAL9_CPU_PROFILE_ENABLED=true
+DIAL9_MEMORY_PROFILE_ENABLED=true
 
 ── src/config.rs ──
 //! Configuration from CLI args and environment variables.
@@ -142,6 +267,8 @@ pub mod shutdown;
 pub mod store;
 pub mod telemetry;
 
+use dial9_tokio_telemetry as dial9;
+
 use anyhow::Context;
 
 use crate::config::Config;
@@ -161,7 +288,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
 
     // Smoke test that downstream is reachable. Only warn on unreachable, to avoid
     // cascading failure.
-    tokio::spawn(async move {
+    dial9::spawn(async move {
         if let Some(result) = probe_store.probe().await {
             match result {
                 Ok(()) => tracing::debug!("downstream reachable at startup"),
@@ -176,7 +303,7 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
     // Run the server in a task so we hold its JoinHandle: that lets us trigger graceful shutdown
     // and cap how long we wait for in-flight requests to drain before forcing exit.
     let (drain_tx, drain_rx) = tokio::sync::oneshot::channel::<()>();
-    let server = tokio::spawn(async move {
+    let server = dial9::spawn(async move {
         axum::serve(listener, app)
             .with_graceful_shutdown(async move {
                 let _ = drain_rx.await;
@@ -191,17 +318,35 @@ pub async fn run(config: Config) -> anyhow::Result<()> {
 
 
 ── src/main.rs ──
+// dial9's allocator wraps the real allocator to add opt-in heap profiling. The hook is a
+// passthrough until the memory profiler is installed in main.
+#[cfg(not(target_env = "msvc"))]
 #[global_allocator]
-static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
+static ALLOC: dial9_tokio_telemetry::memory_profiling::Dial9Allocator<tikv_jemallocator::Jemalloc> =
+    dial9_tokio_telemetry::memory_profiling::Dial9Allocator::new(tikv_jemallocator::Jemalloc);
 use clap::Parser;
+use dial9_tokio_telemetry::{self as dial9, Dial9Config};
 
 use test_service::config::Config;
 use test_service::telemetry;
-#[tokio::main]
+
+// from_env reads the DIAL9_* knobs documented at
+// https://docs.rs/dial9-tokio-telemetry/latest/dial9_tokio_telemetry/struct.Dial9Config.html#method.from_env
+// (and set in dial9.env).
+#[dial9::main(config = Dial9Config::from_env)]
 async fn main() -> std::process::ExitCode {
     let config = Config::parse();
     // In-flight logs and metrics are flushed when this guard drops, on exit.
     let _telemetry = telemetry::init_telemetry(&config);
+    let _memory_profiler = if std::env::var("DIAL9_MEMORY_PROFILE_ENABLED").as_deref() == Ok("true")
+    {
+        dial9::memory_profiling::MemoryProfiler::with_defaults()
+            .install(dial9::telemetry::TelemetryHandle::current())
+            .inspect_err(|e| tracing::warn!("failed to install memory profiler: {e:#}"))
+            .ok()
+    } else {
+        None
+    };
 
     let code: u8 = match test_service::run(config).await {
         Ok(()) => 0,
@@ -513,6 +658,12 @@ use tower_http::trace::TraceLayer;
 
 /// Largest request body accepted, rejected with 413 above this. Bounds memory used per request.
 const MAX_BODY_BYTES: usize = 1024 * 1024;
+/// Hard ceiling on total request lifetime, aborting with 408. Sized above `store`'s worst-case
+/// downstream budget (`DOWNSTREAM_TIMEOUT` times 1 + `DOWNSTREAM_MAX_RETRIES`), but a slow body read
+/// counts against it too, so a 408 can also mean the client was slow to send.
+const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(16);
+/// Bounds time spent reading the request body, rejecting a slow client before the full request budget.
+const REQUEST_BODY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// Shared state. Fields must be cheaply cloneable: axum clones this for every request.
 #[derive(Clone)]
@@ -531,6 +682,27 @@ pub fn router(state: AppState) -> Router {
         .route("/echo", post(echo))
         // Reject oversized bodies with 413 before they are buffered into memory.
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
+        .layer(tower_http::timeout::RequestBodyTimeoutLayer::new(
+            REQUEST_BODY_TIMEOUT,
+        ))
+        .layer(tower_http::timeout::TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            REQUEST_TIMEOUT,
+        ))
+        .layer(
+            tower_http::on_early_drop::OnEarlyDropLayer::builder()
+                .on_future_drop(|_req: &axum::extract::Request| {
+                    || tracing::warn!("response future dropped before completion")
+                })
+                .on_body_drop(tower_http::on_early_drop::OnBodyDropFn::new(
+                    |_req: &axum::extract::Request| {
+                        |_parts: &http::response::Parts| {
+                            || tracing::warn!("response body dropped before completion")
+                        }
+                    },
+                )),
+        )
+        .layer(tower_http::catch_panic::CatchPanicLayer::new())
         // Outermost recorder: captures the final status even when an inner layer produced it.
         .layer(axum::middleware::from_fn(telemetry_middleware))
         // The span carries the request id so handler logs correlate; metrics already cover latency.
@@ -1125,7 +1297,14 @@ fn init_tracing(log_filter: &str, telemetry_dir: Option<&Path>) -> WorkerGuard {
     let registry = tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(log_filter))
         .with(tracing_subscriber::fmt::layer().json().with_writer(writer));
-    registry.init();
+    // Filter aggressively: dial9 correlates with other signals and does not need every span.
+    // Unfiltered SDK spans can exceed 100k events/s.
+    let dial9 = dial9_tokio_telemetry::tracing_layer::Dial9TokioLayer::new().with_filter(
+        tracing_subscriber::filter::Targets::new()
+            .with_target("test_service", tracing::Level::TRACE)
+            .with_default(tracing::Level::ERROR),
+    );
+    registry.with(dial9).init();
     guard
 }
 

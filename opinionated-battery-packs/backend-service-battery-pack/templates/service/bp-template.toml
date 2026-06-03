@@ -1,7 +1,7 @@
 [placeholders.description]
 type = "string"
 prompt = "What does this service do?"
-default = "A starter async network service."
+default = "A starter async backend service."
 
 [placeholders.allocator]
 type = "select"

@@ -16,7 +16,7 @@ members = [
     "battery-packs/error-battery-pack",
     "battery-packs/logging-battery-pack",
 	# --- opinionated battery packs
-    "opinionated-battery-packs/network-service-battery-pack",
+    "opinionated-battery-packs/backend-service-battery-pack",
 ]
 resolver = "2"
 

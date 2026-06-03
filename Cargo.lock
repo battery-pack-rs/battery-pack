@@ -300,6 +300,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "backend-service-battery-pack"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "battery-pack",
+ "clap",
+ "criterion",
+ "dial9-tokio-telemetry",
+ "failsafe",
+ "http",
+ "metrique",
+ "metrique-util",
+ "mimalloc",
+ "moka",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "snapbox",
+ "thiserror 2.0.18",
+ "tikv-jemallocator",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tower_governor",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "backtrace"
 version = "0.3.76"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2683,37 +2714,6 @@ dependencies = [
  "smallvec",
  "tagptr",
  "uuid",
-]
-
-[[package]]
-name = "network-service-battery-pack"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "battery-pack",
- "clap",
- "criterion",
- "dial9-tokio-telemetry",
- "failsafe",
- "http",
- "metrique",
- "metrique-util",
- "mimalloc",
- "moka",
- "reqwest",
- "serde",
- "serde_json",
- "snapbox",
- "thiserror 2.0.18",
- "tikv-jemallocator",
- "tokio",
- "tower",
- "tower-http",
- "tower_governor",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
 ]
 
 [[package]]
