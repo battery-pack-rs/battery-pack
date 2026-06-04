@@ -811,16 +811,20 @@ pub(crate) fn add_battery_pack(
         all_features,
         specific_crates,
     );
-    let (active_features, crates_to_sync) = match resolved {
+    let (active_features, crates_to_sync, selected_templates) = match resolved {
         ResolvedAdd::Crates {
             active_features,
             crates,
-        } => (active_features, crates),
+        } => (active_features, crates, Vec::new()),
         ResolvedAdd::Interactive if std::io::stdout().is_terminal() => {
             // Pre-select crates already in the project (edit mode)
             let pre_selected = compute_pre_selection(&bp_spec, project_dir);
             match pick_crates_interactive(&bp_spec, &pre_selected)? {
-                Some(result) => (result.active_features, result.crates),
+                Some(result) => (
+                    result.active_features,
+                    result.crates,
+                    result.selected_templates,
+                ),
                 None => {
                     println!("Cancelled.");
                     return Ok(());
@@ -830,135 +834,185 @@ pub(crate) fn add_battery_pack(
         ResolvedAdd::Interactive => {
             // Non-interactive fallback: use defaults
             let crates = bp_spec.resolve_crates(&["default"]);
-            (BTreeSet::from(["default".to_string()]), crates)
+            (BTreeSet::from(["default".to_string()]), crates, Vec::new())
         }
     };
 
-    if crates_to_sync.is_empty() {
-        println!("No crates selected.");
+    if crates_to_sync.is_empty() && selected_templates.is_empty() {
+        println!("No crates or templates selected.");
         return Ok(());
     }
 
     // Step 3: Now write everything — build-dep, workspace deps, crate deps, metadata.
-    let user_manifest_content =
-        std::fs::read_to_string(&user_manifest_path).context("Failed to read Cargo.toml")?;
-    // [impl manifest.toml.preserve]
-    let mut user_doc: toml_edit::DocumentMut = user_manifest_content
-        .parse()
-        .context("Failed to parse Cargo.toml")?;
+    if !crates_to_sync.is_empty() {
+        let user_manifest_content =
+            std::fs::read_to_string(&user_manifest_path).context("Failed to read Cargo.toml")?;
+        // [impl manifest.toml.preserve]
+        let mut user_doc: toml_edit::DocumentMut = user_manifest_content
+            .parse()
+            .context("Failed to parse Cargo.toml")?;
 
-    // [impl manifest.register.workspace-default]
-    let workspace_manifest = find_workspace_manifest(&user_manifest_path)?;
+        // [impl manifest.register.workspace-default]
+        let workspace_manifest = find_workspace_manifest(&user_manifest_path)?;
 
-    // [impl manifest.deps.workspace]
-    // Add crate dependencies + workspace deps (including the battery pack itself).
-    // Load workspace doc once; both deps and metadata are written to it before a
-    // single flush at the end (avoids a double read-modify-write).
-    let mut ws_doc: Option<toml_edit::DocumentMut> = if let Some(ref ws_path) = workspace_manifest {
-        let ws_content =
-            std::fs::read_to_string(ws_path).context("Failed to read workspace Cargo.toml")?;
-        Some(
-            ws_content
-                .parse()
-                .context("Failed to parse workspace Cargo.toml")?,
-        )
-    } else {
-        None
-    };
-
-    if let Some(ref mut doc) = ws_doc {
-        let ws_deps = doc["workspace"]["dependencies"]
-            .or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
-        if let Some(ws_table) = ws_deps.as_table_mut() {
-            // Add the battery pack itself to workspace deps
-            if let Some(local_path) = path {
-                let mut dep = toml_edit::InlineTable::new();
-                dep.insert("path", toml_edit::Value::from(local_path));
-                ws_table.insert(
-                    &crate_name,
-                    toml_edit::Item::Value(toml_edit::Value::InlineTable(dep)),
-                );
+        // [impl manifest.deps.workspace]
+        // Add crate dependencies + workspace deps (including the battery pack itself).
+        // Load workspace doc once; both deps and metadata are written to it before a
+        // single flush at the end (avoids a double read-modify-write).
+        let mut ws_doc: Option<toml_edit::DocumentMut> =
+            if let Some(ref ws_path) = workspace_manifest {
+                let ws_content = std::fs::read_to_string(ws_path)
+                    .context("Failed to read workspace Cargo.toml")?;
+                Some(
+                    ws_content
+                        .parse()
+                        .context("Failed to parse workspace Cargo.toml")?,
+                )
             } else {
-                let version = bp_version
-                    .as_ref()
-                    .context("battery pack version not available (--path without workspace)")?;
-                ws_table.insert(&crate_name, toml_edit::value(version));
-            }
-            // Add the resolved crate dependencies
-            for (dep_name, dep_spec) in &crates_to_sync {
-                add_dep_to_table(ws_table, dep_name, dep_spec);
-            }
-        }
+                None
+            };
 
-        // [impl cli.add.dep-kind]
-        write_workspace_refs_by_kind(&mut user_doc, &crates_to_sync, false);
-    } else {
-        // [impl manifest.deps.no-workspace]
-        // [impl cli.add.dep-kind]
-        write_deps_by_kind(&mut user_doc, &crates_to_sync, false);
-    }
-
-    // Edit semantics: remove deselected crates from previous installation
-    let prev_managed =
-        read_managed_deps_for_project(&user_manifest_path, &user_manifest_content, &crate_name);
-    let new_crate_names: BTreeSet<String> = crates_to_sync.keys().cloned().collect();
-    let mut removed_count = 0;
-
-    if let Some(prev) = &prev_managed {
-        // Find crates that were previously managed but are no longer selected
-        let to_remove: BTreeMap<String, bphelper_manifest::CrateSpec> = prev
-            .iter()
-            .filter(|name| !new_crate_names.contains(name.as_str()))
-            .filter_map(|name| {
-                bp_spec
-                    .crates
-                    .get(name)
-                    .map(|spec| (name.clone(), spec.clone()))
-            })
-            .collect();
-
-        if !to_remove.is_empty() {
-            if let Some(ref mut doc) = ws_doc {
-                // Remove from workspace deps
-                let ws_deps = doc["workspace"]["dependencies"].as_table_mut();
-                if let Some(ws_table) = ws_deps {
-                    for name in to_remove.keys() {
-                        ws_table.remove(name);
-                    }
+        if let Some(ref mut doc) = ws_doc {
+            let ws_deps = doc["workspace"]["dependencies"]
+                .or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+            if let Some(ws_table) = ws_deps.as_table_mut() {
+                // Add the battery pack itself to workspace deps
+                if let Some(local_path) = path {
+                    let mut dep = toml_edit::InlineTable::new();
+                    dep.insert("path", toml_edit::Value::from(local_path));
+                    ws_table.insert(
+                        &crate_name,
+                        toml_edit::Item::Value(toml_edit::Value::InlineTable(dep)),
+                    );
+                } else {
+                    let version = bp_version
+                        .as_ref()
+                        .context("battery pack version not available (--path without workspace)")?;
+                    ws_table.insert(&crate_name, toml_edit::value(version));
+                }
+                // Add the resolved crate dependencies
+                for (dep_name, dep_spec) in &crates_to_sync {
+                    add_dep_to_table(ws_table, dep_name, dep_spec);
                 }
             }
-            removed_count = remove_deps_by_kind(&mut user_doc, &to_remove);
+
+            // [impl cli.add.dep-kind]
+            write_workspace_refs_by_kind(&mut user_doc, &crates_to_sync, false);
+        } else {
+            // [impl manifest.deps.no-workspace]
+            // [impl cli.add.dep-kind]
+            write_deps_by_kind(&mut user_doc, &crates_to_sync, false);
+        }
+
+        // Edit semantics: remove deselected crates from previous installation
+        let prev_managed =
+            read_managed_deps_for_project(&user_manifest_path, &user_manifest_content, &crate_name);
+        let new_crate_names: BTreeSet<String> = crates_to_sync.keys().cloned().collect();
+        let mut removed_count = 0;
+
+        if let Some(prev) = &prev_managed {
+            // Find crates that were previously managed but are no longer selected
+            let to_remove: BTreeMap<String, bphelper_manifest::CrateSpec> = prev
+                .iter()
+                .filter(|name| !new_crate_names.contains(name.as_str()))
+                .filter_map(|name| {
+                    bp_spec
+                        .crates
+                        .get(name)
+                        .map(|spec| (name.clone(), spec.clone()))
+                })
+                .collect();
+
+            if !to_remove.is_empty() {
+                if let Some(ref mut doc) = ws_doc {
+                    // Remove from workspace deps
+                    let ws_deps = doc["workspace"]["dependencies"].as_table_mut();
+                    if let Some(ws_table) = ws_deps {
+                        for name in to_remove.keys() {
+                            ws_table.remove(name);
+                        }
+                    }
+                }
+                removed_count = remove_deps_by_kind(&mut user_doc, &to_remove);
+            }
+        }
+
+        // Write workspace Cargo.toml once (deps combined)
+        if let (Some(ws_path), Some(doc)) = (&workspace_manifest, &ws_doc) {
+            // [impl manifest.toml.preserve]
+            std::fs::write(ws_path, doc.to_string())
+                .context("Failed to write workspace Cargo.toml")?;
+        }
+
+        // Write the final Cargo.toml
+        // [impl manifest.toml.preserve]
+        std::fs::write(&user_manifest_path, user_doc.to_string())
+            .context("Failed to write Cargo.toml")?;
+
+        write_battery_pack_state(
+            &user_manifest_path,
+            &crate_name,
+            &active_features,
+            &crates_to_sync,
+        )?;
+
+        println!(
+            "Added {} with {} crate(s)",
+            crate_name,
+            crates_to_sync.len()
+        );
+        for dep_name in crates_to_sync.keys() {
+            println!("  + {}", dep_name);
+        }
+        if removed_count > 0 {
+            println!("Removed {} deselected crate(s)", removed_count);
         }
     }
 
-    // Write workspace Cargo.toml once (deps combined)
-    if let (Some(ws_path), Some(doc)) = (&workspace_manifest, &ws_doc) {
+        // Write workspace Cargo.toml once (deps combined)
+        if let (Some(ws_path), Some(doc)) = (&workspace_manifest, &ws_doc) {
+            // [impl manifest.toml.preserve]
+            std::fs::write(ws_path, doc.to_string())
+                .context("Failed to write workspace Cargo.toml")?;
+        }
+
+        // Write the final Cargo.toml
         // [impl manifest.toml.preserve]
-        std::fs::write(ws_path, doc.to_string()).context("Failed to write workspace Cargo.toml")?;
+        std::fs::write(&user_manifest_path, user_doc.to_string())
+            .context("Failed to write Cargo.toml")?;
+
+        write_battery_pack_state(
+            &user_manifest_path,
+            &crate_name,
+            &(&active_features).into(),
+            &crates_to_sync,
+        )?;
+
+        println!(
+            "Added {} with {} crate(s)",
+            crate_name,
+            crates_to_sync.len()
+        );
+        for dep_name in crates_to_sync.keys() {
+            println!("  + {}", dep_name);
+        }
+        if removed_count > 0 {
+            println!("Removed {} deselected crate(s)", removed_count);
+        }
     }
 
-    // Write the final Cargo.toml
-    // [impl manifest.toml.preserve]
-    std::fs::write(&user_manifest_path, user_doc.to_string())
-        .context("Failed to write Cargo.toml")?;
-
-    write_battery_pack_state(
-        &user_manifest_path,
-        &crate_name,
-        &(&active_features).into(),
-        &crates_to_sync,
-    )?;
-
-    println!(
-        "Added {} with {} crate(s)",
-        crate_name,
-        crates_to_sync.len()
-    );
-    for dep_name in crates_to_sync.keys() {
-        println!("  + {}", dep_name);
-    }
-    if removed_count > 0 {
-        println!("Removed {} deselected crate(s)", removed_count);
+    // Step 4: Apply any selected templates.
+    for tmpl_name in &selected_templates {
+        add_template(AddTemplateOpts {
+            battery_pack: name,
+            template: tmpl_name,
+            path_override: path,
+            source,
+            project_dir,
+            defines: BTreeMap::new(),
+            overwrite: false,
+            interactive: std::io::stdout().is_terminal(),
+        })?;
     }
 
     Ok(())
@@ -1321,12 +1375,15 @@ pub(crate) struct PickerResult {
     pub crates: BTreeMap<String, bphelper_manifest::CrateSpec>,
     /// Which feature names are fully selected (for metadata recording).
     pub active_features: BTreeSet<String>,
+    /// Template names selected by the user for application.
+    pub selected_templates: Vec<String>,
 }
 
-/// An item in the picker — either a feature or an individual crate.
+/// An item in the picker — either a feature, an individual crate, or a template.
 enum PickerItem {
-    Feature(String), // feature name
-    Crate(String),   // crate name
+    Feature(String),  // feature name
+    Crate(String),    // crate name
+    Template(String), // template name
 }
 
 /// Show an interactive multi-select picker for choosing which crates to install.
@@ -1432,6 +1489,17 @@ fn pick_crates_interactive(
         items.push(PickerItem::Crate(crate_name.to_string()));
     }
 
+    // Templates shown last, unchecked by default.
+    for (tmpl_name, tmpl_spec) in &bp_spec.templates {
+        let desc = tmpl_spec
+            .description
+            .as_deref()
+            .unwrap_or("project template");
+        labels.push(format!("  ⎙ {} {}", tmpl_name, style(desc).dim()));
+        defaults.push(false);
+        items.push(PickerItem::Template(tmpl_name.clone()));
+    }
+
     // Show the picker
     println!();
     println!(
@@ -1452,10 +1520,11 @@ fn pick_crates_interactive(
         return Ok(None);
     };
 
-    // Split the picker selection into feature names and direct crate names.
+    // Split the picker selection into feature names, direct crate names, and templates.
     let selected_set: BTreeSet<usize> = selected_indices.into_iter().collect();
     let mut picked_features = Vec::new();
     let mut picked_crates = BTreeSet::new();
+    let mut selected_templates: Vec<String> = Vec::new();
 
     for (index, item) in items.iter().enumerate() {
         if !selected_set.contains(&index) {
@@ -1466,6 +1535,9 @@ fn pick_crates_interactive(
             PickerItem::Feature(name) => picked_features.push(name.clone()),
             PickerItem::Crate(name) => {
                 picked_crates.insert(name.clone());
+            }
+            PickerItem::Template(name) => {
+                selected_templates.push(name.clone());
             }
         }
     }
@@ -1530,6 +1602,7 @@ fn pick_crates_interactive(
     Ok(Some(PickerResult {
         crates,
         active_features,
+        selected_templates,
     }))
 }
 
