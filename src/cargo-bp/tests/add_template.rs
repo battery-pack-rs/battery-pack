@@ -505,3 +505,52 @@ fn add_template_twice_does_not_duplicate_in_state() {
         "should contain exactly one entry:\n{state_content}"
     );
 }
+
+#[test]
+fn new_from_template_records_in_state() {
+    let tmp = tempfile::tempdir().unwrap();
+    let fixture = fixtures_dir().join("fancy-battery-pack");
+
+    // Generate a new project from the fancy battery pack's "default" template.
+    let output = cargo_bp()
+        .args([
+            "bp",
+            "new",
+            "fancy",
+            "--name",
+            "my-app",
+            "--path",
+            &fixture.to_string_lossy(),
+            "-t",
+            "default",
+        ])
+        .current_dir(tmp.path())
+        .output()
+        .expect("failed to run cargo-bp");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // The generated project should have a battery-pack.toml recording the template.
+    let project_dir = tmp.path().join("my-app");
+    assert!(project_dir.join("Cargo.toml").exists());
+
+    let state_path = project_dir.join("battery-pack.toml");
+    assert!(
+        state_path.exists(),
+        "battery-pack.toml should be created in the new project"
+    );
+
+    let state_content = std::fs::read_to_string(&state_path).unwrap();
+    assert!(
+        state_content.contains(r#"applied-templates = ["default"]"#),
+        "state file should record the template used:\n{state_content}"
+    );
+    assert!(
+        state_content.contains(r#"name = "fancy""#),
+        "state file should reference the battery pack:\n{state_content}"
+    );
+}
