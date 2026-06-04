@@ -408,6 +408,12 @@ struct BatteryPackStateEntry {
     features: BTreeSet<String>,
     #[serde(rename = "managed-deps", default)]
     managed_deps: Vec<ManagedDepEntry>,
+    #[serde(
+        rename = "applied-templates",
+        default,
+        skip_serializing_if = "Vec::is_empty"
+    )]
+    applied_templates: Vec<String>,
 }
 
 fn is_false(v: &bool) -> bool {
@@ -540,6 +546,21 @@ pub(crate) fn read_managed_deps_from_state(
     })
 }
 
+/// Read applied template names for a battery pack from `battery-pack.toml`.
+pub(crate) fn read_applied_templates_from_state(
+    user_manifest_path: &Path,
+    bp_name: &str,
+) -> Vec<String> {
+    let state_path = state_file_path(user_manifest_path);
+    let state = match read_state_file(&state_path) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    state_entry_for(&state, bp_name)
+        .map(|entry| entry.applied_templates.clone())
+        .unwrap_or_default()
+}
+
 /// Read active features from a parsed TOML value at a given path prefix.
 ///
 /// `prefix` is `&["package", "metadata"]` for package metadata or
@@ -602,11 +623,17 @@ pub(crate) fn write_battery_pack_state(
         })
         .collect::<Vec<_>>();
 
-    let updated = BatteryPackStateEntry::from_active_features(
+    // Preserve previously applied templates when only updating deps/features.
+    let prev_templates = state_entry_for(&state, bp_name)
+        .map(|e| e.applied_templates.clone())
+        .unwrap_or_default();
+
+    let mut updated = BatteryPackStateEntry::from_active_features(
         short_name(bp_name).to_string(),
         active_features,
         managed_deps,
     );
+    updated.applied_templates = prev_templates;
 
     if let Some(entry) = state
         .battery_pack
@@ -616,6 +643,39 @@ pub(crate) fn write_battery_pack_state(
         *entry = updated;
     } else {
         state.battery_pack.push(updated);
+    }
+
+    write_state_file(&state_path, &state)?;
+    Ok(())
+}
+
+/// Record that a template was applied for a battery pack.
+///
+/// Appends the template name if not already present.
+pub(crate) fn record_applied_template(
+    user_manifest_path: &Path,
+    bp_name: &str,
+    template_name: &str,
+) -> Result<()> {
+    let state_path = state_file_path(user_manifest_path);
+    let mut state = read_state_file(&state_path)?;
+
+    if let Some(entry) = state
+        .battery_pack
+        .iter_mut()
+        .find(|entry| state_name_matches(&entry.name, bp_name))
+    {
+        if !entry.applied_templates.contains(&template_name.to_string()) {
+            entry.applied_templates.push(template_name.to_string());
+        }
+    } else {
+        // No existing entry for this pack — create a minimal one.
+        state.battery_pack.push(BatteryPackStateEntry {
+            name: short_name(bp_name).to_string(),
+            features: default_feature_set(),
+            managed_deps: Vec::new(),
+            applied_templates: vec![template_name.to_string()],
+        });
     }
 
     write_state_file(&state_path, &state)?;

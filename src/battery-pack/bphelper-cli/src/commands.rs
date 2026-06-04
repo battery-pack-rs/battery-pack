@@ -13,9 +13,9 @@ use std::path::{Path, PathBuf};
 use crate::manifest::{
     add_dep_to_table, dep_kind_section, find_installed_bp_names, find_user_manifest,
     find_workspace_manifest, read_active_features_for_project, read_active_features_from_state,
-    read_managed_deps_for_project, remove_battery_pack_state_entry, remove_deps_by_kind,
-    should_upgrade_version, sync_dep_in_table, write_battery_pack_state, write_deps_by_kind,
-    write_workspace_refs_by_kind,
+    read_applied_templates_from_state, read_managed_deps_for_project, record_applied_template,
+    remove_battery_pack_state_entry, remove_deps_by_kind, should_upgrade_version,
+    sync_dep_in_table, write_battery_pack_state, write_deps_by_kind, write_workspace_refs_by_kind,
 };
 use crate::registry::{
     CrateSource, InstalledPack, TemplateConfig, fetch_battery_pack_detail,
@@ -695,6 +695,10 @@ fn add_template(opts: AddTemplateOpts<'_>) -> Result<()> {
     };
     let results = crate::merge::apply_rendered_files(&files, &apply_opts)?;
     crate::merge::print_summary(&results);
+
+    // Record the applied template in battery-pack.toml.
+    let user_manifest_path = find_user_manifest(opts.project_dir)?;
+    record_applied_template(&user_manifest_path, &crate_name, opts.template)?;
 
     // Print post-merge hints if the template defines any.
     if !hints.is_empty() {
@@ -2344,12 +2348,16 @@ fn build_status_report(
                 bphelper_manifest::ActiveFeatures::Subset(set) => set.iter().cloned().collect(),
             };
 
+            let applied_templates =
+                read_applied_templates_from_state(&user_manifest_path, &pack.spec.name);
+
             cargo_bp_script::InstalledPackStatus::new(
                 &pack.short_name,
                 &pack.spec.name,
                 &pack.version,
             )
             .with_active_features(feature_strings)
+            .with_applied_templates(applied_templates)
             .with_warnings(warnings)
         })
         .collect();
