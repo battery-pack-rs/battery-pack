@@ -474,10 +474,15 @@ fn new_from_battery_pack(opts: NewFromBpOpts<'_>) -> Result<()> {
     let templates = parse_template_metadata(&manifest_content, &crate_name)?;
 
     // Resolve which template to use
-    let template_path = resolve_template(&templates, opts.template.as_deref(), opts.interactive)?;
+    let resolved_tmpl = resolve_template(&templates, opts.template.as_deref(), opts.interactive)?;
 
     // Generate the project from the crate directory
-    generate_from_path(new_opts, &resolved.dir, &template_path)
+    generate_from_path(
+        new_opts,
+        &resolved.dir,
+        &resolved_tmpl.name,
+        &resolved_tmpl.path,
+    )
 }
 
 /// Result of resolving which crates to add from a battery pack.
@@ -669,10 +674,10 @@ fn add_template(opts: AddTemplateOpts<'_>) -> Result<()> {
     let manifest_content = std::fs::read_to_string(&manifest_path)
         .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
     let templates = parse_template_metadata(&manifest_content, &crate_name)?;
-    let template_path = resolve_template(&templates, Some(opts.template), opts.interactive)?;
+    let resolved_tmpl = resolve_template(&templates, Some(opts.template), opts.interactive)?;
 
     // Load post-merge hints before moving template_path.
-    let hints = crate::template_engine::load_template_hints(&crate_dir, &template_path);
+    let hints = crate::template_engine::load_template_hints(&crate_dir, &resolved_tmpl.path);
 
     // Infer project_name from the current Cargo.toml or directory name.
     let project_name = infer_project_name(opts.project_dir)?;
@@ -681,7 +686,7 @@ fn add_template(opts: AddTemplateOpts<'_>) -> Result<()> {
     let interactive_override = if opts.interactive { None } else { Some(false) };
     let render_opts = crate::template_engine::RenderOpts {
         crate_root: crate_dir,
-        template_path,
+        template_path: resolved_tmpl.path,
         project_name,
         defines: opts.defines,
         interactive_override,
@@ -699,7 +704,7 @@ fn add_template(opts: AddTemplateOpts<'_>) -> Result<()> {
 
     // Record the applied template in battery-pack.toml.
     let user_manifest_path = find_user_manifest(opts.project_dir)?;
-    record_applied_template(&user_manifest_path, &crate_name, opts.template)?;
+    record_applied_template(&user_manifest_path, &crate_name, &resolved_tmpl.name)?;
 
     // Print post-merge hints if the template defines any.
     if !hints.is_empty() {
@@ -1553,9 +1558,9 @@ fn generate_from_local(opts: NewOpts, local_path: &str, template: Option<String>
         .and_then(|s| s.to_str())
         .unwrap_or("unknown");
     let templates = parse_template_metadata(&manifest_content, crate_name)?;
-    let template_path = resolve_template(&templates, template.as_deref(), opts.interactive)?;
+    let resolved_tmpl = resolve_template(&templates, template.as_deref(), opts.interactive)?;
 
-    generate_from_path(opts, local_path, &template_path)
+    generate_from_path(opts, local_path, &resolved_tmpl.name, &resolved_tmpl.path)
 }
 
 /// Prompt for a project name if not provided.
@@ -1580,7 +1585,12 @@ fn ensure_battery_pack_suffix(name: String) -> String {
     }
 }
 
-fn generate_from_path(opts: NewOpts, crate_path: &Path, template_path: &str) -> Result<()> {
+fn generate_from_path(
+    opts: NewOpts,
+    crate_path: &Path,
+    template_name: &str,
+    template_path: &str,
+) -> Result<()> {
     let raw = prompt_project_name(opts.name)?;
     let project_name = if opts.battery_pack == "battery-pack" {
         ensure_battery_pack_suffix(raw)
@@ -1602,7 +1612,16 @@ fn generate_from_path(opts: NewOpts, crate_path: &Path, template_path: &str) -> 
         git_init: true,
     };
 
-    crate::template_engine::generate(gen_opts)?;
+    let project_dir = crate::template_engine::generate(gen_opts)?;
+
+    // Record the applied template in the new project's battery-pack.toml.
+    let user_manifest_path = project_dir.join("Cargo.toml");
+    if user_manifest_path.exists() {
+        let bp_name = resolve_crate_name(&opts.battery_pack);
+        if let Err(e) = record_applied_template(&user_manifest_path, &bp_name, template_name) {
+            eprintln!("warning: failed to record template in state: {e}");
+        }
+    }
 
     Ok(())
 }
@@ -1632,13 +1651,20 @@ fn parse_template_metadata(
     Ok(spec.templates)
 }
 
+/// Resolved template: the logical name and the filesystem path within the crate.
+#[derive(Debug)]
+pub(crate) struct ResolvedTemplate {
+    pub name: String,
+    pub path: String,
+}
+
 // [impl format.templates.selection]
 // [impl cli.new.template-select]
 pub(crate) fn resolve_template(
     templates: &BTreeMap<String, TemplateConfig>,
     requested: Option<&str>,
     interactive: bool,
-) -> Result<String> {
+) -> Result<ResolvedTemplate> {
     match requested {
         Some(name) => {
             let config = templates.get(name).ok_or_else(|| {
@@ -1649,14 +1675,23 @@ pub(crate) fn resolve_template(
                     available.join(", ")
                 )
             })?;
-            Ok(config.path.clone())
+            Ok(ResolvedTemplate {
+                name: name.to_string(),
+                path: config.path.clone(),
+            })
         }
         None => {
             if templates.len() == 1 {
-                let (_, config) = templates.iter().next().unwrap();
-                Ok(config.path.clone())
+                let (name, config) = templates.iter().next().unwrap();
+                Ok(ResolvedTemplate {
+                    name: name.clone(),
+                    path: config.path.clone(),
+                })
             } else if let Some(config) = templates.get("default") {
-                Ok(config.path.clone())
+                Ok(ResolvedTemplate {
+                    name: "default".to_string(),
+                    path: config.path.clone(),
+                })
             } else {
                 prompt_for_template(templates, interactive)
             }
@@ -1667,7 +1702,7 @@ pub(crate) fn resolve_template(
 fn prompt_for_template(
     templates: &BTreeMap<String, TemplateConfig>,
     interactive: bool,
-) -> Result<String> {
+) -> Result<ResolvedTemplate> {
     use dialoguer::{Select, theme::ColorfulTheme};
 
     // Build display items with descriptions
@@ -1700,12 +1735,15 @@ fn prompt_for_template(
         .interact()
         .context("Failed to select template")?;
 
-    // Get the selected template's path
-    let (_, config) = templates
+    // Get the selected template's name and path
+    let (name, config) = templates
         .iter()
         .nth(selection)
         .ok_or_else(|| anyhow::anyhow!("Invalid template selection"))?;
-    Ok(config.path.clone())
+    Ok(ResolvedTemplate {
+        name: name.clone(),
+        path: config.path.clone(),
+    })
 }
 
 // ============================================================================
