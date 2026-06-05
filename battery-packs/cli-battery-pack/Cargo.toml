@@ -1,6 +1,6 @@
 [package]
 name = "cli-battery-pack"
-version = "0.6.1"
+version = "0.6.2"
 edition = "2024"
 description = "Battery pack for building CLI applications in Rust"
 license = "MIT OR Apache-2.0"
@@ -15,8 +15,6 @@ subcmds = { path = "templates/subcmds", description = "CLI with subcommands" }
 hidden = ["battery-pack"]
 
 [dependencies]
-battery-pack = { workspace = true }
-
 anstream = { version = "1.0.0", optional = true }
 anstyle = { version = "1.0.14", optional = true }
 anstyle-hyperlink = { version = "1.0.2", optional = true }

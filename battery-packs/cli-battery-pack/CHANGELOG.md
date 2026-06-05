@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2](https://github.com/battery-pack-rs/battery-pack/compare/cli-battery-pack-v0.6.1...cli-battery-pack-v0.6.2) - 2026-06-03
+
+### Fixed
+
+- *(test)* add `[EXE]` to help snapshots for Windows compat ([#138](https://github.com/battery-pack-rs/battery-pack/pull/138))
+
+### Other
+
+- *(battery-pack)* migrate templates to `battery-pack.toml`, drop unused dep ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+
 ## [0.6.1](https://github.com/battery-pack-rs/battery-pack/compare/cli-battery-pack-v0.6.0...cli-battery-pack-v0.6.1) - 2026-04-30
 
 ### Added

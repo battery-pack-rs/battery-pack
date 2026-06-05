@@ -285,3 +285,24 @@ Caused by:
     let workspace = vec!["bphelper-build".to_string(), "battery-pack".to_string()];
     assert!(!super::is_unpublished_workspace_dep(stderr, &workspace));
 }
+
+#[test]
+fn merge_patches_preserves_existing_config() {
+    let existing = "[build]\nrustflags = [\"--cfg\", \"tokio_unstable\"]\n";
+    let patches = "[patch.crates-io]\nfoo = { path = \"/x\" }\n";
+    let merged = super::merge_patches_into_config(existing, patches);
+    // Both tables survive and the result is valid TOML.
+    assert!(
+        merged.contains("tokio_unstable"),
+        "existing build flags kept"
+    );
+    assert!(merged.contains("[patch.crates-io]"), "patch table appended");
+    let parsed: toml::Table = merged.parse().expect("merged config is valid TOML");
+    assert!(parsed.contains_key("build") && parsed.contains_key("patch"));
+}
+
+#[test]
+fn merge_patches_into_empty_config() {
+    let merged = super::merge_patches_into_config("", "[patch.crates-io]\n");
+    assert_eq!(merged, "[patch.crates-io]\n");
+}

@@ -36,9 +36,12 @@ publish = false
 [dependencies]
 xshell = "0.2"
 xflags = "0.3"
+── xtask/battery-pack.toml ──
+version = 1
 
-[package.metadata.battery-pack]
-ci-battery-pack = { features = ["xtask"] }
+[[battery-pack]]
+name = "ci"
+features = ["xtask"]
 ── xtask/src/main.rs ──
 use std::path::{Path, PathBuf};
 use xshell::{Shell, cmd};

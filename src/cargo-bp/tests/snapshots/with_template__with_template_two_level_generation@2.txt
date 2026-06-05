@@ -21,12 +21,8 @@ mod tests {
             .unwrap();
         let mut out = String::new();
         for file in &files {
-            out.push_str(&format!(
-                "── {} ──/n{}/n/n",
-                file.path,
-                file.content
-            ));
+            out.push_str(&format!("── {} ──/n{}/n/n", file.path, file.content));
         }
-        assert_data_eq!(out, file!["snapshots/default_template.txt"]);
+        assert_data_eq!(out.trim(), file!["snapshots/default_template.txt"]);
     }
 }

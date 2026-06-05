@@ -38,12 +38,18 @@
 
 #![deny(missing_docs)]
 
+pub mod list;
 pub mod runner;
+pub mod show;
 pub mod status;
 
 // Re-export the most commonly used items at the crate root for
 // ergonomic access. The full API stays addressable via the modules.
-pub use runner::{Error, StatusCommand, parse_status};
+pub use list::{ListReport, PackSummary};
+pub use runner::{
+    Error, ListCommand, ShowCommand, StatusCommand, parse_list, parse_show, parse_status,
+};
+pub use show::{ExampleInfo, FeatureInfo, OwnerInfo, ShowReport, TemplateInfo};
 pub use status::{
     DependencyWarning, InstalledPackStatus, ProjectInfo, SCHEMA_VERSION, StatusReport,
 };
@@ -114,5 +120,68 @@ mod tests {
     fn parse_status_rejects_garbage() {
         let err = parse_status(b"not json").unwrap_err();
         assert!(matches!(err, Error::Parse { .. }), "got {err:?}");
+    }
+
+    /// JSON serialization round-trips through `parse_list`.
+    #[test]
+    fn round_trip_list_report() {
+        let report = ListReport::new()
+            .with_filter("cli")
+            .with_pack(
+                PackSummary::new("cli", "cli-battery-pack", "0.3.0")
+                    .with_description("Opinionated CLI starter kit"),
+            )
+            .with_packs([PackSummary::new("error", "error-battery-pack", "0.2.0")
+                .with_description("Error handling")]);
+
+        let bytes = serde_json::to_vec(&report).expect("serialize");
+        let parsed = parse_list(&bytes).expect("parse_list");
+        assert_eq!(parsed, report);
+    }
+
+    /// JSON serialization round-trips through `parse_show`.
+    #[test]
+    fn round_trip_show_report() {
+        let report = ShowReport::new("cli", "cli-battery-pack", "0.3.0")
+            .with_description("Opinionated CLI starter kit")
+            .with_repository("https://github.com/battery-pack-rs/battery-pack")
+            .with_owner(OwnerInfo::new("ferris").with_name("Ferris the Crab"))
+            .with_crate("clap")
+            .with_crates(["indicatif", "console"])
+            .with_extends("error")
+            .with_feature(
+                FeatureInfo::new("fancy")
+                    .with_crate("dialoguer")
+                    .with_crates(["ratatui"]),
+            )
+            .with_template(TemplateInfo::new("default").with_description("Minimal CLI app"))
+            .with_example(ExampleInfo::new("mini-grep").with_description("A grep clone"));
+
+        let bytes = serde_json::to_vec(&report).expect("serialize");
+        let parsed = parse_show(&bytes).expect("parse_show");
+        assert_eq!(parsed, report);
+    }
+
+    /// `parse_list` surfaces malformed input as `Error::Parse`.
+    #[test]
+    fn parse_list_rejects_garbage() {
+        let err = parse_list(b"not json").unwrap_err();
+        assert!(matches!(err, Error::Parse { .. }), "got {err:?}");
+    }
+
+    /// `parse_show` surfaces malformed input as `Error::Parse`.
+    #[test]
+    fn parse_show_rejects_garbage() {
+        let err = parse_show(b"not json").unwrap_err();
+        assert!(matches!(err, Error::Parse { .. }), "got {err:?}");
+    }
+
+    /// `ListReport::default()` creates an empty report.
+    #[test]
+    fn list_report_default() {
+        let report = ListReport::default();
+        assert_eq!(report.schema_version, SCHEMA_VERSION);
+        assert!(report.packs.is_empty());
+        assert!(report.filter.is_none());
     }
 }

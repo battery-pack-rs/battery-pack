@@ -24,13 +24,6 @@ human-panic.bp-managed = true
 tracing.bp-managed = true
 tracing-subscriber.bp-managed = true
 
-[build-dependencies]
-cli-battery-pack.bp-managed = true
-logging-battery-pack.bp-managed = true
-
 [dev-dependencies]
 snapbox.bp-managed = true
 
-[package.metadata.battery-pack]
-cli-battery-pack = { features = ["default"] }
-logging-battery-pack = { features = ["default"] }

@@ -1,0 +1,88 @@
+[package]
+name = "backend-service-battery-pack"
+version = "0.1.1"
+edition = "2024"
+description = "Opinionated battery pack for resilient async backend services in Rust"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/battery-pack-rs/battery-pack"
+keywords = ["battery-pack", "opinionated", "axum", "tokio", "observability"]
+
+[package.metadata.battery-pack]
+hidden = ["battery-pack", "snapbox"]
+
+[package.metadata.battery.templates]
+service = { path = "templates/service", description = "Resilient request-response service (axum or hyper) with observability, graceful shutdown, and a Redis or HTTP downstream" }
+
+[dependencies]
+# Core observability; always on.
+metrique = { version = "0.1", features = ["json"] }
+metrique-util = { version = "0.1", features = ["tokio-metrics-bridge"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
+# dial9 (Tokio flight recorder) needs the `tokio_unstable` rustflag to compile,
+# which generated projects supply via .cargo/config.toml. Optional here so the
+# pack's own build (without that flag) stays green; bp-managed still resolves the
+# version from this spec.
+dial9-tokio-telemetry = { version = "0.3", features = ["tracing-layer"], optional = true }
+
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "2"
+http = "1"
+
+axum = { version = "0.8", optional = true }
+tower = { version = "0.5", optional = true }
+tower-http = { version = "0.6", default-features = false, optional = true }
+
+reqwest = { version = "0.13", features = ["json"], optional = true }
+
+failsafe = { version = "1", optional = true }
+moka = { version = "0.12", features = ["future"], optional = true }
+# default features pull axum + tonic; disabled so rate-limit stays framework-agnostic
+# and the template enables only the chosen framework's feature.
+tower_governor = { version = "0.8", default-features = false, optional = true }
+
+clap = { version = "4", features = ["derive", "env"], optional = true }
+
+# Benchmark suite (default-on in generated templates; async benches use the tokio executor).
+criterion = { version = "0.8", features = ["async_tokio"], optional = true }
+
+# mimalloc builds everywhere, including MSVC, so it is a regular dependency.
+mimalloc = { version = "0.1", optional = true }
+
+# jemalloc does not build under MSVC, so it is target-gated.
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = { version = "0.7", optional = true }
+
+[build-dependencies]
+battery-pack = { workspace = true, features = ["build"] }
+
+[dev-dependencies]
+battery-pack = { workspace = true, features = ["cli"] }
+snapbox = "1"
+# util = tower::util::ServiceExt::oneshot, for driving services in tests without binding a socket
+tower = { version = "0.5", features = ["util"] }
+
+[features]
+default = ["axum-server", "jemalloc", "clap-config"]
+axum-server = ["axum", "tower", "tower-http"]
+# Each tower-http layer feature pulls in base tower + tower-http so it stands alone.
+http-trace = ["tower", "tower-http/trace"]
+http-request-id = ["tower", "tower-http/request-id"]
+http-timeout = ["tower", "tower-http/timeout"]
+http-catch-panic = ["tower", "tower-http/catch-panic"]
+http-on-early-drop = ["tower", "tower-http/on-early-drop"]
+http-client = ["reqwest"]
+circuit-breaker = ["failsafe"]
+cache = ["moka"]
+rate-limit = ["tower_governor", "tower"]
+load-shed = ["tower/limit", "tower/load-shed"]
+jemalloc = ["tikv-jemallocator"]
+mimalloc-alloc = ["mimalloc"]
+clap-config = ["clap"]
+benchmarks = ["criterion"]
+# Enabling dial9 requires the `tokio_unstable` rustflag (see generated .cargo/config.toml).
+dial9 = ["dial9-tokio-telemetry"]

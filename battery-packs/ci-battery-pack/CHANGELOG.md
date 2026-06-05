@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5](https://github.com/battery-pack-rs/battery-pack/compare/ci-battery-pack-v0.1.4...ci-battery-pack-v0.1.5) - 2026-06-03
+
+### Added
+
+- *(ci-battery-pack)* add optional cross-platform testing job ([#136](https://github.com/battery-pack-rs/battery-pack/pull/136))
+
+### Fixed
+
+- *(test)* make snapshot tests cross-platform for `.exe` ([#138](https://github.com/battery-pack-rs/battery-pack/pull/138))
+
+### Other
+
+- *(battery-pack)* migrate templates to `battery-pack.toml`, drop unused dep ([#142](https://github.com/battery-pack-rs/battery-pack/pull/142))
+
 ## [0.1.4](https://github.com/battery-pack-rs/battery-pack/compare/ci-battery-pack-v0.1.3...ci-battery-pack-v0.1.4) - 2026-04-30
 
 ### Added

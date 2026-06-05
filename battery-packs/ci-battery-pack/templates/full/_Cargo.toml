@@ -24,5 +24,3 @@ harness = false
 {% include "templates/binary-release/cargo-bin-section.toml" %}
 {%- endif %}
 
-[package.metadata.battery-pack]
-ci-battery-pack = { features = [{% if all or benchmarks %}"benchmarks", {% endif %}{% if all or fuzzing %}"fuzzing", {% endif %}{% if all or xtask %}"xtask"{% endif %}] }

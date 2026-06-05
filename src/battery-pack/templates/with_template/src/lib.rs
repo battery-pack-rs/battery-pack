@@ -27,6 +27,6 @@ mod tests {
                 file.content
             ));
         }
-        assert_data_eq!(out, file!["snapshots/default_template.txt"]);
+        assert_data_eq!(out.trim(), file!["snapshots/default_template.txt"]);
     }
 }

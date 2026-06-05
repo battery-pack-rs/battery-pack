@@ -62,7 +62,7 @@ jobs:
 [package]
 name = "my-project"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
@@ -72,6 +72,7 @@ dialoguer = "0.11"
 fn main() {
     println!("Hello from default template!");
 }
+
 
 
 "#]]
@@ -116,7 +117,7 @@ fn show_template_preview_with_define_flag() {
 [package]
 name = "my-project"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
@@ -128,6 +129,7 @@ console = "0.15"
 fn main() {
     println!("Howdy from full template!");
 }
+
 
 
 "#]]

@@ -90,9 +90,12 @@ members = ["."]
 name = "fuzz_example"
 path = "fuzz_targets/fuzz_example.rs"
 doc = false
+── fuzz/battery-pack.toml ──
+version = 1
 
-[package.metadata.battery-pack]
-ci-battery-pack = { features = ["fuzzing"] }
+[[battery-pack]]
+name = "ci"
+features = ["fuzzing"]
 ── fuzz/fuzz_targets/fuzz_example.rs ──
 #![no_main]
 use arbitrary::Arbitrary;

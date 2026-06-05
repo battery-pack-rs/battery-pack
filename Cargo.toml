@@ -15,12 +15,14 @@ members = [
     "battery-packs/ci-battery-pack",
     "battery-packs/error-battery-pack",
     "battery-packs/logging-battery-pack",
+	# --- opinionated battery packs
+    "opinionated-battery-packs/backend-service-battery-pack",
 ]
 resolver = "2"
 
 [workspace.dependencies]
 battery-pack = { path = "src/battery-pack", version = "0.5" }
-cargo-bp-script = { path = "src/cargo-bp-script", version = "0.1" }
+cargo-bp-script = { path = "src/cargo-bp-script", version = "0.2" }
 anyhow = "1"
 minijinja = { version = "2", features = ["loader"] }
 cargo_metadata = "0.23"

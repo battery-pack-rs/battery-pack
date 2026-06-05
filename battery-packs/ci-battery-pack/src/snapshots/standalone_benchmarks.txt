@@ -59,9 +59,9 @@ jobs:
             --github-actions ${{ secrets.GITHUB_TOKEN }} /
             "cargo bench --all-features"
 ── benches/example_bench.rs ──
-use test_project::add;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
+use test_project::add;
 
 fn bench_add(c: &mut Criterion) {
     let mut group = c.benchmark_group("add");

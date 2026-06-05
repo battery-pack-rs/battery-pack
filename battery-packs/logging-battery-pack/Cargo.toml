@@ -1,6 +1,6 @@
 [package]
 name = "logging-battery-pack"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2024"
 description = "Battery pack for logging and tracing in Rust"
 license = "MIT OR Apache-2.0"
@@ -8,7 +8,6 @@ repository = "https://github.com/battery-pack-rs/battery-pack"
 keywords = ["battery-pack", "logging", "tracing"]
 
 [dependencies]
-battery-pack = { workspace = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
 

@@ -11,10 +11,13 @@ git_release_enable = true
 # Roll commits from every other crate into the battery-pack changelog,
 # so the GitHub release notes cover the whole workspace.
 changelog_include = [
+    "backend-service-battery-pack",
     "bphelper-build",
     "bphelper-cli",
     "bphelper-manifest",
     "cargo-bp",
+    "cargo-bp-script",
+    "ci-battery-pack",
     "cli-battery-pack",
     "error-battery-pack",
     "logging-battery-pack",

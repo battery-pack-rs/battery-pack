@@ -1,0 +1,9 @@
+version = 1
+
+[[battery-pack]]
+name = "cli"
+features = ["default"]
+
+[[battery-pack]]
+name = "logging"
+features = ["default"]

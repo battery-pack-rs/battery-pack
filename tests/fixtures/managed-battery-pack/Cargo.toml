@@ -1,7 +1,7 @@
 [package]
 name = "managed-battery-pack"
 version = "0.2.0"
-edition = "2021"
+edition = "2024"
 description = "A test battery pack for bp-managed resolution"
 repository = "https://github.com/example/managed"
 keywords = ["battery-pack"]
