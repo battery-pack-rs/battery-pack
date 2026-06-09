@@ -31,7 +31,7 @@ The core CI workflow (`ci.yml`) runs on PRs, merge queue, and pushes to main. It
 | `minimal-versions` | Generates a minimal-version lockfile, then checks with stable |
 | `semver` | `cargo-semver-checks` (catches accidental breaking changes) |
 
-A separate `audit.yml` runs RustSec audit-check daily and on Cargo manifest, lockfile, or audit workflow changes. By default, scheduled runs publish GitHub issues; set `publish_audit_issues=false` to run cargo audit directly without issue creation.
+A separate `audit.yml` runs RustSec audit-check daily and on Cargo manifest, lockfile, or audit workflow changes. By default, scheduled runs publish GitHub issues; set `audit_issue=false` to run cargo audit directly without issue creation.
 
 By default, `dependency-policy.yml` runs cargo-deny for licenses, bans, and sources; set `dependency_policy=false` to skip it.
 
@@ -66,13 +66,14 @@ concurrency:
 
 ## Adding Features to an Existing Project
 
-Each optional feature is available as a standalone template:
+Each additional workflow or scaffold is available as a standalone template:
 
 ```sh
 cargo bp add ci -t trusted-publishing   # release-plz with OIDC
 cargo bp add ci -t binary-release       # cross-platform binaries
 cargo bp add ci -t fuzzing              # cargo-fuzz scaffold + CI
 cargo bp add ci -t benchmarks           # Criterion + Bencher CI
+cargo bp add ci -t security-scanning    # RustSec audit workflow
 cargo bp add ci -t dependency-policy    # cargo-deny licenses, bans, sources
 cargo bp add ci -t spellcheck           # typos config + workflow
 cargo bp add ci -t mutation-testing     # cargo-mutants workflow

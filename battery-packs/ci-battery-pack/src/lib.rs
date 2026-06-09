@@ -82,7 +82,26 @@ mod tests {
             .template("templates/full")
             .define("ci_platform", "github")
             .define("repo_owner", "test-owner")
-            .define("publish_audit_issues", "false")
+            .define("audit_issue", "false")
+            .preview()
+            .unwrap();
+        let audit = files
+            .iter()
+            .find(|f| f.path == ".github/workflows/audit.yml")
+            .unwrap();
+
+        assert!(!audit.content.contains("issues: write"));
+        assert!(!audit.content.contains("checks: write"));
+        assert!(!audit.content.contains("rustsec/audit-check"));
+        assert!(audit.content.contains("cargo audit --deny warnings"));
+    }
+
+    #[test]
+    fn standalone_security_scanning_issue_publication_can_be_disabled() {
+        let files = PreviewBuilder::new(env!("CARGO_MANIFEST_DIR"))
+            .template("templates/security-scanning")
+            .define("ci_platform", "github")
+            .define("post_issue", "false")
             .preview()
             .unwrap();
         let audit = files
@@ -221,6 +240,14 @@ mod tests {
         assert_snapshot(
             snapshot("dependency-policy", &[]),
             file!["snapshots/standalone_dependency_policy.txt"],
+        );
+    }
+
+    #[test]
+    fn snapshot_standalone_security_scanning() {
+        assert_snapshot(
+            snapshot("security-scanning", &[]),
+            file!["snapshots/standalone_security_scanning.txt"],
         );
     }
 }

@@ -1,6 +1,6 @@
 # ci-battery-pack
 
-A [battery pack](https://crates.io/crates/battery-pack) for CI/CD workflows in Rust projects. Generates the kind of CI config you'd copy from tokio or hyper, but fresh with pinned SHAs and your project's MSRV.
+A [battery pack](https://crates.io/crates/battery-pack) for GitHub Actions CI in Rust projects. Generates pinned workflows with the project's MSRV.
 
 Currently supports GitHub Actions.
 
@@ -11,13 +11,14 @@ Each CI feature is available as a standalone template you can merge into your pr
 ```sh
 cargo bp add ci -t spellcheck
 cargo bp add ci -t fuzzing -d ci_platform=github
+cargo bp add ci -t security-scanning
 cargo bp add ci -t dependency-policy
 cargo bp add ci -t trusted-publishing
 ```
 
 New files are written directly. For existing files, TOML and YAML are merged (new keys added, existing keys preserved), and other file types prompt you to skip, overwrite, or view a diff. See the [templates docs](https://battery-pack-rs.github.io/battery-pack/templates.html) for the full merge behavior and flags.
 
-Available standalone templates: `benchmarks`, `binary-release`, `clippy-sarif`, `dependency-policy`, `fuzzing`, `mdbook`, `mutation-testing`, `spellcheck`, `stress-test`, `trusted-publishing`, `xtask`.
+Available standalone templates: `benchmarks`, `binary-release`, `clippy-sarif`, `dependency-policy`, `fuzzing`, `mdbook`, `mutation-testing`, `security-scanning`, `spellcheck`, `stress-test`, `trusted-publishing`, `xtask`.
 
 Preview any template before applying it:
 
@@ -51,12 +52,12 @@ cargo bp new ci --name my-project -d benchmarks -d fuzzing -d spellcheck
 
 ### Optional features
 
-Most flags default to false. `trusted_publishing`, `publish_audit_issues`, and `dependency_policy` default to true.
+Most flags default to false. `trusted_publishing`, `audit_issue`, and `dependency_policy` default to true.
 
 | Flag | Default | What it adds | Curated deps |
 |------|---------|-------------|-------------|
 | `trusted_publishing` | true | [release-plz](https://release-plz.dev/) with OIDC trusted publishing | |
-| `publish_audit_issues` | true | Publish GitHub issues for RustSec advisories on scheduled runs | |
+| `audit_issue` | true | Publish GitHub issues for RustSec advisories on scheduled runs | |
 | `dependency_policy` | true | [cargo-deny](https://embarkstudios.github.io/cargo-deny/) license, bans, and source policy | |
 | `binary_release` | false | Cross-platform binary builds for GitHub Releases + [cargo-binstall](https://github.com/cargo-bins/cargo-binstall) | |
 | `benchmarks` | false | [Criterion](https://crates.io/crates/criterion) bench scaffold + [Bencher](https://bencher.dev/) regression detection | `criterion` |

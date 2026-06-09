@@ -24,7 +24,7 @@ type = "bool"
 prompt = "Include trusted publishing (release-plz)?"
 default = "true"
 
-[placeholders.publish_audit_issues]
+[placeholders.audit_issue]
 type = "bool"
 prompt = "Publish RustSec audit issues on scheduled runs?"
 default = "true"

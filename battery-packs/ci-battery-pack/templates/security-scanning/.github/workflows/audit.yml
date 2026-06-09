@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
 
 permissions:
-{% if audit_issue %}  checks: write
+{% if post_issue %}  checks: write
 {% endif %}  contents: read
-{% if audit_issue %}  issues: write
+{% if post_issue %}  issues: write
 {% endif %}
 jobs:
   security-audit:
@@ -24,7 +24,7 @@ jobs:
       - uses: {{ pin_github_action("actions/checkout", "v6") }}
         with:
           persist-credentials: false
-{% if audit_issue %}      - uses: {{ pin_github_action("rustsec/audit-check", "v2") }}
+{% if post_issue %}      - uses: {{ pin_github_action("rustsec/audit-check", "v2") }}
         with:
           token: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
 {% else %}      - uses: {{ pin_github_action("taiki-e/install-action", "v2") }}

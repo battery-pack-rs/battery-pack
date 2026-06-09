@@ -12,6 +12,7 @@ full = { path = "templates/full", description = "Full CI setup with dependency p
 benchmarks = { path = "templates/benchmarks", description = "Criterion bench scaffold + Bencher CI" }
 fuzzing = { path = "templates/fuzzing", description = "cargo-fuzz scaffold + CI workflows" }
 dependency-policy = { path = "templates/dependency-policy", description = "cargo-deny license, ban, and source checks" }
+security-scanning = { path = "templates/security-scanning", description = "RustSec audit workflow" }
 stress-test = { path = "templates/stress-test", description = "nextest stress test workflow" }
 mdbook = { path = "templates/mdbook", description = "mdBook scaffold + GitHub Pages deployment" }
 spellcheck = { path = "templates/spellcheck", description = "crate-ci/typos config + CI workflow" }
