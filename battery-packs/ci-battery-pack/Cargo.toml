@@ -8,10 +8,10 @@ repository = "https://github.com/battery-pack-rs/battery-pack"
 keywords = ["battery-pack", "ci", "github-actions", "testing"]
 
 [package.metadata.battery.templates]
-full = { path = "templates/full", description = "Full CI setup with optional benchmarks, fuzzing, license scanning, mdbook, spellcheck, and xtask" }
+full = { path = "templates/full", description = "Full CI setup with dependency policy and optional benchmarks, fuzzing, mdbook, spellcheck, and xtask" }
 benchmarks = { path = "templates/benchmarks", description = "Criterion bench scaffold + Bencher CI" }
 fuzzing = { path = "templates/fuzzing", description = "cargo-fuzz scaffold + CI workflows" }
-license-scanning = { path = "templates/license-scanning", description = "cargo-deny license, ban, and source checks" }
+dependency-policy = { path = "templates/dependency-policy", description = "cargo-deny license, ban, and source checks" }
 stress-test = { path = "templates/stress-test", description = "nextest stress test workflow" }
 mdbook = { path = "templates/mdbook", description = "mdBook scaffold + GitHub Pages deployment" }
 spellcheck = { path = "templates/spellcheck", description = "crate-ci/typos config + CI workflow" }

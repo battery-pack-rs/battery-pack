@@ -33,7 +33,7 @@ The core CI workflow (`ci.yml`) runs on PRs, merge queue, and pushes to main. It
 
 A separate `audit.yml` runs RustSec audit-check daily and on Cargo manifest, lockfile, or audit workflow changes. By default, scheduled runs publish GitHub issues; set `publish_audit_issues=false` to run cargo audit directly without issue creation.
 
-If enabled, `dependency-policy.yml` runs cargo-deny for licenses, bans, and sources.
+By default, `dependency-policy.yml` runs cargo-deny for licenses, bans, and sources; set `dependency_policy=false` to skip it.
 
 ## The Gate Job Pattern
 
@@ -73,7 +73,7 @@ cargo bp add ci -t trusted-publishing   # release-plz with OIDC
 cargo bp add ci -t binary-release       # cross-platform binaries
 cargo bp add ci -t fuzzing              # cargo-fuzz scaffold + CI
 cargo bp add ci -t benchmarks           # Criterion + Bencher CI
-cargo bp add ci -t license-scanning     # cargo-deny licenses, bans, sources
+cargo bp add ci -t dependency-policy    # cargo-deny licenses, bans, sources
 cargo bp add ci -t spellcheck           # typos config + workflow
 cargo bp add ci -t mutation-testing     # cargo-mutants workflow
 cargo bp add ci -t clippy-sarif         # PR annotations via SARIF

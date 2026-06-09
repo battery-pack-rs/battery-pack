@@ -96,6 +96,24 @@ mod tests {
         assert!(audit.content.contains("cargo audit --deny warnings"));
     }
 
+    #[test]
+    fn dependency_policy_can_be_disabled() {
+        let files = PreviewBuilder::new(env!("CARGO_MANIFEST_DIR"))
+            .template("templates/full")
+            .define("ci_platform", "github")
+            .define("repo_owner", "test-owner")
+            .define("dependency_policy", "false")
+            .preview()
+            .unwrap();
+
+        assert!(
+            !files
+                .iter()
+                .any(|f| f.path == ".github/workflows/dependency-policy.yml")
+        );
+        assert!(!files.iter().any(|f| f.path == "deny.toml"));
+    }
+
     // -- Merged snapshot tests --
     // Each test renders a template and snapshots ALL rendered files.
     // SHAs, MSRV, and version comments are masked with [..] in snapshot files.
@@ -199,10 +217,10 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_standalone_license_scanning() {
+    fn snapshot_standalone_dependency_policy() {
         assert_snapshot(
-            snapshot("license-scanning", &[]),
-            file!["snapshots/standalone_license_scanning.txt"],
+            snapshot("dependency-policy", &[]),
+            file!["snapshots/standalone_dependency_policy.txt"],
         );
     }
 }

@@ -11,13 +11,13 @@ Each CI feature is available as a standalone template you can merge into your pr
 ```sh
 cargo bp add ci -t spellcheck
 cargo bp add ci -t fuzzing -d ci_platform=github
-cargo bp add ci -t license-scanning
+cargo bp add ci -t dependency-policy
 cargo bp add ci -t trusted-publishing
 ```
 
 New files are written directly. For existing files, TOML and YAML are merged (new keys added, existing keys preserved), and other file types prompt you to skip, overwrite, or view a diff. See the [templates docs](https://battery-pack-rs.github.io/battery-pack/templates.html) for the full merge behavior and flags.
 
-Available standalone templates: `benchmarks`, `binary-release`, `clippy-sarif`, `fuzzing`, `license-scanning`, `mdbook`, `mutation-testing`, `spellcheck`, `stress-test`, `trusted-publishing`, `xtask`.
+Available standalone templates: `benchmarks`, `binary-release`, `clippy-sarif`, `dependency-policy`, `fuzzing`, `mdbook`, `mutation-testing`, `spellcheck`, `stress-test`, `trusted-publishing`, `xtask`.
 
 Preview any template before applying it:
 
@@ -46,20 +46,21 @@ cargo bp new ci --name my-project -d benchmarks -d fuzzing -d spellcheck
 
 - CI workflow: fmt, clippy, warnings check, docsrs check, build matrix (stable × nightly), feature powerset, MSRV, semver-checks, gate job
 - RustSec audit workflow
+- Dependency policy workflow
 - Dependabot config for Cargo and GitHub Actions updates
 
 ### Optional features
 
-Most flags default to false. `trusted_publishing` and `publish_audit_issues` default to true.
+Most flags default to false. `trusted_publishing`, `publish_audit_issues`, and `dependency_policy` default to true.
 
 | Flag | Default | What it adds | Curated deps |
 |------|---------|-------------|-------------|
 | `trusted_publishing` | true | [release-plz](https://release-plz.dev/) with OIDC trusted publishing | |
 | `publish_audit_issues` | true | Publish GitHub issues for RustSec advisories on scheduled runs | |
+| `dependency_policy` | true | [cargo-deny](https://embarkstudios.github.io/cargo-deny/) license, bans, and source policy | |
 | `binary_release` | false | Cross-platform binary builds for GitHub Releases + [cargo-binstall](https://github.com/cargo-bins/cargo-binstall) | |
 | `benchmarks` | false | [Criterion](https://crates.io/crates/criterion) bench scaffold + [Bencher](https://bencher.dev/) regression detection | `criterion` |
 | `fuzzing` | false | [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) scaffold + PR smoke test + nightly extended run | `libfuzzer-sys`, `arbitrary` |
-| `license_scanning` | false | [cargo-deny](https://embarkstudios.github.io/cargo-deny/) license, bans, and source policy | |
 | `stress_tests` | false | [nextest](https://nexte.st/) stress test workflow | |
 | `mdbook` | false | [mdBook](https://rust-lang.github.io/mdBook/) scaffold + GitHub Pages deployment | |
 | `spellcheck` | false | [typos](https://github.com/crate-ci/typos) config + workflow | |
@@ -106,7 +107,7 @@ Uploads clippy results to GitHub [Code Scanning](https://docs.github.com/en/code
 
 Enable GitHub Pages in repo settings (Settings → Pages → Source: GitHub Actions).
 
-### License scanning (if license_scanning enabled)
+### Dependency policy (if dependency_policy enabled)
 
 Review `deny.toml` before enforcing it; license policy is project-specific.
 

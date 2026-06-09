@@ -245,6 +245,39 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: jq --exit-status 'all(.result == "success" or .result == "skipped")' <<< '${{ toJson(needs) }}'
+── .github/workflows/dependency-policy.yml ──
+# https://embarkstudios.github.io/cargo-deny/
+name: Dependency policy
+
+on:
+  push:
+    paths:
+      - ".github/workflows/dependency-policy.yml"
+      - "deny.toml"
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+  pull_request:
+    paths:
+      - ".github/workflows/dependency-policy.yml"
+      - "deny.toml"
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: EmbarkStudios/cargo-deny-action@[..] # v[..]
+        with:
+          command: check bans licenses sources
 ── .github/workflows/release.yml ──
 # release-plz: automated releases to crates.io (https://release-plz.dev/docs)
 # Setup:
@@ -371,6 +404,50 @@ version = 1
 [[battery-pack]]
 name = "ci"
 features = []
+── deny.toml ──
+# https://embarkstudios.github.io/cargo-deny/
+
+[licenses]
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "Zlib",
+    "MPL-2.0",
+]
+
+confidence-threshold = 1.0
+
+# Add audited exceptions for crates outside the default policy.
+# exceptions = [
+#     { name = "ring", allow = ["OpenSSL"] },
+# ]
+
+# Clarify license files when cargo-deny cannot infer attribution.
+# [[licenses.clarify]]
+# name = "example-crate"
+# expression = "MIT OR Apache-2.0"
+# license-files = [
+#     { path = "LICENSE-MIT", hash = 0x00000000 },
+#     { path = "LICENSE-APACHE", hash = 0x00000000 },
+# ]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "warn"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
 ── release-plz.toml ──
 # https://release-plz.dev/docs/config
 

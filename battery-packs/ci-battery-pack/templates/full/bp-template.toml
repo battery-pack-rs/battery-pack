@@ -29,10 +29,10 @@ type = "bool"
 prompt = "Publish RustSec audit issues on scheduled runs?"
 default = "true"
 
-[placeholders.license_scanning]
+[placeholders.dependency_policy]
 type = "bool"
 prompt = "Include cargo-deny license, ban, and source checks?"
-default = "false"
+default = "true"
 
 [placeholders.benchmarks]
 type = "bool"

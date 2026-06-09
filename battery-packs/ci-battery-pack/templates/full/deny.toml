@@ -1,3 +1,3 @@
-{%- if all or license_scanning -%}
-{% include "templates/license-scanning/deny.toml" %}
+{%- if all or dependency_policy -%}
+{% include "templates/dependency-policy/deny.toml" %}
 {%- endif %}
