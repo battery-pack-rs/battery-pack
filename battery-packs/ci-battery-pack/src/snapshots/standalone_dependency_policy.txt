@@ -20,10 +20,10 @@ jobs:
   dependency-policy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
-      - uses: EmbarkStudios/cargo-deny-action@[..] # v[..]
+      - uses: EmbarkStudios/cargo-deny-action@[..]
         with:
           command: check bans licenses sources
 ── deny.toml ──

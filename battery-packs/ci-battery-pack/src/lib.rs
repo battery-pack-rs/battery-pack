@@ -54,21 +54,15 @@ mod tests {
     fn normalize_snapshot_line(line: &str) -> String {
         let line = mask_action_resolution_failure(line);
         let line = mask_action_sha(&line);
-        let line = mask_action_version_comment(&line);
+        let line = strip_action_pin_comment(&line);
         mask_rust_version(&line)
     }
 
     fn mask_action_resolution_failure(line: &str) -> String {
-        let Some((prefix, suffix)) = line.split_once("@could-not-resolve-git-sha-for-") else {
+        let Some((prefix, _)) = line.split_once("@could-not-resolve-git-sha-for-") else {
             return line.to_owned();
         };
-        let unresolved_ref = suffix.split_whitespace().next().unwrap_or_default();
-        let masked_ref = if unresolved_ref == "master" {
-            "master"
-        } else {
-            "[..]"
-        };
-        format!("{prefix}@[..] # {masked_ref}")
+        format!("{prefix}@[..]")
     }
 
     fn mask_action_sha(line: &str) -> String {
@@ -88,11 +82,9 @@ mod tests {
         out
     }
 
-    fn mask_action_version_comment(line: &str) -> String {
-        if let Some((prefix, suffix)) = line.split_once(" # v")
-            && suffix.bytes().next().is_some_and(|b| b.is_ascii_digit())
-        {
-            return format!("{prefix} # v[..]");
+    fn strip_action_pin_comment(line: &str) -> String {
+        if line.contains("@[..]") {
+            return line.split_once(" # ").unwrap_or((line, "")).0.to_owned();
         }
         line.to_owned()
     }

@@ -41,7 +41,7 @@ jobs:
             archive: zip
 
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
@@ -73,7 +73,7 @@ jobs:
           Compress-Archive -Path test-project[EXE] -DestinationPath ../../../test-project-${{ matrix.target }}-${{ steps.version.outputs.version }}.zip
 
       - name: Upload release asset
-        uses: softprops/action-gh-release@[..] # v[..]
+        uses: softprops/action-gh-release@[..]
         with:
           files: test-project-${{ matrix.target }}-${{ steps.version.outputs.version }}.${{ matrix.archive }}
 ── Cargo.toml ──

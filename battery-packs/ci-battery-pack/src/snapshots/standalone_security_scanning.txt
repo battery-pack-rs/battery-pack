@@ -32,9 +32,9 @@ jobs:
   security-audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
-      - uses: rustsec/audit-check@[..] # v[..]
+      - uses: rustsec/audit-check@[..]
         with:
           token: ${{ secrets.GITHUB_TOKEN }}

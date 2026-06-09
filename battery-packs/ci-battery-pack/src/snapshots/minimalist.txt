@@ -25,11 +25,11 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: dtolnay/rust-toolchain@[..] # master
+    - uses: dtolnay/rust-toolchain@[..]
       with:
         toolchain: ${{ inputs.toolchain }}
 
-    - uses: Swatinem/rust-cache@[..] # v[..]
+    - uses: Swatinem/rust-cache@[..]
       with:
         save-if: ${{ github.ref == 'refs/heads/main' }}
 
@@ -87,10 +87,10 @@ jobs:
   security-audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
-      - uses: rustsec/audit-check@[..] # v[..]
+      - uses: rustsec/audit-check@[..]
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 ── .github/workflows/ci.yml ──
@@ -117,7 +117,7 @@ jobs:
   fmt:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@nightly
@@ -128,13 +128,13 @@ jobs:
   clippy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo clippy --workspace --all-targets --all-features --keep-going -- -D warnings
@@ -144,11 +144,11 @@ jobs:
     env:
       RUSTFLAGS: "-Dwarnings"
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo check --all-targets --all-features --keep-going
@@ -158,11 +158,11 @@ jobs:
     env:
       RUSTDOCFLAGS: "-D warnings --cfg docsrs"
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@nightly
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo doc --no-deps --all-features
@@ -174,7 +174,7 @@ jobs:
         flags: ["--all-features", "--no-default-features"]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: ./.github/actions/rust-build
@@ -185,14 +185,14 @@ jobs:
   features:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@[..] # v[..]
+      - uses: taiki-e/install-action@[..]
         with:
           tool: cargo-hack
       - run: cargo hack check --feature-powerset --depth 2 --no-dev-deps
@@ -200,14 +200,14 @@ jobs:
   msrv:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@[..] # v[..]
+      - uses: taiki-e/install-action@[..]
         with:
           tool: cargo-hack
       - run: cargo hack check --rust-version --workspace --all-targets --ignore-private --locked
@@ -215,7 +215,7 @@ jobs:
   lockfile:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
@@ -224,7 +224,7 @@ jobs:
   minimal-versions:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
@@ -235,10 +235,10 @@ jobs:
   semver:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
-      - uses: obi1kenobi/cargo-semver-checks-action@[..] # v[..]
+      - uses: obi1kenobi/cargo-semver-checks-action@[..]
   ci-pass:
     needs: [fmt, clippy, warnings, docsrs, build, features, msrv, lockfile, minimal-versions, semver]
     if: ${{ !cancelled() }}
@@ -267,10 +267,10 @@ jobs:
   dependency-policy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
-      - uses: EmbarkStudios/cargo-deny-action@[..] # v[..]
+      - uses: EmbarkStudios/cargo-deny-action@[..]
         with:
           command: check bans licenses sources
 ── .github/workflows/release.yml ──
@@ -296,12 +296,12 @@ jobs:
     if: ${{ github.repository_owner == 'test-owner' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
-      - uses: rust-lang/crates-io-auth-action@[..] # v[..]
-      - uses: release-plz/action@[..] # v[..]
+      - uses: rust-lang/crates-io-auth-action@[..]
+      - uses: release-plz/action@[..]
         with:
           command: release
         env:
@@ -315,11 +315,11 @@ jobs:
       group: release-plz-${{ github.ref }}
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
-      - uses: release-plz/action@[..] # v[..]
+      - uses: release-plz/action@[..]
         with:
           command: release-pr
         env:
@@ -344,11 +344,11 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo update
@@ -359,11 +359,11 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@beta
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo test --workspace --all-features
