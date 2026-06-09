@@ -59,16 +59,16 @@ mod tests {
     }
 
     fn mask_action_resolution_failure(line: &str) -> String {
-        if let Some((prefix, _)) = line.split_once("@could-not-resolve-git-sha-for-master # TODO:")
-        {
-            return format!("{prefix}@[..] # master");
-        }
-
-        if let Some((prefix, _)) = line.split_once("@could-not-resolve-git-sha-for-v") {
-            return format!("{prefix}@[..] # v[..]");
-        }
-
-        line.replace("@could@[..]", "@[..]")
+        let Some((prefix, suffix)) = line.split_once("@could-not-resolve-git-sha-for-") else {
+            return line.to_owned();
+        };
+        let unresolved_ref = suffix.split_whitespace().next().unwrap_or_default();
+        let masked_ref = if unresolved_ref == "master" {
+            "master"
+        } else {
+            "[..]"
+        };
+        format!("{prefix}@[..] # {masked_ref}")
     }
 
     fn mask_action_sha(line: &str) -> String {
