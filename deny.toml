@@ -21,6 +21,7 @@ allow = [
 ]
 
 exceptions = [
+    # Mozilla root certificates are distributed under CDLA-Permissive-2.0.
     { name = "webpki-root-certs", allow = ["CDLA-Permissive-2.0"] },
 ]
 
