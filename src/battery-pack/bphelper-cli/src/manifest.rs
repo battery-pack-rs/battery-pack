@@ -450,12 +450,14 @@ impl BatteryPackStateEntry {
                 all_features: true,
                 features: BTreeSet::new(),
                 managed_deps,
+                applied_templates: Vec::new(),
             },
             bphelper_manifest::ActiveFeatures::Subset(set) => Self {
                 name,
                 all_features: false,
                 features: normalized_feature_set(set),
                 managed_deps,
+                applied_templates: Vec::new(),
             },
         }
     }
@@ -672,6 +674,7 @@ pub(crate) fn record_applied_template(
         // No existing entry for this pack — create a minimal one.
         state.battery_pack.push(BatteryPackStateEntry {
             name: short_name(bp_name).to_string(),
+            all_features: false,
             features: default_feature_set(),
             managed_deps: Vec::new(),
             applied_templates: vec![template_name.to_string()],
