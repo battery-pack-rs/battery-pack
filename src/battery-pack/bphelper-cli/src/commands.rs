@@ -1388,35 +1388,27 @@ pub(crate) struct PickerResult {
     pub selected_templates: Vec<String>,
 }
 
-/// An item in the picker — either a feature, an individual crate, or a template.
-enum PickerItem {
-    Feature(String),  // feature name
-    Crate(String),    // crate name
-    Template(String), // template name
-}
-
 /// Show an interactive multi-select picker for choosing which crates to install.
 ///
-/// Features are listed first, then individual crates. `pre_selected` contains
-/// crate names already present in the project (for edit mode); when empty,
-/// the pack's default feature set is used for initial selection.
+/// Features are listed first, then individual crates, then actions (templates).
+/// `pre_selected` contains crate names already present in the project (for edit
+/// mode); when empty, the pack's default feature set is used for initial selection.
 ///
 /// Returns `None` if the user cancels.
 fn pick_crates_interactive(
     bp_spec: &bphelper_manifest::BatteryPackSpec,
     pre_selected: &BTreeSet<String>,
 ) -> Result<Option<PickerResult>> {
-    use console::style;
-    use dialoguer::MultiSelect;
+    use sectioned_picker::{PickerOutcome, Section, SectionItem, run_picker};
 
-    // Collect non-default features with their member crates
+    // Collect non-default features with their member crates.
     let features: Vec<(&String, &BTreeSet<bphelper_manifest::FeatureRef>)> = bp_spec
         .features
         .iter()
         .filter(|(name, _)| name.as_str() != "default")
         .collect();
 
-    // Collect all visible crates
+    // Collect all visible crates.
     let visible_crates: Vec<(&String, &bphelper_manifest::CrateSpec)> = bp_spec
         .crates
         .iter()
@@ -1438,120 +1430,141 @@ fn pick_crates_interactive(
         BTreeSet::new()
     };
 
-    // Build picker items: features first, then crates
-    let mut items: Vec<PickerItem> = Vec::new();
-    let mut labels: Vec<String> = Vec::new();
-    let mut defaults: Vec<bool> = Vec::new();
+    // Build sections for the picker.
+    let mut sections: Vec<Section> = Vec::new();
 
-    for (feat_name, feat_crates) in &features {
-        let member_list = feat_crates
+    // -- Features section --
+    if !features.is_empty() {
+        let items = features
             .iter()
-            .map(|fref| fref.dep_name())
-            .filter(|c| !bp_spec.is_hidden(c))
-            .collect::<Vec<_>>()
-            .join(", ");
-        labels.push(format!(
-            "✦ {} {}",
-            feat_name,
-            style(format!("[{}]", member_list)).dim()
-        ));
-        let checked = if use_defaults {
-            // Feature is checked if all its visible members are in defaults
-            feat_crates
-                .iter()
-                .map(|fref| fref.dep_name())
-                .filter(|c| !bp_spec.is_hidden(c))
-                .all(|c| default_crates.contains(c))
-        } else {
-            // Feature is checked if all its visible members are pre-selected
-            feat_crates
-                .iter()
-                .map(|fref| fref.dep_name())
-                .filter(|c| !bp_spec.is_hidden(c))
-                .all(|c| pre_selected.contains(c))
-        };
-        defaults.push(checked);
-        items.push(PickerItem::Feature(feat_name.to_string()));
-    }
-
-    for (crate_name, spec) in &visible_crates {
-        let version_info = if spec.features.is_empty() {
-            format!("({})", spec.version)
-        } else {
-            format!(
-                "({}, features: {})",
-                spec.version,
-                spec.features
+            .map(|(feat_name, feat_crates)| {
+                let member_list = feat_crates
                     .iter()
-                    .map(|s| s.as_str())
+                    .map(|fref| fref.dep_name())
+                    .filter(|c| !bp_spec.is_hidden(c))
                     .collect::<Vec<_>>()
-                    .join(", ")
-            )
-        };
-        labels.push(format!("  {} {}", crate_name, style(&version_info).dim()));
-        let checked = if use_defaults {
-            default_crates.contains(crate_name.as_str())
-        } else {
-            pre_selected.contains(crate_name.as_str())
-        };
-        defaults.push(checked);
-        items.push(PickerItem::Crate(crate_name.to_string()));
+                    .join(", ");
+                let checked = if use_defaults {
+                    feat_crates
+                        .iter()
+                        .map(|fref| fref.dep_name())
+                        .filter(|c| !bp_spec.is_hidden(c))
+                        .all(|c| default_crates.contains(c))
+                } else {
+                    feat_crates
+                        .iter()
+                        .map(|fref| fref.dep_name())
+                        .filter(|c| !bp_spec.is_hidden(c))
+                        .all(|c| pre_selected.contains(c))
+                };
+                SectionItem {
+                    label: format!("✦ {} [{}]", feat_name, member_list),
+                    checked,
+                }
+            })
+            .collect();
+        sections.push(Section {
+            title: "Features:".to_string(),
+            items,
+        });
     }
 
-    // Templates shown last, unchecked by default.
-    for (tmpl_name, tmpl_spec) in &bp_spec.templates {
-        let desc = tmpl_spec
-            .description
-            .as_deref()
-            .unwrap_or("project template");
-        labels.push(format!("  ⎙ {} {}", tmpl_name, style(desc).dim()));
-        defaults.push(false);
-        items.push(PickerItem::Template(tmpl_name.clone()));
+    // -- Dependencies section --
+    let dep_items = visible_crates
+        .iter()
+        .map(|(crate_name, spec)| {
+            let version_info = if spec.features.is_empty() {
+                format!("({})", spec.version)
+            } else {
+                format!(
+                    "({}, features: {})",
+                    spec.version,
+                    spec.features
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            };
+            let checked = if use_defaults {
+                default_crates.contains(crate_name.as_str())
+            } else {
+                pre_selected.contains(crate_name.as_str())
+            };
+            SectionItem {
+                label: format!("{} {}", crate_name, version_info),
+                checked,
+            }
+        })
+        .collect();
+    sections.push(Section {
+        title: "Dependencies:".to_string(),
+        items: dep_items,
+    });
+
+    // -- Actions section --
+    if !bp_spec.templates.is_empty() {
+        let items = bp_spec
+            .templates
+            .keys()
+            .map(|tmpl_name| SectionItem {
+                label: format!("Add `{}` template", tmpl_name),
+                checked: false,
+            })
+            .collect();
+        sections.push(Section {
+            title: "Actions:".to_string(),
+            items,
+        });
     }
 
-    // Show the picker
-    println!();
-    println!(
-        "  {} v{}",
-        style(&bp_spec.name).green().bold(),
-        style(&bp_spec.version).dim()
-    );
-    println!();
+    // Run the picker.
+    let title = format!("{} v{}", bp_spec.name, bp_spec.version);
+    let outcome = run_picker(&title, sections, Vec::new())?;
 
-    let selections = MultiSelect::new()
-        .with_prompt("Select features and crates")
-        .items(&labels)
-        .defaults(&defaults)
-        .interact_opt()
-        .context("Failed to show crate picker")?;
-
-    let Some(selected_indices) = selections else {
-        return Ok(None);
+    let section_results = match outcome {
+        PickerOutcome::Confirmed(results) => results,
+        PickerOutcome::Cancelled => return Ok(None),
     };
 
-    // Split the picker selection into feature names, direct crate names, and templates.
-    let selected_set: BTreeSet<usize> = selected_indices.into_iter().collect();
-    let mut picked_features = Vec::new();
-    let mut picked_crates = BTreeSet::new();
+    // Interpret the results by section.
+    let mut section_iter = section_results.into_iter();
+    let mut picked_features: Vec<String> = Vec::new();
+    let mut picked_crates: BTreeSet<String> = BTreeSet::new();
     let mut selected_templates: Vec<String> = Vec::new();
 
-    for (index, item) in items.iter().enumerate() {
-        if !selected_set.contains(&index) {
-            continue;
-        }
-
-        match item {
-            PickerItem::Feature(name) => picked_features.push(name.clone()),
-            PickerItem::Crate(name) => {
-                picked_crates.insert(name.clone());
-            }
-            PickerItem::Template(name) => {
-                selected_templates.push(name.clone());
+    // Features section (if present).
+    if !features.is_empty() {
+        if let Some(feature_checks) = section_iter.next() {
+            for (checked, (feat_name, _)) in feature_checks.iter().zip(features.iter()) {
+                if *checked {
+                    picked_features.push(feat_name.to_string());
+                }
             }
         }
     }
 
-    // Route picked features through the main resolver so per-dep features (`serde/derive`)
+    // Dependencies section.
+    if let Some(dep_checks) = section_iter.next() {
+        for (checked, (crate_name, _)) in dep_checks.iter().zip(visible_crates.iter()) {
+            if *checked {
+                picked_crates.insert(crate_name.to_string());
+            }
+        }
+    }
+
+    // Actions section (if present).
+    if !bp_spec.templates.is_empty() {
+        if let Some(action_checks) = section_iter.next() {
+            for (checked, tmpl_name) in action_checks.iter().zip(bp_spec.templates.keys()) {
+                if *checked {
+                    selected_templates.push(tmpl_name.clone());
+                }
+            }
+        }
+    }
+
+    // Route picked features through the main resolver so per-dep features (`serde/derive`),
     // weak refs (`serde?/derive`), and nested refs (`bundle = ["fancy"]`) reach the
     // result with correct CrateSpec.features.
     let feature_strs = picked_features
@@ -1565,7 +1578,7 @@ fn pick_crates_interactive(
         bp_spec.resolve_crates(&feature_strs)
     };
 
-    // Layer in directly-picked crates (their declared spec -- picked by name, not via
+    // Layer in directly-picked crates (their declared spec, picked by name, not via
     // a feature gate, so no per-dep feature accumulation).
     for name in &picked_crates {
         if bp_spec.is_hidden(name) {
