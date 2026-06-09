@@ -33,7 +33,7 @@ The `full` template scaffolds a complete project (Cargo.toml, src/lib.rs, README
 cargo bp new ci --name my-project
 ```
 
-Enable all optional features with `-d all`, or pick individual ones interactively. You can also pass them on the command line:
+Use `-d all` to enable every optional feature, or pass individual flags:
 
 ```sh
 cargo bp new ci --name my-project -d benchmarks -d fuzzing -d spellcheck
