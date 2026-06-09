@@ -1,0 +1,3 @@
+{%- if all or license_scanning -%}
+{% include "templates/license-scanning/.github/workflows/dependency-policy.yml" %}
+{%- endif %}

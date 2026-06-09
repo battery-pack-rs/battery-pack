@@ -1,6 +1,5 @@
 {%- if ci_platform == "github" -%}
-# https://embarkstudios.github.io/cargo-deny/
-name: Audit
+name: Security audit
 
 on:
   push:
@@ -13,29 +12,23 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-
+{% if publish_audit_issues %}  checks: write
+{% endif %}  contents: read
+{% if publish_audit_issues %}  issues: write
+{% endif %}
 jobs:
-  # Advisories are non-blocking: new advisories shouldn't break CI for unrelated PRs
-  advisories:
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: {{ pin_github_action("actions/checkout", "v6") }}
-        with:
-          persist-credentials: false
-      - uses: {{ pin_github_action("EmbarkStudios/cargo-deny-action", "v2") }}
-        with:
-          command: check advisories
-
-  # Licenses, bans, and sources are blocking: these are the user's responsibility
-  deny:
+  security-audit:
     runs-on: ubuntu-latest
     steps:
       - uses: {{ pin_github_action("actions/checkout", "v6") }}
         with:
           persist-credentials: false
-      - uses: {{ pin_github_action("EmbarkStudios/cargo-deny-action", "v2") }}
+{% if publish_audit_issues %}      - uses: {{ pin_github_action("rustsec/audit-check", "v2") }}
         with:
-          command: check bans licenses sources
+          token: {% raw %}${{ secrets.GITHUB_TOKEN }}{% endraw %}
+{% else %}      - uses: {{ pin_github_action("taiki-e/install-action", "v2") }}
+        with:
+          tool: cargo-audit
+      - run: cargo audit --deny warnings --file ./Cargo.lock
+{% endif %}
 {%- endif %}

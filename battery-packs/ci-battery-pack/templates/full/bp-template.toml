@@ -24,6 +24,16 @@ type = "bool"
 prompt = "Include trusted publishing (release-plz)?"
 default = "true"
 
+[placeholders.publish_audit_issues]
+type = "bool"
+prompt = "Publish RustSec audit issues on scheduled runs?"
+default = "true"
+
+[placeholders.license_scanning]
+type = "bool"
+prompt = "Include cargo-deny license, ban, and source checks?"
+default = "false"
+
 [placeholders.benchmarks]
 type = "bool"
 prompt = "Include benchmark CI (Criterion + Bencher)?"

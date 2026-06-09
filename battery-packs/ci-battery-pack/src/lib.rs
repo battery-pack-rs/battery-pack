@@ -39,6 +39,25 @@ mod tests {
                 file.content.trim_end()
             ));
         }
+        mask_unresolved_action_pins(&out)
+    }
+
+    fn mask_unresolved_action_pins(snapshot: &str) -> String {
+        let mut out = String::new();
+        for line in snapshot.lines() {
+            if let Some((prefix, _)) =
+                line.split_once("@could-not-resolve-git-sha-for-master # TODO:")
+            {
+                out.push_str(prefix);
+                out.push_str("@[..] # master\n");
+            } else if let Some((prefix, _)) = line.split_once("@could-not-resolve-git-sha-for-v") {
+                out.push_str(prefix);
+                out.push_str("@[..] # v[..]\n");
+            } else {
+                out.push_str(&line.replace("@could@[..]", "@[..]"));
+                out.push('\n');
+            }
+        }
         out
     }
 
@@ -57,6 +76,26 @@ mod tests {
         );
     }
 
+    #[test]
+    fn audit_issue_publication_can_be_disabled() {
+        let files = PreviewBuilder::new(env!("CARGO_MANIFEST_DIR"))
+            .template("templates/full")
+            .define("ci_platform", "github")
+            .define("repo_owner", "test-owner")
+            .define("publish_audit_issues", "false")
+            .preview()
+            .unwrap();
+        let audit = files
+            .iter()
+            .find(|f| f.path == ".github/workflows/audit.yml")
+            .unwrap();
+
+        assert!(!audit.content.contains("issues: write"));
+        assert!(!audit.content.contains("checks: write"));
+        assert!(!audit.content.contains("rustsec/audit-check"));
+        assert!(audit.content.contains("cargo audit --deny warnings"));
+    }
+
     // -- Merged snapshot tests --
     // Each test renders a template and snapshots ALL rendered files.
     // SHAs, MSRV, and version comments are masked with [..] in snapshot files.
@@ -64,7 +103,7 @@ mod tests {
     // To update after template changes:
     //   SNAPSHOTS=overwrite cargo test -p ci-battery-pack -- snapshot_
     // Then re-apply masks with:
-    //   sed -i 's/@[0-9a-f]\{40\}/@[..]/g; s/# v[0-9]*\.[0-9]*\.[0-9]*/# v[..]/g; s/rust-version = "[^"]*"/rust-version = "[..]"/g' battery-packs/ci-battery-pack/src/snapshots/*.txt
+    //   sed -i 's/@could-not-resolve-git-sha-for-master # TODO:.*$/@[..] # master/g; s/@could-not-resolve-git-sha-for-v[0-9][0-9]* # TODO:.*$/@[..] # v[..]/g; s/@could@\[\.\.\]/@[..]/g; s/@[0-9a-f]\{40\}/@[..]/g; s/# v[0-9]*\.[0-9]*\.[0-9]*/# v[..]/g; s/rust-version = "[^"]*"/rust-version = "[..]"/g' battery-packs/ci-battery-pack/src/snapshots/*.txt
 
     #[test]
     fn snapshot_minimalist() {
@@ -156,6 +195,14 @@ mod tests {
         assert_snapshot(
             snapshot("clippy-sarif", &[]),
             file!["snapshots/standalone_clippy_sarif.txt"],
+        );
+    }
+
+    #[test]
+    fn snapshot_standalone_license_scanning() {
+        assert_snapshot(
+            snapshot("license-scanning", &[]),
+            file!["snapshots/standalone_license_scanning.txt"],
         );
     }
 }

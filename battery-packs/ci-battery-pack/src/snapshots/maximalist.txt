@@ -57,8 +57,7 @@ updates:
     schedule:
       interval: "weekly"
 ── .github/workflows/audit.yml ──
-# https://embarkstudios.github.io/cargo-deny/
-name: Audit
+name: Security audit
 
 on:
   push:
@@ -71,31 +70,20 @@ on:
   workflow_dispatch:
 
 permissions:
+  checks: write
   contents: read
+  issues: write
 
 jobs:
-  # Advisories are non-blocking: new advisories shouldn't break CI for unrelated PRs
-  advisories:
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@[..] # v[..]
-        with:
-          persist-credentials: false
-      - uses: EmbarkStudios/cargo-deny-action@[..] # v[..]
-        with:
-          command: check advisories
-
-  # Licenses, bans, and sources are blocking: these are the user's responsibility
-  deny:
+  security-audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@[..] # v[..]
         with:
           persist-credentials: false
-      - uses: EmbarkStudios/cargo-deny-action@[..] # v[..]
+      - uses: rustsec/audit-check@[..] # v[..]
         with:
-          command: check bans licenses sources
+          token: ${{ secrets.GITHUB_TOKEN }}
 ── .github/workflows/build-binaries.yml ──
 # Builds cross-platform binaries and uploads to GitHub Releases.
 # Binaries are discoverable by cargo-binstall (https://github.com/cargo-bins/cargo-binstall).
@@ -305,7 +293,7 @@ jobs:
       - uses: actions/checkout@[..] # v[..]
         with:
           persist-credentials: false
-      - uses: obi1kenobi/cargo-semver-checks-action@[..] # v2
+      - uses: obi1kenobi/cargo-semver-checks-action@[..] # v[..]
   # Test on macOS and Windows to catch platform-specific issues.
   cross-platform:
     strategy:
@@ -478,6 +466,39 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: jq --exit-status 'all(.result == "success" or .result == "skipped")' <<< '${{ toJson(needs) }}'
+── .github/workflows/dependency-policy.yml ──
+# https://embarkstudios.github.io/cargo-deny/
+name: Dependency policy
+
+on:
+  push:
+    paths:
+      - ".github/workflows/dependency-policy.yml"
+      - "deny.toml"
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+  pull_request:
+    paths:
+      - ".github/workflows/dependency-policy.yml"
+      - "deny.toml"
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..] # v[..]
+        with:
+          persist-credentials: false
+      - uses: EmbarkStudios/cargo-deny-action@[..] # v[..]
+        with:
+          command: check bans licenses sources
 ── .github/workflows/fuzz-nightly.yml ──
 
 # https://github.com/rust-fuzz/cargo-fuzz
@@ -785,22 +806,34 @@ src = "md"
 ── deny.toml ──
 # https://embarkstudios.github.io/cargo-deny/
 
-[advisories]
-unmaintained = "workspace"
-yanked = "warn"
-
 [licenses]
 allow = [
     "MIT",
     "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
     "Unicode-3.0",
-    "CC0-1.0",
     "Zlib",
     "MPL-2.0",
 ]
+
+confidence-threshold = 1.0
+
+# Add audited exceptions for crates outside the default policy.
+# exceptions = [
+#     { name = "ring", allow = ["OpenSSL"] },
+# ]
+
+# Clarify license files when cargo-deny cannot infer attribution.
+# [[licenses.clarify]]
+# name = "example-crate"
+# expression = "MIT OR Apache-2.0"
+# license-files = [
+#     { path = "LICENSE-MIT", hash = 0x00000000 },
+#     { path = "LICENSE-APACHE", hash = 0x00000000 },
+# ]
 
 [bans]
 multiple-versions = "warn"
