@@ -6,7 +6,7 @@ default = "github"
 
 [placeholders.post_issue]
 type = "bool"
-prompt = "Publish RustSec audit issues on scheduled runs?"
+prompt = "Post issues with RustSec audit findings on scheduled runs?"
 default = "true"
 
 [[hints]]
