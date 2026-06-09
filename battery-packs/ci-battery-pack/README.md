@@ -2,11 +2,9 @@
 
 A [battery pack](https://crates.io/crates/battery-pack) for GitHub Actions CI in Rust projects. Generates pinned workflows with the project's MSRV.
 
-Currently supports GitHub Actions.
-
 ## Adding CI to an existing project
 
-Each CI feature is available as a standalone template you can merge into your project with `cargo bp add`:
+Each workflow or scaffold is available as a standalone template you can merge into your project with `cargo bp add`:
 
 ```sh
 cargo bp add ci -t spellcheck
@@ -50,14 +48,11 @@ cargo bp new ci --name my-project -d benchmarks -d fuzzing -d spellcheck
 - Dependency policy workflow
 - Dependabot config for Cargo and GitHub Actions updates
 
-### Optional features
-
-Most flags default to false. `trusted_publishing`, `audit_issue`, and `dependency_policy` default to true.
+### Template flags
 
 | Flag | Default | What it adds | Curated deps |
 |------|---------|-------------|-------------|
 | `trusted_publishing` | true | [release-plz](https://release-plz.dev/) with OIDC trusted publishing | |
-| `audit_issue` | true | Publish GitHub issues for RustSec advisories on scheduled runs | |
 | `dependency_policy` | true | [cargo-deny](https://embarkstudios.github.io/cargo-deny/) license, bans, and source policy | |
 | `binary_release` | false | Cross-platform binary builds for GitHub Releases + [cargo-binstall](https://github.com/cargo-bins/cargo-binstall) | |
 | `benchmarks` | false | [Criterion](https://crates.io/crates/criterion) bench scaffold + [Bencher](https://bencher.dev/) regression detection | `criterion` |
