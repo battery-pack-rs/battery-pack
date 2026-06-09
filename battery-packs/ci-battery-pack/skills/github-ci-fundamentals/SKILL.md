@@ -80,7 +80,7 @@ cargo bp add ci -t mutation-testing     # cargo-mutants workflow
 cargo bp add ci -t clippy-sarif         # PR annotations via SARIF
 cargo bp add ci -t mdbook               # mdBook + GitHub Pages
 cargo bp add ci -t xtask                # cargo-xtask scaffold
-cargo bp add ci -t stress-test         # nextest stress testing
+cargo bp add ci -t stress-test          # nextest stress testing
 ```
 
 Preview before applying: `cargo bp show ci -t fuzzing`
