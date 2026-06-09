@@ -1,0 +1,31 @@
+# https://embarkstudios.github.io/cargo-deny/
+name: Dependency policy
+
+on:
+  push:
+    paths:
+      - ".github/workflows/dependency-policy.yml"
+      - "deny.toml"
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+  pull_request:
+    paths:
+      - ".github/workflows/dependency-policy.yml"
+      - "deny.toml"
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  licenses:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check bans licenses sources
