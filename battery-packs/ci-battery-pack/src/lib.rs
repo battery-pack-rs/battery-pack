@@ -39,26 +39,61 @@ mod tests {
                 file.content.trim_end()
             ));
         }
-        mask_unresolved_action_pins(&out)
+        normalize_snapshot_output(&out)
     }
 
-    fn mask_unresolved_action_pins(snapshot: &str) -> String {
+    fn normalize_snapshot_output(snapshot: &str) -> String {
         let mut out = String::new();
         for line in snapshot.lines() {
-            if let Some((prefix, _)) =
+            let line = if let Some((prefix, _)) =
                 line.split_once("@could-not-resolve-git-sha-for-master # TODO:")
             {
-                out.push_str(prefix);
-                out.push_str("@[..] # master\n");
+                format!("{prefix}@[..] # master")
             } else if let Some((prefix, _)) = line.split_once("@could-not-resolve-git-sha-for-v") {
-                out.push_str(prefix);
-                out.push_str("@[..] # v[..]\n");
+                format!("{prefix}@[..] # v[..]")
             } else {
-                out.push_str(&line.replace("@could@[..]", "@[..]"));
-                out.push('\n');
-            }
+                line.replace("@could@[..]", "@[..]")
+            };
+            let line = mask_action_sha(&line);
+            let line = mask_action_version_comment(&line);
+            let line = mask_rust_version(&line);
+            out.push_str(&line);
+            out.push('\n');
         }
         out
+    }
+
+    fn mask_action_sha(line: &str) -> String {
+        let mut out = String::with_capacity(line.len());
+        let mut rest = line;
+        while let Some(index) = rest.find('@') {
+            out.push_str(&rest[..index + 1]);
+            let candidate = &rest[index + 1..];
+            if candidate.len() >= 40 && candidate[..40].bytes().all(|b| b.is_ascii_hexdigit()) {
+                out.push_str("[..]");
+                rest = &candidate[40..];
+            } else {
+                rest = candidate;
+            }
+        }
+        out.push_str(rest);
+        out
+    }
+
+    fn mask_action_version_comment(line: &str) -> String {
+        if let Some((prefix, suffix)) = line.split_once(" # v")
+            && suffix.bytes().next().is_some_and(|b| b.is_ascii_digit())
+        {
+            return format!("{prefix} # v[..]");
+        }
+        line.to_owned()
+    }
+
+    fn mask_rust_version(line: &str) -> String {
+        if line.starts_with("rust-version = \"") {
+            return "rust-version = \"[..]\"".to_owned();
+        }
+        line.to_owned()
     }
 
     #[test]
@@ -135,12 +170,10 @@ mod tests {
 
     // -- Merged snapshot tests --
     // Each test renders a template and snapshots ALL rendered files.
-    // SHAs, MSRV, and version comments are masked with [..] in snapshot files.
+    // SHAs, MSRV, and version comments are masked with [..] before comparison.
     //
     // To update after template changes:
     //   SNAPSHOTS=overwrite cargo test -p ci-battery-pack -- snapshot_
-    // Then re-apply masks with:
-    //   sed -i 's/@could-not-resolve-git-sha-for-master # TODO:.*$/@[..] # master/g; s/@could-not-resolve-git-sha-for-v[0-9][0-9]* # TODO:.*$/@[..] # v[..]/g; s/@could@\[\.\.\]/@[..]/g; s/@[0-9a-f]\{40\}/@[..]/g; s/# v[0-9]*\.[0-9]*\.[0-9]*/# v[..]/g; s/rust-version = "[^"]*"/rust-version = "[..]"/g' battery-packs/ci-battery-pack/src/snapshots/*.txt
 
     #[test]
     fn snapshot_minimalist() {
