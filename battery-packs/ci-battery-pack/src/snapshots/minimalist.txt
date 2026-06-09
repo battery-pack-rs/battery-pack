@@ -1,3 +1,14 @@
+── .cargo/audit.toml ──
+# https://github.com/rustsec/rustsec/tree/main/cargo-audit
+#
+# [advisories]
+# Raise this threshold to quiet lower-severity advisories.
+# severity_threshold = "low"
+#
+# ignore = [
+#     # Non-utf8 String can be created with `TimeBuf::as_str`
+#     "RUSTSEC-2025-0140",
+# ]
 ── .github/actions/rust-build/action.yml ──
 name: Rust Test
 description: Install toolchain, cache, build, and test a Rust project.
@@ -60,6 +71,7 @@ on:
   push:
     paths:
       - ".github/workflows/audit.yml"
+      - ".cargo/audit.toml"
       - "**/Cargo.toml"
       - "**/Cargo.lock"
   schedule:

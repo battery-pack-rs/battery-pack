@@ -1,0 +1,10 @@
+# https://github.com/rustsec/rustsec/tree/main/cargo-audit
+#
+# [advisories]
+# Raise this threshold to quiet lower-severity advisories.
+# severity_threshold = "low"
+#
+# ignore = [
+#     # Non-utf8 String can be created with `TimeBuf::as_str`
+#     "RUSTSEC-2025-0140",
+# ]
