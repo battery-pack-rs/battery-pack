@@ -14,16 +14,17 @@ on:
       - "deny.toml"
       - "**/Cargo.toml"
       - "**/Cargo.lock"
+  merge_group:
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  licenses:
+  dependency-policy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - uses: EmbarkStudios/cargo-deny-action@v2
