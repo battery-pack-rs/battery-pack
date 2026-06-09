@@ -31,9 +31,9 @@ The core CI workflow (`ci.yml`) runs on PRs, merge queue, and pushes to main. It
 | `minimal-versions` | Generates a minimal-version lockfile, then checks with stable |
 | `semver` | `cargo-semver-checks` (catches accidental breaking changes) |
 
-A separate `audit.yml` runs RustSec audit-check daily and on Cargo manifest, lockfile, or audit workflow changes. By default, scheduled runs publish GitHub issues; set `audit_issue=false` to run cargo audit directly without issue creation.
+`audit.yml` runs RustSec audit-check daily and on Cargo manifest, lockfile, or audit workflow changes. Set `audit_issue=false` to run `cargo audit` without issue creation.
 
-By default, `dependency-policy.yml` runs cargo-deny for licenses, bans, and sources; set `dependency_policy=false` to skip it.
+`dependency-policy.yml` runs cargo-deny for licenses, bans, and sources. Set `dependency_policy=false` to skip it.
 
 ## The Gate Job Pattern
 
@@ -78,8 +78,8 @@ cargo bp add ci -t dependency-policy    # cargo-deny licenses, bans, sources
 cargo bp add ci -t spellcheck           # typos config + workflow
 cargo bp add ci -t mutation-testing     # cargo-mutants workflow
 cargo bp add ci -t clippy-sarif         # PR annotations via SARIF
-cargo bp add ci -t mdbook              # mdBook + GitHub Pages
-cargo bp add ci -t xtask              # cargo-xtask scaffold
+cargo bp add ci -t mdbook               # mdBook + GitHub Pages
+cargo bp add ci -t xtask                # cargo-xtask scaffold
 cargo bp add ci -t stress-test         # nextest stress testing
 ```
 
