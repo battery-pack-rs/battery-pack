@@ -16,9 +16,12 @@ allow = [
     "Unicode-DFS-2016",
     "Unicode-3.0",
     "CC0-1.0",
-    "CDLA-Permissive-2.0",
     "Zlib",
     "MPL-2.0",
+]
+
+exceptions = [
+    { name = "webpki-root-certs", allow = ["CDLA-Permissive-2.0"] },
 ]
 
 [bans]
