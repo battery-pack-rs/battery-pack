@@ -31,7 +31,7 @@ The core CI workflow (`ci.yml`) runs on PRs, merge queue, and pushes to main. It
 | `minimal-versions` | Generates a minimal-version lockfile, then checks with stable |
 | `semver` | `cargo-semver-checks` (catches accidental breaking changes) |
 
-A separate `audit.yml` runs cargo-deny for advisories (non-blocking), licenses, bans, and sources (blocking).
+A separate `audit.yml` runs cargo-deny for advisories (non-blocking), licenses, bans, and sources (blocking). It runs daily and when Cargo manifests, lockfiles, or the audit workflow change.
 
 ## The Gate Job Pattern
 

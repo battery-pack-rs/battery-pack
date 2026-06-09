@@ -44,7 +44,7 @@ cargo bp new ci --name my-project -d benchmarks -d fuzzing -d spellcheck
 ### Core CI (GitHub Actions)
 
 - CI workflow: fmt, clippy, warnings check, docsrs check, build matrix (stable × nightly), feature powerset, MSRV, semver-checks, gate job
-- Security audit workflow (cargo-deny, daily + on Cargo.toml changes)
+- Security audit workflow (cargo-deny, daily + on Cargo manifest, lockfile, and audit workflow changes)
 - Dependabot config for Cargo and GitHub Actions updates
 - cargo-deny config (`deny.toml`)
 
