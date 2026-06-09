@@ -43,24 +43,32 @@ mod tests {
     }
 
     fn normalize_snapshot_output(snapshot: &str) -> String {
-        let mut out = String::new();
-        for line in snapshot.lines() {
-            let line = if let Some((prefix, _)) =
-                line.split_once("@could-not-resolve-git-sha-for-master # TODO:")
-            {
-                format!("{prefix}@[..] # master")
-            } else if let Some((prefix, _)) = line.split_once("@could-not-resolve-git-sha-for-v") {
-                format!("{prefix}@[..] # v[..]")
-            } else {
-                line.replace("@could@[..]", "@[..]")
-            };
-            let line = mask_action_sha(&line);
-            let line = mask_action_version_comment(&line);
-            let line = mask_rust_version(&line);
-            out.push_str(&line);
-            out.push('\n');
+        snapshot
+            .lines()
+            .map(normalize_snapshot_line)
+            .collect::<Vec<_>>()
+            .join("\n")
+            + "\n"
+    }
+
+    fn normalize_snapshot_line(line: &str) -> String {
+        let line = mask_action_resolution_failure(line);
+        let line = mask_action_sha(&line);
+        let line = mask_action_version_comment(&line);
+        mask_rust_version(&line)
+    }
+
+    fn mask_action_resolution_failure(line: &str) -> String {
+        if let Some((prefix, _)) = line.split_once("@could-not-resolve-git-sha-for-master # TODO:")
+        {
+            return format!("{prefix}@[..] # master");
         }
-        out
+
+        if let Some((prefix, _)) = line.split_once("@could-not-resolve-git-sha-for-v") {
+            return format!("{prefix}@[..] # v[..]");
+        }
+
+        line.replace("@could@[..]", "@[..]")
     }
 
     fn mask_action_sha(line: &str) -> String {
