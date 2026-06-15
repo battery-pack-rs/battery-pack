@@ -1309,7 +1309,7 @@ fn pick_crates_interactive(
     use dialoguer::MultiSelect;
 
     // Collect non-default features with their member crates
-    let features: Vec<(&String, &BTreeSet<String>)> = bp_spec
+    let features: Vec<(&String, &BTreeSet<bphelper_manifest::FeatureRef>)> = bp_spec
         .features
         .iter()
         .filter(|(name, _)| name.as_str() != "default")
@@ -1345,8 +1345,8 @@ fn pick_crates_interactive(
     for (feat_name, feat_crates) in &features {
         let member_list = feat_crates
             .iter()
+            .map(|fref| fref.dep_name())
             .filter(|c| !bp_spec.is_hidden(c))
-            .cloned()
             .collect::<Vec<_>>()
             .join(", ");
         labels.push(format!(
@@ -1358,12 +1358,14 @@ fn pick_crates_interactive(
             // Feature is checked if all its visible members are in defaults
             feat_crates
                 .iter()
+                .map(|fref| fref.dep_name())
                 .filter(|c| !bp_spec.is_hidden(c))
                 .all(|c| default_crates.contains(c))
         } else {
             // Feature is checked if all its visible members are pre-selected
             feat_crates
                 .iter()
+                .map(|fref| fref.dep_name())
                 .filter(|c| !bp_spec.is_hidden(c))
                 .all(|c| pre_selected.contains(c))
         };
@@ -1426,9 +1428,10 @@ fn pick_crates_interactive(
         match item {
             PickerItem::Feature(feat_name) => {
                 if let Some(members) = bp_spec.features.get(feat_name) {
-                    for c in members {
+                    for fref in members {
+                        let c = fref.dep_name();
                         if !bp_spec.is_hidden(c) {
-                            selected_crates.insert(c.clone());
+                            selected_crates.insert(c.to_string());
                         }
                     }
                 }
@@ -1454,6 +1457,7 @@ fn pick_crates_interactive(
     if default_members.is_some_and(|members| {
         members
             .iter()
+            .map(|r| r.dep_name())
             .filter(|c| !bp_spec.is_hidden(c))
             .all(|c| selected_crates.contains(c))
     }) {
@@ -1465,6 +1469,7 @@ fn pick_crates_interactive(
         }
         if feat_crates
             .iter()
+            .map(|r| r.dep_name())
             .filter(|c| !bp_spec.is_hidden(c))
             .all(|c| selected_crates.contains(c))
         {

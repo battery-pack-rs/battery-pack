@@ -4,5 +4,12 @@ members = [
     "fancy-battery-pack",
     "broken-battery-pack",
     "managed-battery-pack",
+    "feature-syntax-battery-pack",
+    "optional-feature-battery-pack",
+    "mixed-kinds-battery-pack",
+    "_stubs/fake-serde",
+    "_stubs/fake-anyhow",
+    "_stubs/fake-insta",
+    "_stubs/fake-cc",
 ]
 resolver = "2"

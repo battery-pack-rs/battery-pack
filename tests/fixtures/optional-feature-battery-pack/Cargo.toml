@@ -1,0 +1,12 @@
+[package]
+name = "optional-feature-battery-pack"
+version = "0.1.0"
+edition = "2021"
+description = "Regression fixture: `fancy = [\"fake-serde/derive\"]` must keep the `derive` feature"
+keywords = ["battery-pack"]
+
+[dependencies]
+fake-serde = { path = "../_stubs/fake-serde", optional = true }
+
+[features]
+fancy = ["fake-serde/derive"]

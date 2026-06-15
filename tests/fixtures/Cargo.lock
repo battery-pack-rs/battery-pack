@@ -265,6 +265,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "fake-anyhow"
+version = "0.0.1"
+
+[[package]]
+name = "fake-cc"
+version = "0.0.1"
+
+[[package]]
+name = "fake-insta"
+version = "0.0.1"
+
+[[package]]
+name = "fake-serde"
+version = "0.0.1"
+
+[[package]]
 name = "fancy-battery-pack"
 version = "0.2.0"
 dependencies = [
@@ -284,6 +300,14 @@ name = "fastrand"
 version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f1f227452a390804cdb637b74a86990f2a7d7ba4b7d5693aac9b4dd6defd8d6"
+
+[[package]]
+name = "feature-syntax-battery-pack"
+version = "0.1.0"
+dependencies = [
+ "fake-anyhow",
+ "fake-serde",
+]
 
 [[package]]
 name = "find-msvc-tools"
@@ -452,6 +476,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
+name = "mixed-kinds-battery-pack"
+version = "0.1.0"
+dependencies = [
+ "fake-cc",
+ "fake-insta",
+ "fake-serde",
+]
+
+[[package]]
 name = "normalize-line-endings"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -483,6 +516,13 @@ name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
+
+[[package]]
+name = "optional-feature-battery-pack"
+version = "0.1.0"
+dependencies = [
+ "fake-serde",
+]
 
 [[package]]
 name = "portable-atomic"

@@ -127,6 +127,7 @@ fn test_context_features() {
         .iter()
         .find(|f| f.name == "indicators")
         .unwrap();
+    // Lexicographic order from `BTreeSet<FeatureRef>` iteration.
     assert_eq!(indicators.crates, vec!["console", "indicatif"]);
 }
 

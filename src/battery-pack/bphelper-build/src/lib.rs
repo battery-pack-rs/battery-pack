@@ -111,9 +111,9 @@ pub fn build_context(
     let features = spec
         .features
         .iter()
-        .map(|(name, crate_names)| FeatureEntry {
+        .map(|(name, refs)| FeatureEntry {
             name: name.clone(),
-            crates: crate_names.iter().cloned().collect(),
+            crates: refs.iter().map(|r| r.dep_name().to_string()).collect(),
         })
         .collect();
 

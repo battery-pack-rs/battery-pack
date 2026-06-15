@@ -6,6 +6,9 @@
 #[cfg(test)]
 mod test_support;
 
+mod feature_ref;
+pub use feature_ref::{FeatureParseError, FeatureRef};
+
 use cargo_metadata::{DependencyKind, Metadata, MetadataCommand, Package};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -29,6 +32,12 @@ pub enum Error {
 
     #[error("feature '{feature}' references unknown crate '{crate_name}'")]
     UnknownCrateInFeature { feature: String, crate_name: String },
+
+    #[error("feature `{feature}` has invalid reference `{raw}`")]
+    FeatureRefParse { feature: String, raw: String },
+
+    #[error("cycle in local feature references: {path}")]
+    FeatureCycle { path: String },
 
     #[error("reading {path}: {source}")]
     Io {
@@ -171,26 +180,14 @@ pub struct BatteryPackSpec {
     /// All curated crates, keyed by crate name.
     // [impl format.deps.source-of-truth]
     pub crates: BTreeMap<String, CrateSpec>,
-    /// Named features from `[features]`, mapping feature name to crate names.
+    /// Named features from `[features]`, mapping feature name to parsed refs.
     // [impl format.features.grouping]
-    pub features: BTreeMap<String, BTreeSet<String>>,
+    pub features: BTreeMap<String, BTreeSet<FeatureRef>>,
     /// Hidden dependency patterns (may include globs).
     // [impl format.hidden.metadata]
     pub hidden: BTreeSet<String>,
     /// Templates registered in metadata.
     pub templates: BTreeMap<String, TemplateSpec>,
-}
-
-/// Extract the crate name from a Cargo feature reference.
-///
-/// - `"foo"`
-/// - `"dep:foo"`
-/// - `"foo/bar"`
-/// - `"foo?/bar"`
-fn crate_from_feature_reference(s: &str) -> &str {
-    let crt = s.strip_prefix("dep:").unwrap_or(s);
-    let crt = crt.split('/').next().unwrap_or(crt);
-    crt.strip_suffix('?').unwrap_or(crt)
 }
 
 impl BatteryPackSpec {
@@ -206,24 +203,77 @@ impl BatteryPackSpec {
         Ok(())
     }
 
-    /// Check that all feature entries reference crates that actually exist.
+    /// Check that all feature entries reference crates that actually exists, and that
+    /// local-feature reference do not form cycles.
     fn validate_features(&self) -> Result<(), Error> {
-        for (feature_name, crate_names) in &self.features {
-            for crate_name in crate_names {
-                if !self
-                    .crates
-                    .contains_key(crate_from_feature_reference(crate_name))
-                {
+        for (feature_name, refs) in &self.features {
+            for fref in refs {
+                if !self.reference_resolves(fref) {
                     return Err(Error::UnknownCrateInFeature {
                         feature: feature_name.clone(),
-                        crate_name: crate_name.clone(),
+                        crate_name: fref.dep_name().to_string(),
                     });
                 }
             }
         }
+        // Cycle detection over local-feature edges.
+        let mut visited = BTreeSet::new();
+        let mut stack = Vec::new();
+
+        for start in self.features.keys() {
+            self.dfs_feature(start, &mut stack, &mut visited)?;
+        }
         Ok(())
     }
 
+    /// Does this reference's target exist?
+    /// `Dep`/`DepFeature` must point at a declared crate; bare `Feature` may be either
+    /// a local feature key or a dep.
+    fn reference_resolves(&self, fref: &FeatureRef) -> bool {
+        let target = fref.dep_name();
+
+        match fref {
+            FeatureRef::Dep(_) | FeatureRef::DepFeature { .. } => self.crates.contains_key(target),
+            FeatureRef::Feature(_) => {
+                self.crates.contains_key(target) || self.features.contains_key(target)
+            }
+        }
+    }
+
+    fn dfs_feature(
+        &self,
+        node: &str,
+        stack: &mut Vec<String>,
+        visited: &mut BTreeSet<String>,
+    ) -> Result<(), Error> {
+        if stack.iter().any(|stacked| stacked == node) {
+            let mut cycle = stack.clone();
+            cycle.push(node.to_string());
+
+            return Err(Error::FeatureCycle {
+                path: cycle.join("->"),
+            });
+        }
+
+        if !visited.insert(node.to_string()) {
+            return Ok(());
+        }
+
+        stack.push(node.to_string());
+
+        if let Some(refs) = self.features.get(node) {
+            for fref in refs {
+                if let FeatureRef::Feature(name) = fref
+                    && self.features.contains_key(name)
+                {
+                    self.dfs_feature(name, stack, visited)?;
+                }
+            }
+        }
+
+        stack.pop();
+        Ok(())
+    }
     /// Comprehensive spec validation — collects all issues rather than
     /// failing on the first one. Checks data-only rules from the spec.
     pub fn validate_spec(&self) -> ValidationReport {
@@ -254,17 +304,14 @@ impl BatteryPackSpec {
         }
 
         // [impl format.features.grouping]
-        for (feature_name, crate_names) in &self.features {
-            for crate_name in crate_names {
-                if !self
-                    .crates
-                    .contains_key(crate_from_feature_reference(crate_name))
-                {
+        for (feature_name, refs) in &self.features {
+            for fref in refs {
+                if !self.reference_resolves(fref) {
                     report.error(
                         "format.features.grouping",
                         format!(
-                            "feature '{}' references unknown crate '{}'",
-                            feature_name, crate_name
+                            "feature '{feature_name}' references unknown crate '{}'",
+                            fref.dep_name()
                         ),
                     );
                 }
@@ -284,16 +331,20 @@ impl BatteryPackSpec {
     // [impl format.features.additive]
     pub fn resolve_crates(&self, active_features: &[&str]) -> BTreeMap<String, CrateSpec> {
         let mut result: BTreeMap<String, CrateSpec> = BTreeMap::new();
+        let mut visiting: BTreeSet<String> = BTreeSet::new();
+
+        // Weak `foo?/bar` refs are deferred -- they only add features to deps activated by something else in this combo.
+        //  [impl feature-refs.resolution.weak]
+        let mut pending_weak: Vec<(String, String)> = Vec::new();
 
         if active_features.is_empty() {
-            // Default resolution
-            self.add_default_crates(&mut result);
+            self.add_default_crates(&mut result, &mut visiting, &mut pending_weak);
         } else {
             for feature_name in active_features {
                 if *feature_name == "default" {
-                    self.add_default_crates(&mut result);
-                } else if let Some(crate_names) = self.features.get(*feature_name) {
-                    self.add_feature_crates(crate_names, &mut result);
+                    self.add_default_crates(&mut result, &mut visiting, &mut pending_weak);
+                } else if let Some(refs) = self.features.get(*feature_name) {
+                    self.add_feature_crates(refs, &mut result, &mut visiting, &mut pending_weak);
                 }
             }
         }
@@ -305,7 +356,7 @@ impl BatteryPackSpec {
         let featured: std::collections::BTreeSet<&str> = self
             .features
             .values()
-            .flat_map(|names| names.iter().map(String::as_str))
+            .flat_map(|refs| refs.iter().map(FeatureRef::dep_name))
             .collect();
         for (name, spec) in &self.crates {
             let unconditional = spec.dep_kind != DepKind::Normal
@@ -315,17 +366,29 @@ impl BatteryPackSpec {
             }
         }
 
+        // Apply deferred weak refs to deps that were activated by other means.
+        for (dep, feature) in pending_weak {
+            if let Some(entry) = result.get_mut(&dep) {
+                entry.features.insert(feature);
+            }
+        }
+
         result
     }
 
     /// Add the default set of crates to the result map.
     // [impl format.features.default]
-    fn add_default_crates(&self, result: &mut BTreeMap<String, CrateSpec>) {
-        if let Some(default_crate_names) = self.features.get("default") {
-            // Explicit default feature exists — use it
-            self.add_feature_crates(default_crate_names, result);
+    fn add_default_crates(
+        &self,
+        result: &mut BTreeMap<String, CrateSpec>,
+        visiting: &mut BTreeSet<String>,
+        pending_weak: &mut Vec<(String, String)>,
+    ) {
+        if let Some(default_refs) = self.features.get("default") {
+            // Explicit default feature exists -- expand it.
+            self.add_feature_crates(default_refs, result, visiting, pending_weak);
         } else {
-            // No default feature — all non-optional crates
+            // No default feature -- include all non-optional crates.
             for (name, spec) in &self.crates {
                 if !spec.optional {
                     result.insert(name.clone(), spec.clone());
@@ -334,25 +397,68 @@ impl BatteryPackSpec {
         }
     }
 
-    /// Add crates from a feature's crate list to the result map.
+    /// Resolve a list of `FeatureRef`s into the result map.
     ///
-    /// If a crate is already present, its Cargo features are merged additively.
+    /// Strong `foo/bar` activates `foo` and adds feature `bar`.
+    /// Weak is deferred -- pushed into `pending_weak` for the final-pass apply in
+    /// `resolve_crates`.
+    /// Bare `Feature(name)` expands a local feature recursively (with cycle guard)
+    /// or falls back to dep lookup.
+    ///
     // [impl format.features.augment]
     fn add_feature_crates(
         &self,
-        crate_names: &BTreeSet<String>,
+        refs: &BTreeSet<FeatureRef>,
         result: &mut BTreeMap<String, CrateSpec>,
+        visiting: &mut BTreeSet<String>,
+        pending_weak: &mut Vec<(String, String)>,
     ) {
-        for crate_name in crate_names {
-            let key = crate_from_feature_reference(crate_name);
-            if let Some(spec) = self.crates.get(key) {
-                if let Some(existing) = result.get_mut(key) {
-                    // Already present — merge features additively
-                    existing.features.extend(spec.features.iter().cloned());
-                } else {
-                    result.insert(key.to_string(), spec.clone());
+        for fref in refs {
+            match fref {
+                // Bare `foo`: recurse into a local feature if one exists, else fall back to
+                // dep lookup (covers the implicit-feature case where `foo` is an optional dep).
+                FeatureRef::Feature(name) => {
+                    if let Some(inner) = self.features.get(name) {
+                        if visiting.insert(name.clone()) {
+                            self.add_feature_crates(inner, result, visiting, pending_weak);
+                            visiting.remove(name);
+                        }
+                    } else {
+                        self.add_dep(name, None, result);
+                    }
+                }
+                // `dep:foo`: activate the dep directly, never as a feature.
+                FeatureRef::Dep(name) => self.add_dep(name, None, result),
+                FeatureRef::DepFeature { dep, feature, weak } => {
+                    if *weak {
+                        pending_weak.push((dep.clone(), feature.clone()));
+                    } else {
+                        self.add_dep(dep, Some(feature), result);
+                    }
                 }
             }
+        }
+    }
+
+    /// Insert a dep into the result map, merging its row-declared features and
+    /// optionally adding one extra per-dep feature on top.
+    fn add_dep(
+        &self,
+        dep_name: &str,
+        extra_feature: Option<&str>,
+        result: &mut BTreeMap<String, CrateSpec>,
+    ) {
+        let Some(spec) = self.crates.get(dep_name) else {
+            return;
+        };
+
+        let entry = result
+            .entry(dep_name.to_string())
+            .or_insert_with(|| spec.clone());
+        entry.features.extend(spec.features.iter().cloned());
+
+        if let Some(exfeat) = extra_feature {
+            entry.features.insert(exfeat.to_string());
         }
     }
 
@@ -419,9 +525,9 @@ impl BatteryPackSpec {
         let mut seen = std::collections::BTreeSet::new();
 
         // First, emit crates grouped by features
-        for (feature_name, crate_names) in &self.features {
-            for crate_name in crate_names {
-                let key = crate_from_feature_reference(crate_name);
+        for (feature_name, refs) in &self.features {
+            for fref in refs {
+                let key = fref.dep_name();
                 if self.is_hidden(key) {
                     continue;
                 }
@@ -716,16 +822,29 @@ fn package_to_spec(pkg: &Package) -> Result<BatteryPackSpec, Error> {
         .map(|dep| dep.name.as_str())
         .collect::<BTreeSet<_>>();
 
-    let features = pkg
-        .features
-        .iter()
-        .filter(|(key, value)| {
-            !(optional_dep_names.contains(key.as_str())
-                && value.len() == 1
-                && value[0] == format!("dep:{}", key))
-        })
-        .map(|(key, value)| (key.clone(), value.iter().cloned().collect()))
-        .collect::<BTreeMap<_, BTreeSet<_>>>();
+    // Skip cargo's auto-generated `feat = ["dep:feat"]` entries that mirror an
+    // optional dep one-to-one — they're noise, not author intent.
+    let is_auto_optional = |key: &str, value: &[String]| {
+        optional_dep_names.contains(key)
+            && value.len() == 1
+            && value[0].strip_prefix("dep:") == Some(key)
+    };
+    let mut features: BTreeMap<String, BTreeSet<FeatureRef>> = BTreeMap::new();
+    for (key, value) in &pkg.features {
+        if is_auto_optional(key.as_str(), value) {
+            continue;
+        }
+        let parsed = value
+            .iter()
+            .map(|raw| {
+                FeatureRef::parse(raw).map_err(|_| Error::FeatureRefParse {
+                    feature: key.to_string(),
+                    raw: raw.clone(),
+                })
+            })
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        features.insert(key.to_string(), parsed);
+    }
 
     // -- read [package.metadata.battery-pack].hidden + battery.templates --
     let raw_meta: Option<RawMetadata> = if pkg.metadata.is_null() {
@@ -967,7 +1086,10 @@ fn validate_templates_on_disk(
 mod tests {
     use std::fs;
 
-    use crate::test_support::{WorkspaceFixture, parse_test};
+    use crate::{
+        feature_ref::FeatureRef,
+        test_support::{WorkspaceFixture, parse_test},
+    };
 
     use super::*;
     use indoc::indoc;
@@ -1004,15 +1126,6 @@ mod tests {
 
         // Point assertion retained for direct failure messages.
         assert_eq!(spec.name, "test-battery-pack");
-    }
-
-    #[test]
-    fn crate_from_feature_reference_handles_all_forms() {
-        assert_eq!(crate_from_feature_reference("foo"), "foo");
-        assert_eq!(crate_from_feature_reference("dep:foo"), "foo");
-        assert_eq!(crate_from_feature_reference("foo/bar"), "foo");
-        assert_eq!(crate_from_feature_reference("foo?/bar"), "foo");
-        assert_eq!(crate_from_feature_reference("dep:foo/bar"), "foo");
     }
 
     #[test]
@@ -1089,14 +1202,10 @@ mod tests {
         spec.validate().unwrap();
         let resolved = spec.resolve_for_features(&BTreeSet::from(["maybe-derive".to_string()]));
 
-        // Snapshot: weak `serde?/derive` is treated as a reference to serde by
-        // the resolver, so serde lands in the resolved set (note: this differs
-        // from Cargo's weak-dep semantics, which would only enable serde's
-        // `derive` feature if serde were already enabled elsewhere).
-        snapbox::assert_data_eq!(render_resolved(&resolved), snapbox::str!["serde 1"]);
-
-        // Point assertion retained.
-        assert!(resolved.contains_key("serde"));
+        // Weak-only refs do not activate the dep on their own — matches
+        // Cargo's weak-dep semantics. See `feature-refs.resolution.weak`.
+        snapbox::assert_data_eq!(render_resolved(&resolved), snapbox::str![""]);
+        assert!(!resolved.contains_key("serde"));
     }
 
     // -- Parsing tests --
@@ -1205,11 +1314,17 @@ mod tests {
         assert_eq!(spec.features.len(), 2);
         assert_eq!(
             spec.features["default"],
-            BTreeSet::from(["clap".to_string(), "dialoguer".to_string()])
+            BTreeSet::from([
+                FeatureRef::Feature("clap".into()),
+                FeatureRef::Feature("dialoguer".into()),
+            ])
         );
         assert_eq!(
             spec.features["indicators"],
-            BTreeSet::from(["indicatif".to_string(), "console".to_string()])
+            BTreeSet::from([
+                FeatureRef::Feature("indicatif".into()),
+                FeatureRef::Feature("console".into()),
+            ])
         );
     }
 
@@ -1319,7 +1434,10 @@ mod tests {
             )]),
             features: BTreeMap::from([(
                 "default".into(),
-                BTreeSet::from(["clap".into(), "nonexistent".into()]),
+                BTreeSet::from([
+                    FeatureRef::Feature("clap".into()),
+                    FeatureRef::Feature("nonexistent".into()),
+                ]),
             )]),
             hidden: BTreeSet::new(),
             templates: BTreeMap::new(),
@@ -1477,6 +1595,126 @@ mod tests {
         let tokio = &resolved["tokio"];
         assert!(tokio.features.contains("macros"));
         assert!(tokio.features.contains("rt"));
+    }
+
+    #[test]
+    // [verify feature-refs.resolution.dep-feature]
+    fn resolve_dep_feature_adds_per_dep_fx() {
+        // Regression: `fancy = ["serde/derive"]` previously dropped the `derive`
+        // feature and resolved bare `serde`
+
+        let manifest = indoc! {r#"
+          [package]
+          name = "test-battery-pack"
+          version = "0.1.0"
+
+          [dependencies]
+          serde = { version = "1", optional = true }
+
+          [features]
+          fancy = ["serde/derive"]
+          "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let resolved = spec.resolve_crates(&["fancy"]);
+
+        assert_eq!(resolved.len(), 1);
+        assert!(resolved["serde"].features.contains("derive"));
+    }
+
+    #[test]
+    // [verify feature-refs.resolution.weak]
+    fn resolve_weak_alone_does_not_activate_dep() {
+        let manifest = indoc! {r#"
+        [package]
+        name = "test-battery-pack"
+        version = "0.1.0"
+
+        [dependencies]
+        serde = { version = "1", optional = true }
+
+        [features]
+        weak = ["serde?/derive"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let resolved = spec.resolve_crates(&["weak"]);
+
+        // Weak-only must not pull `serde` in.
+        assert!(!resolved.contains_key("serde"));
+    }
+
+    #[test]
+    // [verify feature-refs.resolution.weak]
+    fn resolve_weak_adds_feature_when_dep_otherwise_activated() {
+        let manifest = indoc! {r#"
+        [package]
+        name = "test-battery-pack"
+        version = "0.1.0"
+
+        [dependencies]
+        serde = { version = "1", optional = true }
+
+        [features]
+        weak = ["serde?/derive"]
+        strong = ["serde"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let resolved = spec.resolve_crates(&["weak", "strong"]);
+
+        // `strong` activates serde; `weak` then adds the `derive` feature.
+        assert!(resolved["serde"].features.contains("derive"));
+    }
+
+    #[test]
+    // [verify feature-refs.resolution.recursion]
+    fn resolve_recurses_through_local_features() {
+        let manifest = indoc! {r#"
+        [package]
+        name = "test-battery-pack"
+        version = "0.1.0"
+
+        [dependencies]
+        serde = { version = "1", optional = true }
+
+        [features]
+        fancy = ["super-fancy"]
+        super-fancy = ["serde/derive"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let resolved = spec.resolve_crates(&["fancy"]);
+
+        assert!(resolved["serde"].features.contains("derive"));
+    }
+
+    #[test]
+    // [verify feature-refs.validation.cycles]
+    fn validate_rejects_feature_cyc() {
+        let bad = BatteryPackSpec {
+            name: "test-battery-pack".into(),
+            version: "0.1.0".into(),
+            description: String::new(),
+            repository: None,
+            keywords: vec![],
+            crates: BTreeMap::new(),
+            features: BTreeMap::from([
+                (
+                    "a".to_string(),
+                    BTreeSet::from([FeatureRef::Feature("b".into())]),
+                ),
+                (
+                    "b".to_string(),
+                    BTreeSet::from([FeatureRef::Feature("a".into())]),
+                ),
+            ]),
+            hidden: BTreeSet::new(),
+            templates: BTreeMap::new(),
+        };
+
+        let err = bad.validate().unwrap_err();
+        assert!(matches!(err, Error::FeatureCycle { .. }))
     }
 
     #[test]
@@ -1780,13 +2018,16 @@ mod tests {
 
         let packs = discover_battery_packs(&fixtures_dir).unwrap();
 
-        assert_eq!(packs.len(), 4);
+        assert_eq!(packs.len(), 7);
 
         let names: Vec<&str> = packs.iter().map(|p| p.name.as_str()).collect();
         assert!(names.contains(&"basic-battery-pack"));
         assert!(names.contains(&"fancy-battery-pack"));
         assert!(names.contains(&"broken-battery-pack"));
         assert!(names.contains(&"managed-battery-pack"));
+        assert!(names.contains(&"feature-syntax-battery-pack"));
+        assert!(names.contains(&"optional-feature-battery-pack"));
+        assert!(names.contains(&"mixed-kinds-battery-pack"));
 
         // Verify basic-battery-pack
         let basic = packs
@@ -1857,7 +2098,7 @@ mod tests {
         let member = workspace_root.join("tests/fixtures/basic-battery-pack");
 
         let packs = discover_battery_packs(&member).unwrap();
-        assert_eq!(packs.len(), 4);
+        assert_eq!(packs.len(), 7);
         let names: Vec<&str> = packs.iter().map(|p| p.name.as_str()).collect();
         assert!(names.contains(&"basic-battery-pack"));
         assert!(names.contains(&"fancy-battery-pack"));
@@ -2148,7 +2389,10 @@ foo-battery-pack 0.1.0
             )]),
             features: BTreeMap::from([(
                 "default".into(),
-                BTreeSet::from(["clap".into(), "ghost".into()]),
+                BTreeSet::from([
+                    FeatureRef::Feature("clap".into()),
+                    FeatureRef::Feature("ghost".into()),
+                ]),
             )]),
             hidden: BTreeSet::new(),
             templates: BTreeMap::new(),
@@ -2779,7 +3023,7 @@ foo-battery-pack 0.1.0
             [features]
             cli = ["clap"]
         "#;
-        let spec = parse_battery_pack(manifest).unwrap();
+        let spec = parse_test(manifest).unwrap();
         let resolved = spec.resolve_crates(&["cli"]);
         assert!(
             resolved.contains_key("clap"),

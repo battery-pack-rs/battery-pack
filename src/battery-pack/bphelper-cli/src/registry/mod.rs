@@ -855,8 +855,9 @@ pub(crate) fn build_battery_pack_detail(
         .map(|(name, members)| {
             let visible: Vec<String> = members
                 .iter()
+                .map(|fref| fref.dep_name())
                 .filter(|c| !spec.is_hidden(c))
-                .cloned()
+                .map(str::to_string)
                 .collect();
             (name.clone(), visible)
         })

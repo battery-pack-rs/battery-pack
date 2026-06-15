@@ -223,10 +223,9 @@ pub fn validate_template_with(
 ) -> Result<()> {
     let manifest_dir = Path::new(manifest_dir);
     let cargo_toml = manifest_dir.join("Cargo.toml");
-    let content = std::fs::read_to_string(&cargo_toml)
-        .with_context(|| format!("failed to read {}", cargo_toml.display()))?;
-    let spec = bphelper_manifest::parse_battery_pack(&content)
-        .map_err(|e| anyhow::anyhow!("failed to parse {}: {e}", cargo_toml.display()))?;
+    let spec = parse_battery_pack_from_path(&cargo_toml)
+        .with_context(|| format!("failed to parse {}", cargo_toml.display()))?;
+
     let template = spec.templates.get(template_name).with_context(|| {
         format!(
             "template '{template_name}' not found in {}",
