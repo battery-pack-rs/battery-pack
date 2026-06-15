@@ -19,6 +19,7 @@
 - [CLI Behavior](./spec/cli.md)
 - [TUI Behavior](./spec/tui.md)
 - [Manifest Manipulation](./spec/manifest.md)
+- [Feature References](./spec/feature-refs.md)
 - [Documentation Generation](./spec/docgen.md)
 
 # Agent guide
