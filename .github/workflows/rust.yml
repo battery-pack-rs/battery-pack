@@ -33,3 +33,13 @@ jobs:
         run: cargo build
       - name: Run tests
         run: cargo test --verbose
+
+  oracle:
+    # Asserts our feature-ref recommender agrees with cargo's own resolver
+    # for every fixture in tests/fixtures/. See md/spec/feature-refs.md.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Feature-ref oracle
+        run: cargo test -p bphelper-manifest --features oracle --test feature_oracle
