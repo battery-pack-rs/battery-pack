@@ -1,6 +1,6 @@
 ## Feature References
 
-This section specifies how `cargo bp` interpets the string inside `[features]` list when resolving which crates and Cargo features appear in the recommended downstream `Cargo.toml` .
+This section specifies how `cargo bp` interprets the string inside `[features]` list when resolving which crates and Cargo features appear in the recommended downstream `Cargo.toml` .
 
 ## Reference forms
 

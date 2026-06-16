@@ -1,11 +1,11 @@
 //! Oracle harness: asserts our recommender names the same set of direct dependencies as cargo's own resolver for every fixture x feature-combo in `CASES`.
-//! 
+//!
 //! Gated behind the `oracle` cargo feature because each test shells out to `cargo metadata` (slow, registry-bound). Run with:
-//! 
+//!
 //! ```text
 //! cargo test -p bphelper-manifest --features oracle
 //! ```
-//! 
+//!
 //! See `md/spec/feature-refs.md` § Oracle agreement.
 
 #![cfg(feature = "oracle")]
@@ -94,7 +94,7 @@ fn run_metadata(pack_dir: &Path, combo: &[&str]) -> Metadata {
 
 /// Direct deps cargo activates for the combo.
 ///
-/// `node.deps` lists every declared dep regardless of feature activation, 
+/// `node.deps` lists every declared dep regardless of feature activation,
 /// so we filter the activated subset:
 ///   - non-optional Normal -> always activated
 ///   - dev / build deps -> always included (matches `dev-build-always`)
@@ -110,7 +110,7 @@ fn cargo_deps(pack_dir: &Path, combo: &[&str]) -> DepSet {
     let root_node = resolve
         .nodes
         .iter()
-        .find(|nd| &nd.id == root_id)
+        .find(|node| &node.id == root_id)
         .expect("root node present in resolve graph");
 
     let root_pkg = metadata
