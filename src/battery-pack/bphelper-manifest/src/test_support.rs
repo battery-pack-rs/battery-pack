@@ -55,7 +55,7 @@ pub(crate) fn parse_test(manifest_str: &str) -> Result<BatteryPackSpec, Error> {
     let mut fx = WorkspaceFixture::new();
     let pack_dir = fx.add_pack("test-pack", manifest_str);
     fx.finalize();
-    // parse_battery_pack_from_path doesn't filter by name, so it's the right
-    // helper for tests that want to validate name-rejection downstream.
+    // parse_battery_pack_from_path returns raw spec data — name and feature-ref
+    // validation are deferred to `.validate()` so tests can target either layer.
     parse_battery_pack_from_path(&pack_dir.join("Cargo.toml"))
 }

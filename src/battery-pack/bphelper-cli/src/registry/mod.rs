@@ -409,7 +409,7 @@ pub fn resolve_bp_managed_content(
         };
 
         bp_versions.insert(spec.name.clone(), spec.version.clone());
-        for (crate_name, crate_spec) in spec.resolve_for_features(active_features) {
+        for (crate_name, crate_spec) in spec.resolve_for_features(&active_features.into()) {
             resolved.insert(crate_name, crate_spec);
         }
     }

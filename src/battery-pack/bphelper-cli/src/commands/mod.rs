@@ -4,7 +4,7 @@
 //! Depends on `registry` and `manifest`.
 
 use anyhow::{Context, Result, bail};
-use bphelper_manifest::parse_battery_pack_from_path;
+use bphelper_manifest::{ActiveFeatures, parse_battery_pack_from_path};
 use clap::{CommandFactory, Parser, Subcommand};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::IsTerminal;
@@ -532,9 +532,11 @@ pub(crate) fn resolve_add_crates(
 
     if all_features {
         // [impl format.hidden.effect]
+        let crates = bp_spec.resolve_for_features(&ActiveFeatures::All);
+
         return ResolvedAdd::Crates {
             active_features: BTreeSet::from(["all".to_string()]),
-            crates: bp_spec.resolve_all_visible(),
+            crates,
         };
     }
 
@@ -1183,7 +1185,7 @@ fn sync_battery_packs(project_dir: &Path, path: Option<&str>, source: &CrateSour
             read_active_features_for_project(&user_manifest_path, &user_manifest_content, bp_name);
 
         // [impl format.hidden.effect]
-        let expected = bp_spec.resolve_for_features(&active_features);
+        let expected = bp_spec.resolve_for_features(&(&active_features).into());
 
         // [impl manifest.deps.workspace]
         // Sync each crate
@@ -1417,52 +1419,67 @@ fn pick_crates_interactive(
         return Ok(None);
     };
 
-    // Determine which features and crates are selected
+    // Split the picker selection into feature names and direct crate names.
     let selected_set: BTreeSet<usize> = selected_indices.into_iter().collect();
-    let mut selected_crates: BTreeSet<String> = BTreeSet::new();
+    let mut picked_features = Vec::new();
+    let mut picked_crates = BTreeSet::new();
 
-    for (i, item) in items.iter().enumerate() {
-        if !selected_set.contains(&i) {
+    for (index, item) in items.iter().enumerate() {
+        if !selected_set.contains(&index) {
             continue;
         }
+
         match item {
-            PickerItem::Feature(feat_name) => {
-                if let Some(members) = bp_spec.features.get(feat_name) {
-                    for fref in members {
-                        let c = fref.dep_name();
-                        if !bp_spec.is_hidden(c) {
-                            selected_crates.insert(c.to_string());
-                        }
-                    }
-                }
-            }
+            PickerItem::Feature(name) => picked_features.push(name.clone()),
             PickerItem::Crate(name) => {
-                selected_crates.insert(name.clone());
+                picked_crates.insert(name.clone());
             }
         }
     }
 
-    // Build the result
-    let mut crates = BTreeMap::new();
-    for name in &selected_crates {
+    // Route picked features through the main resolver so per-dep features (`serde/derive`)
+    // weak refs (`serde?/derive`), and nested refs (`bundle = ["fancy"]`) reach the
+    // result with correct CrateSpec.features.
+    let feature_strs = picked_features
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<&str>>();
+
+    let mut crates = if feature_strs.is_empty() {
+        BTreeMap::new()
+    } else {
+        bp_spec.resolve_crates(&feature_strs)
+    };
+
+    // Layer in directly-picked crates (their declared spec -- picked by name, not via
+    // a feature gate, so no per-dep feature accumulation).
+    for name in &picked_crates {
+        if bp_spec.is_hidden(name) {
+            continue;
+        }
+
         if let Some(spec) = bp_spec.crates.get(name) {
-            crates.insert(name.clone(), spec.clone());
+            crates.entry(name.clone()).or_insert_with(|| spec.clone());
         }
     }
 
-    // Determine which features are fully selected
+    // Mark a feature active when every visible member crate it would activate is in the resolved set.
+    let resolved_names = crates
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<&str>>();
     let mut active_features = BTreeSet::new();
-    // Check if all default crates are selected
     let default_members = bp_spec.features.get("default");
     if default_members.is_some_and(|members| {
         members
             .iter()
-            .map(|r| r.dep_name())
-            .filter(|c| !bp_spec.is_hidden(c))
-            .all(|c| selected_crates.contains(c))
+            .map(|fref| fref.dep_name())
+            .filter(|crate_name| !bp_spec.is_hidden(crate_name))
+            .all(|crate_name| resolved_names.contains(crate_name))
     }) {
         active_features.insert("default".to_string());
     }
+
     for (feat_name, feat_crates) in &bp_spec.features {
         if feat_name == "default" {
             continue;
@@ -1471,7 +1488,7 @@ fn pick_crates_interactive(
             .iter()
             .map(|r| r.dep_name())
             .filter(|c| !bp_spec.is_hidden(c))
-            .all(|c| selected_crates.contains(c))
+            .all(|c| resolved_names.contains(c))
         {
             active_features.insert(feat_name.clone());
         }
@@ -2189,7 +2206,9 @@ fn build_status_report(
         .iter()
         .map(|pack| {
             // Resolve which crates are expected for this pack's active features.
-            let expected = pack.spec.resolve_for_features(&pack.active_features);
+            let expected = pack
+                .spec
+                .resolve_for_features(&(&pack.active_features).into());
 
             // [impl cli.status.version-warn]
             let warnings = expected.iter().filter_map(|(dep_name, dep_spec)| {

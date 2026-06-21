@@ -15,7 +15,7 @@
 //   - cli.bare.tui           — bare `cargo bp` produces command: None
 //   - cli.add.idempotent     — re-adding same dep doesn't create duplicates
 
-use bphelper_manifest::parse_battery_pack_from_path;
+use bphelper_manifest::{CrateSpec, parse_battery_pack_from_path};
 use clap::Parser;
 use snapbox::{assert_data_eq, str};
 use std::collections::{BTreeMap, BTreeSet};
@@ -506,6 +506,8 @@ fn new_non_interactive_requires_name() {
 
 use std::path::PathBuf;
 
+use crate::commands::{ResolvedAdd, resolve_add_crates};
+
 fn fixtures_dir() -> PathBuf {
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     manifest_dir
@@ -526,6 +528,24 @@ fn load_fancy_spec() -> bphelper_manifest::BatteryPackSpec {
 fn load_basic_spec() -> bphelper_manifest::BatteryPackSpec {
     let fixture = fixtures_dir().join("basic-battery-pack/Cargo.toml");
     parse_battery_pack_from_path(&fixture).unwrap()
+}
+
+fn load_optional_feature_spec() -> bphelper_manifest::BatteryPackSpec {
+    let fixture = fixtures_dir().join("optional-feature-battery-pack/Cargo.toml");
+    parse_battery_pack_from_path(&fixture).unwrap()
+}
+
+fn load_feature_syntax_spec() -> bphelper_manifest::BatteryPackSpec {
+    let fixture = fixtures_dir().join("feature-syntax-battery-pack/Cargo.toml");
+    parse_battery_pack_from_path(&fixture).unwrap()
+}
+
+/// Like `unwrap_resolved` but yields the full `CrateSpec` map for assertions on per-dep features
+fn unwrap_crates(resolved: ResolvedAdd) -> BTreeMap<String, CrateSpec> {
+    match resolved {
+        ResolvedAdd::Crates { crates, .. } => crates,
+        ResolvedAdd::Interactive => panic!("expected Crates, got Interactive"),
+    }
 }
 
 /// Extract crate names from a ResolvedAdd, panicking if Interactive.
@@ -843,6 +863,82 @@ fn resolve_all_features_basic() {
     assert!(
         crate_names.contains("eyre"),
         "optional eyre included with --all-features"
+    );
+}
+
+// Regression: --all-features must route through resolve_crates so per-dep features
+// (e.g. `fancy = ["fake-serde/derive"]`) survive into CrateSpec.features.
+//
+// [verify cli.add.all-features]
+#[test]
+fn resolve_all_features_preserves_per_dep_features() {
+    let spec = load_optional_feature_spec();
+    let crates = unwrap_crates(resolve_add_crates(
+        &spec,
+        "optional-feature-battery-pack",
+        &[],
+        false,
+        true,
+        &[],
+    ));
+
+    let serde = crates
+        .get("fake-serde")
+        .expect("--all-features activates the fancy gate, which activates fake-serde");
+    assert!(
+        serde.features.contains("derive"),
+        "expected `derive` in fake-serde features, got {:?}",
+        serde.features
+    );
+}
+
+// Regression: -F fancy --no-default-features goes through resolve_crates already, but pin
+// the CLI contract so a future refactor can't drop per-dep feature here.
+#[test]
+fn resolve_no_default_with_fancy_preserves_per_dep_feat() {
+    let spec = load_optional_feature_spec();
+    let feat = vec!["fancy".to_string()];
+    let crates = unwrap_crates(resolve_add_crates(
+        &spec,
+        "optional-feature-battery-pack",
+        &feat,
+        true,
+        false,
+        &[],
+    ));
+
+    let serde = crates
+        .get("fake-serde")
+        .expect("fancy activates fake-serde");
+    assert!(
+        serde.features.contains("derive"),
+        "expected `derive` in fake-serde features, got {:?}",
+        serde.features
+    );
+}
+
+// Regression: nested refs like `bundle = ["derive", "weak-derive"]` must recurse -- the
+// picker's old `features.get(name)` walk dropped these on the floor.
+#[test]
+fn resolve_nested_bundle_expands_through_resolve() {
+    let spec = load_feature_syntax_spec();
+    let feat = vec!["bundle".to_string()];
+    let crates = unwrap_crates(resolve_add_crates(
+        &spec,
+        "feature-syntax-battery-pack",
+        &feat,
+        true,
+        false,
+        &[],
+    ));
+
+    let serde = crates
+        .get("fake-serde")
+        .expect("bundle recursed through `derive` to activate fake-serde");
+    assert!(
+        serde.features.contains("derive"),
+        "expected `derive` in fake-serde features, got {:?}",
+        serde.features
     );
 }
 

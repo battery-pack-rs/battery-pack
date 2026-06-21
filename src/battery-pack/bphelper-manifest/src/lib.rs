@@ -11,6 +11,7 @@ pub use feature_ref::{FeatureParseError, FeatureRef};
 
 use cargo_metadata::{DependencyKind, Metadata, MetadataCommand, Package};
 use serde::{Deserialize, Serialize};
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -33,8 +34,13 @@ pub enum Error {
     #[error("feature '{feature}' references unknown crate '{crate_name}'")]
     UnknownCrateInFeature { feature: String, crate_name: String },
 
-    #[error("feature `{feature}` has invalid reference `{raw}`")]
-    FeatureRefParse { feature: String, raw: String },
+    #[error("feature `{feature}` has invalid reference `{raw}`: {source}")]
+    FeatureRefParse {
+        feature: String,
+        raw: String,
+        #[source]
+        source: FeatureParseError,
+    },
 
     #[error("cycle in local feature references: {path}")]
     FeatureCycle { path: String },
@@ -45,8 +51,16 @@ pub enum Error {
         #[source]
         source: std::io::Error,
     },
+
     #[error("cargo metadata failed: {0}")]
-    Metadata(#[from] Box<dyn std::error::Error + Send + Sync>),
+    Metadata(#[from] cargo_metadata::Error),
+
+    #[error("decoding [package.metadata] for `{package}`: {source}")]
+    MetadataDecode {
+        package: String,
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
 // ============================================================================
@@ -161,6 +175,28 @@ pub struct TemplateSpec {
     pub description: Option<String>,
 }
 
+/// Active feature selection at the resolver boundary.
+///
+/// Note: Cargo permits `all` as a feature name (one exists in the `mixed-kind-battery-pack` oracle fixture), so a persisted [`BTreeSet<String>`] containing that literal is ambiguous.
+/// The [`From`] conversion always favors [`ActiveFeatures::All`]; a future tagged on-disk format would remove the ambiguity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActiveFeatures {
+    // Every declared feature is active
+    All,
+    /// An explicit subset (may include `"default"` to expand the default set).
+    Subset(BTreeSet<String>),
+}
+
+impl From<&BTreeSet<String>> for ActiveFeatures {
+    fn from(value: &BTreeSet<String>) -> Self {
+        if value.iter().any(|feat| feat == "all") {
+            Self::All
+        } else {
+            Self::Subset(value.clone())
+        }
+    }
+}
+
 /// Parsed battery pack specification.
 ///
 /// This is the core data model extracted from a battery pack's Cargo.toml.
@@ -192,9 +228,13 @@ pub struct BatteryPackSpec {
 
 impl BatteryPackSpec {
     /// Validate that this looks like a valid battery pack.
-    // [impl format.crate.name]
+    ///
+    /// Accepts both `battery-pack` (the meta package) and any crate suffixed `-battery-pack
+    /// -- matching the filter applied by [`discover-battery-packs`].
+    ///
+    /// [impl format.crate.name]
     pub fn validate(&self) -> Result<(), Error> {
-        if !self.name.ends_with("-battery-pack") {
+        if self.name != "battery-pack" && !self.name.ends_with("-battery-pack") {
             return Err(Error::InvalidName {
                 name: self.name.clone(),
             });
@@ -203,8 +243,8 @@ impl BatteryPackSpec {
         Ok(())
     }
 
-    /// Check that all feature entries reference crates that actually exists, and that
-    /// local-feature reference do not form cycles.
+    /// Check that all feature entries reference crates that actually exist, and that
+    /// local-feature references do not form cycles.
     fn validate_features(&self) -> Result<(), Error> {
         for (feature_name, refs) in &self.features {
             for fref in refs {
@@ -452,13 +492,21 @@ impl BatteryPackSpec {
             return;
         };
 
-        let entry = result
-            .entry(dep_name.to_string())
-            .or_insert_with(|| spec.clone());
-        entry.features.extend(spec.features.iter().cloned());
+        // Fresh insert: clone the spec (its declared features come along).
+        // Repeat insert: merge declared features into the existing entry. Either way, layer
+        // `extra_feature` on top.
+        let entry = match result.entry(dep_name.to_string()) {
+            Entry::Vacant(vacant_entry) => vacant_entry.insert(spec.clone()),
+            Entry::Occupied(occupied_entry) => {
+                let existing = occupied_entry.into_mut();
+                existing.features.extend(spec.features.iter().cloned());
 
-        if let Some(exfeat) = extra_feature {
-            entry.features.insert(exfeat.to_string());
+                existing
+            }
+        };
+
+        if let Some(extra) = extra_feature {
+            entry.features.insert(extra.to_string());
         }
     }
 
@@ -467,31 +515,24 @@ impl BatteryPackSpec {
         self.crates.clone()
     }
 
-    /// Resolve all visible (non-hidden) crates regardless of features or optional status.
-    // [impl format.hidden.effect]
-    pub fn resolve_all_visible(&self) -> BTreeMap<String, CrateSpec> {
-        self.crates
-            .iter()
-            .filter(|(name, _)| !self.is_hidden(name))
-            .map(|(name, spec)| (name.clone(), spec.clone()))
-            .collect()
-    }
-
-    /// Resolve crates for a set of active features, handling the "all" sentinel.
+    /// Resolve crates for a typed [`ActiveFeatures`] selection, filtered for visibility.
     ///
-    /// If `active_features` contains `"all"`, returns all visible crates.
-    /// Otherwise delegates to `resolve_crates`.
-    // [impl format.hidden.effect]
-    pub fn resolve_for_features(
-        &self,
-        active_features: &BTreeSet<String>,
-    ) -> BTreeMap<String, CrateSpec> {
-        if active_features.iter().any(|s| s == "all") {
-            self.resolve_all_visible()
-        } else {
-            let str_features: Vec<&str> = active_features.iter().map(|s| s.as_str()).collect();
-            self.resolve_crates(&str_features)
-        }
+    /// `ActiveFeatures::All` expands to every declared feature so per-dep activations
+    /// (`serde/derive`, `foo?/bar`, nested refs) reach `resolve_crates` instead of being dropped.
+    /// Hidden crates are always excluded from the result -- this is the surface every
+    /// user-facing caller (sync, status, `--all-features`, bp-managed rewrite) reads from.
+    ///
+    /// [impl format.hidden.effect]
+    pub fn resolve_for_features(&self, active: &ActiveFeatures) -> BTreeMap<String, CrateSpec> {
+        let expanded: Vec<&str> = match active {
+            ActiveFeatures::All => self.features.keys().map(String::as_str).collect(),
+            ActiveFeatures::Subset(features) => features.iter().map(String::as_str).collect(),
+        };
+
+        let mut resolved = self.resolve_crates(&expanded);
+        resolved.retain(|name, _| !self.is_hidden(name));
+
+        resolved
     }
 
     /// Check whether a crate name matches the hidden patterns.
@@ -785,12 +826,10 @@ fn package_to_spec(pkg: &Package) -> Result<BatteryPackSpec, Error> {
             DependencyKind::Development => DepKind::Dev,
             DependencyKind::Build => DepKind::Build,
             _ => {
-                // skip unknown kind fields
                 eprintln!(
                     "warning: skipping dependency '{}' with unrecognized kind {:?}",
                     dep.name, dep.kind
                 );
-
                 continue;
             }
         };
@@ -837,9 +876,10 @@ fn package_to_spec(pkg: &Package) -> Result<BatteryPackSpec, Error> {
         let parsed = value
             .iter()
             .map(|raw| {
-                FeatureRef::parse(raw).map_err(|_| Error::FeatureRefParse {
+                FeatureRef::parse(raw).map_err(|source| Error::FeatureRefParse {
                     feature: key.to_string(),
                     raw: raw.clone(),
+                    source,
                 })
             })
             .collect::<Result<BTreeSet<_>, _>>()?;
@@ -851,8 +891,12 @@ fn package_to_spec(pkg: &Package) -> Result<BatteryPackSpec, Error> {
         None
     } else {
         Some(
-            serde_json::from_value(pkg.metadata.clone())
-                .map_err(|err| Error::Metadata(err.into()))?,
+            serde_json::from_value(pkg.metadata.clone()).map_err(|source| {
+                Error::MetadataDecode {
+                    package: pkg.name.to_string(),
+                    source,
+                }
+            })?,
         )
     };
 
@@ -904,7 +948,7 @@ fn load_metadata(manifest_path: &Path) -> Result<Metadata, Error> {
         .manifest_path(manifest_path)
         .no_deps()
         .exec()
-        .map_err(|err| Error::Metadata(err.into()))
+        .map_err(Error::Metadata)
 }
 
 /// Discover battery packs reachable from a path.
@@ -928,6 +972,10 @@ pub fn discover_battery_packs(path: &Path) -> Result<Vec<BatteryPackSpec>, Error
 /// Parse a single battery pack from its `Cargo.toml` path.
 ///
 /// Runs `cargo metadata` against the given manifest and returns the spec for the matching package.
+///
+/// Note: Does NOT call [`BatteryPackSpec::validate`] -- `bphelper-build` consumes this from
+/// the build script of scaffolded user crates whose package name isn't a `*-battery-pack`.
+/// Callers that install or sync (CLI commands, registry fetches) must validate explicitly.
 pub fn parse_battery_pack_from_path(manifest_path: &Path) -> Result<BatteryPackSpec, Error> {
     let metadata = load_metadata(manifest_path)?;
 
@@ -1087,6 +1135,7 @@ mod tests {
     use std::fs;
 
     use crate::{
+        ActiveFeatures,
         feature_ref::FeatureRef,
         test_support::{WorkspaceFixture, parse_test},
     };
@@ -1145,7 +1194,9 @@ mod tests {
 
         let spec = parse_test(manifest).unwrap();
         spec.validate().unwrap();
-        let resolved = spec.resolve_for_features(&BTreeSet::from(["indicators".to_string()]));
+        let resolved = spec.resolve_for_features(&ActiveFeatures::Subset(BTreeSet::from([
+            "indicators".to_string(),
+        ])));
 
         // Snapshot: `dep:indicatif` pulls indicatif into the resolved set.
         snapbox::assert_data_eq!(
@@ -1174,7 +1225,9 @@ mod tests {
 
         let spec = parse_test(manifest).unwrap();
         spec.validate().unwrap();
-        let resolved = spec.resolve_for_features(&BTreeSet::from(["fancy".to_string()]));
+        let resolved = spec.resolve_for_features(&ActiveFeatures::Subset(BTreeSet::from([
+            "fancy".to_string(),
+        ])));
 
         // Snapshot: `serde/derive` pulls serde into the resolved set.
         snapbox::assert_data_eq!(render_resolved(&resolved), snapbox::str![[r#"serde 1"#]]);
@@ -1200,12 +1253,83 @@ mod tests {
 
         let spec = parse_test(manifest).unwrap();
         spec.validate().unwrap();
-        let resolved = spec.resolve_for_features(&BTreeSet::from(["maybe-derive".to_string()]));
+        let resolved = spec.resolve_for_features(&ActiveFeatures::Subset(BTreeSet::from([
+            "maybe-derive".to_string(),
+        ])));
 
         // Weak-only refs do not activate the dep on their own — matches
         // Cargo's weak-dep semantics. See `feature-refs.resolution.weak`.
         snapbox::assert_data_eq!(render_resolved(&resolved), snapbox::str![""]);
         assert!(!resolved.contains_key("serde"));
+    }
+
+    // Hidden crate referenced from a feature; ActiveFeatures::All must filter it out so
+    // callers (--all-features, sync verify, status verify, bp-managed rewrite) never
+    // see it in their resolved set.
+    #[test]
+    fn resolve_for_features_excludes_hidden_crates() {
+        let manifest = indoc! {r#"
+        [package]
+        name = "test-battery-pack"
+        version = "0.1.0"
+        keywords = ["battery-pack"]
+
+        [package.metadata.battery-pack]
+        hidden = ["serde_derive"]
+
+        [dependencies]
+        serde = { version = "1.0.0", optional = true }
+        serde_derive = { version = "1.0.0", optional = true }
+
+        [features]
+        fancy = ["dep:serde", "dep:serde_derive"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let resolved = spec.resolve_for_features(&ActiveFeatures::All);
+
+        assert!(
+            !resolved.contains_key("serde_derive"),
+            "hidden crate must not be returned by ActiveFeatures::All"
+        );
+        assert!(resolved.contains_key("serde"));
+    }
+
+    // Two local features pointing at each other -- dfs_feaure must report a cycle.
+    #[test]
+    fn validate_rejects_feature_cycle() {
+        let manifest = indoc! {r#"
+        [package]
+        name = "test-battery-pack"
+        version = "0.1.0"
+        keywords = ["battery-pack"]
+
+        [features]
+        a = ["b"]
+        b = ["a"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+
+        match spec.validate() {
+            Err(Error::FeatureCycle { path }) => {
+                assert!(path.contains("a") && path.contains("b"), "path = {path}");
+            }
+            other => panic!("expected FeatureCycle, got {other:?}"),
+        }
+    }
+
+    // Documented Limitation: a persisted set containing "all" always collapses to ActiveFeatures::All,
+    // even when the spec declares a literal feature named `all`.
+    #[test]
+    fn active_features_from_btreeset_treats_all_literal_as_sentinel() {
+        let set = BTreeSet::from(["all".to_string()]);
+        let active: ActiveFeatures = (&set).into();
+        assert_eq!(active, ActiveFeatures::All);
+
+        let explicit = BTreeSet::from(["default".to_string(), "fancy".to_string()]);
+        let active: ActiveFeatures = (&explicit).into();
+        assert_eq!(active, ActiveFeatures::Subset(explicit));
     }
 
     // -- Parsing tests --
