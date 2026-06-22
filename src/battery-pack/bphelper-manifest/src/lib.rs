@@ -1295,7 +1295,7 @@ mod tests {
         assert!(resolved.contains_key("serde"));
     }
 
-    // Two local features pointing at each other -- dfs_feaure must report a cycle.
+    // Two local features pointing at each other -- dfs_feature must report a cycle.
     #[test]
     fn validate_rejects_feature_cycle() {
         let manifest = indoc! {r#"
