@@ -181,7 +181,7 @@ pub struct TemplateSpec {
 /// The [`From`] conversion always favors [`ActiveFeatures::All`]; a future tagged on-disk format would remove the ambiguity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ActiveFeatures {
-    // Every declared feature is active
+    /// Every declared feature is active
     All,
     /// An explicit subset (may include `"default"` to expand the default set).
     Subset(BTreeSet<String>),
