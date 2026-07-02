@@ -1,0 +1,8 @@
+[placeholders.ci_platform]
+type = "select"
+prompt = "CI platform"
+options = ["github", "none"]
+default = "github"
+
+[[hints]]
+message = "Review deny.toml before enforcing license policy."

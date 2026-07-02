@@ -18,14 +18,14 @@ jobs:
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.BENCHER_PROJECT != '' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: bencherdev/bencher@[..] # v[..]
+      - uses: bencherdev/bencher@[..]
       - run: |
           bencher run /
             --project ${{ vars.BENCHER_PROJECT }} /
@@ -39,14 +39,14 @@ jobs:
     permissions:
       pull-requests: write
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: bencherdev/bencher@[..] # v[..]
+      - uses: bencherdev/bencher@[..]
       - run: |
           bencher run /
             --project ${{ vars.BENCHER_PROJECT }} /

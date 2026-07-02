@@ -1,3 +1,14 @@
+── .cargo/audit.toml ──
+# https://github.com/rustsec/rustsec/tree/main/cargo-audit
+#
+# [advisories]
+# Raise this threshold to quiet lower-severity advisories.
+# severity_threshold = "low"
+#
+# ignore = [
+#     # Non-utf8 String can be created with `TimeBuf::as_str`
+#     "RUSTSEC-2025-0140",
+# ]
 ── .cargo/config.toml ──
 [alias]
 xtask = "run --package xtask --bin xtask --"
@@ -17,11 +28,11 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: dtolnay/rust-toolchain@[..] # master
+    - uses: dtolnay/rust-toolchain@[..]
       with:
         toolchain: ${{ inputs.toolchain }}
 
-    - uses: Swatinem/rust-cache@[..] # v[..]
+    - uses: Swatinem/rust-cache@[..]
       with:
         save-if: ${{ github.ref == 'refs/heads/main' }}
 
@@ -57,42 +68,34 @@ updates:
     schedule:
       interval: "weekly"
 ── .github/workflows/audit.yml ──
-# https://embarkstudios.github.io/cargo-deny/
-name: Audit
+name: Security audit
 
 on:
   push:
-    paths: ["**/Cargo.toml", "**/Cargo.lock"]
+    paths:
+      - ".github/workflows/audit.yml"
+      - ".cargo/audit.toml"
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
   schedule:
     - cron: "0 0 * * *"
   workflow_dispatch:
 
 permissions:
+  checks: write
   contents: read
+  issues: write
 
 jobs:
-  # Advisories are non-blocking: new advisories shouldn't break CI for unrelated PRs
-  advisories:
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@[..] # v[..]
-        with:
-          persist-credentials: false
-      - uses: EmbarkStudios/cargo-deny-action@[..] # v[..]
-        with:
-          command: check advisories
-
-  # Licenses, bans, and sources are blocking: these are the user's responsibility
-  deny:
+  security-audit:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
-      - uses: EmbarkStudios/cargo-deny-action@[..] # v[..]
+      - uses: rustsec/audit-check@[..]
         with:
-          command: check bans licenses sources
+          token: ${{ secrets.GITHUB_TOKEN }}
 ── .github/workflows/build-binaries.yml ──
 # Builds cross-platform binaries and uploads to GitHub Releases.
 # Binaries are discoverable by cargo-binstall (https://github.com/cargo-bins/cargo-binstall).
@@ -136,7 +139,7 @@ jobs:
             archive: zip
 
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
@@ -168,7 +171,7 @@ jobs:
           Compress-Archive -Path test-project[EXE] -DestinationPath ../../../test-project-${{ matrix.target }}-${{ steps.version.outputs.version }}.zip
 
       - name: Upload release asset
-        uses: softprops/action-gh-release@[..] # v[..]
+        uses: softprops/action-gh-release@[..]
         with:
           files: test-project-${{ matrix.target }}-${{ steps.version.outputs.version }}.${{ matrix.archive }}
 ── .github/workflows/ci.yml ──
@@ -195,7 +198,7 @@ jobs:
   fmt:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@nightly
@@ -208,11 +211,11 @@ jobs:
     env:
       RUSTFLAGS: "-Dwarnings"
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo check --all-targets --all-features --keep-going
@@ -222,11 +225,11 @@ jobs:
     env:
       RUSTDOCFLAGS: "-D warnings --cfg docsrs"
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@nightly
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo doc --no-deps --all-features
@@ -238,7 +241,7 @@ jobs:
         flags: ["--all-features", "--no-default-features"]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: ./.github/actions/rust-build
@@ -249,14 +252,14 @@ jobs:
   features:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@[..] # v[..]
+      - uses: taiki-e/install-action@[..]
         with:
           tool: cargo-hack
       - run: cargo hack check --feature-powerset --depth 2 --no-dev-deps
@@ -264,14 +267,14 @@ jobs:
   msrv:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@[..] # v[..]
+      - uses: taiki-e/install-action@[..]
         with:
           tool: cargo-hack
       - run: cargo hack check --rust-version --workspace --all-targets --ignore-private --locked
@@ -279,7 +282,7 @@ jobs:
   lockfile:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
@@ -288,7 +291,7 @@ jobs:
   minimal-versions:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
@@ -299,10 +302,10 @@ jobs:
   semver:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
-      - uses: obi1kenobi/cargo-semver-checks-action@[..] # v2
+      - uses: obi1kenobi/cargo-semver-checks-action@[..]
   # Test on macOS and Windows to catch platform-specific issues.
   cross-platform:
     strategy:
@@ -311,7 +314,7 @@ jobs:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: ./.github/actions/rust-build
@@ -325,14 +328,14 @@ jobs:
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.BENCHER_PROJECT != '' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: bencherdev/bencher@[..] # v[..]
+      - uses: bencherdev/bencher@[..]
       - run: |
           bencher run /
             --project ${{ vars.BENCHER_PROJECT }} /
@@ -346,14 +349,14 @@ jobs:
     permissions:
       pull-requests: write
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: bencherdev/bencher@[..] # v[..]
+      - uses: bencherdev/bencher@[..]
       - run: |
           bencher run /
             --project ${{ vars.BENCHER_PROJECT }} /
@@ -369,11 +372,11 @@ jobs:
   fuzz-smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@nightly
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: fuzz -> target
@@ -387,14 +390,14 @@ jobs:
   stress-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@[..] # v[..]
+      - uses: taiki-e/install-action@[..]
         with:
           tool: nextest
       # nextest is used here for --stress-duration (not available in cargo test)
@@ -404,19 +407,19 @@ jobs:
   spellcheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
-      - uses: crate-ci/typos@[..] # v[..]
+      - uses: crate-ci/typos@[..]
   # https://github.com/matklad/cargo-xtask
   xtask:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo xtask codegen --check
@@ -424,20 +427,20 @@ jobs:
   mutants:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@[..] # v[..]
+      - uses: taiki-e/install-action@[..]
         with:
           tool: cargo-mutants
       - run: cargo mutants --no-shuffle -vV
       - name: Upload mutation report
         if: always()
-        uses: actions/upload-artifact@[..] # v[..]
+        uses: actions/upload-artifact@[..]
         with:
           name: mutants-report
           path: mutants.out/
@@ -448,13 +451,13 @@ jobs:
     permissions:
       security-events: write
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo install clippy-sarif --locked
@@ -465,7 +468,7 @@ jobs:
           | clippy-sarif | tee clippy-results.sarif | sarif-fmt
         continue-on-error: true
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@[..] # v[..]
+        uses: github/codeql-action/upload-sarif@[..]
         with:
           sarif_file: clippy-results.sarif
           wait-for-processing: true
@@ -475,6 +478,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: jq --exit-status 'all(.result == "success" or .result == "skipped")' <<< '${{ toJson(needs) }}'
+── .github/workflows/dependency-policy.yml ──
+# https://embarkstudios.github.io/cargo-deny/
+name: Dependency policy
+
+on:
+  push:
+    paths:
+      - ".github/workflows/dependency-policy.yml"
+      - "deny.toml"
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@[..]
+        with:
+          persist-credentials: false
+      - uses: EmbarkStudios/cargo-deny-action@[..]
+        with:
+          command: check bans licenses sources
 ── .github/workflows/fuzz-nightly.yml ──
 
 # https://github.com/rust-fuzz/cargo-fuzz
@@ -496,11 +527,11 @@ jobs:
   fuzz-nightly:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@nightly
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: fuzz -> target
@@ -513,7 +544,7 @@ jobs:
           done
       - name: Upload crash artifacts
         if: failure()
-        uses: actions/upload-artifact@[..] # v[..]
+        uses: actions/upload-artifact@[..]
         with:
           name: fuzz-crashes
           path: fuzz/artifacts/
@@ -544,16 +575,16 @@ jobs:
     env:
       MDBOOK_VERSION: "0.4.40"
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - name: Install mdBook
         run: |
           curl -sSL "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz" /
             | tar -xz -C /usr/local/bin
-      - uses: actions/configure-pages@[..] # v[..]
+      - uses: actions/configure-pages@[..]
       - run: mdbook build
-      - uses: actions/upload-pages-artifact@[..] # v[..]
+      - uses: actions/upload-pages-artifact@[..]
         with:
           path: ./book
 
@@ -566,7 +597,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@[..] # v[..]
+        uses: actions/deploy-pages@[..]
 ── .github/workflows/release.yml ──
 # release-plz: automated releases to crates.io (https://release-plz.dev/docs)
 # Setup:
@@ -593,13 +624,13 @@ jobs:
     if: ${{ github.repository_owner == 'test-owner' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_PLZ_TOKEN }}
       - uses: dtolnay/rust-toolchain@stable
-      - uses: rust-lang/crates-io-auth-action@[..] # v[..]
-      - uses: release-plz/action@[..] # v[..]
+      - uses: rust-lang/crates-io-auth-action@[..]
+      - uses: release-plz/action@[..]
         with:
           command: release
         env:
@@ -613,11 +644,11 @@ jobs:
       group: release-plz-${{ github.ref }}
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
-      - uses: release-plz/action@[..] # v[..]
+      - uses: release-plz/action@[..]
         with:
           command: release-pr
         env:
@@ -642,11 +673,11 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo update
@@ -657,11 +688,11 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@beta
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo test --workspace --all-features
@@ -687,14 +718,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 75
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: taiki-e/install-action@[..] # v[..]
+      - uses: taiki-e/install-action@[..]
         with:
           tool: nextest
       - run: cargo nextest run --all-features --stress-duration '${{ inputs.duration_minutes || '60' }}m'
@@ -782,26 +813,42 @@ src = "md"
 ── deny.toml ──
 # https://embarkstudios.github.io/cargo-deny/
 
-[advisories]
-unmaintained = "workspace"
-yanked = "warn"
-
 [licenses]
 allow = [
     "MIT",
+    "MIT-0",
     "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
+    "NCSA",
+    "Unicode-DFS-2016",
     "Unicode-3.0",
     "CC0-1.0",
     "Zlib",
     "MPL-2.0",
 ]
 
+confidence-threshold = 1.0
+
+# Add audited exceptions for crates outside the default policy.
+# exceptions = [
+#     { name = "ring", allow = ["OpenSSL"] },
+# ]
+
+# Clarify license files when cargo-deny cannot infer attribution.
+# [[licenses.clarify]]
+# name = "example-crate"
+# expression = "MIT OR Apache-2.0"
+# license-files = [
+#     { path = "LICENSE-MIT", hash = 0x00000000 },
+#     { path = "LICENSE-APACHE", hash = 0x00000000 },
+# ]
+
 [bans]
 multiple-versions = "warn"
-wildcards = "deny"
+wildcards = "warn"
 
 [sources]
 unknown-registry = "deny"

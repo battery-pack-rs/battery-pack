@@ -18,11 +18,11 @@ jobs:
   fuzz-nightly:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@nightly
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: fuzz -> target
@@ -35,7 +35,7 @@ jobs:
           done
       - name: Upload crash artifacts
         if: failure()
-        uses: actions/upload-artifact@[..] # v[..]
+        uses: actions/upload-artifact@[..]
         with:
           name: fuzz-crashes
           path: fuzz/artifacts/
@@ -54,11 +54,11 @@ jobs:
   fuzz-smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@nightly
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: fuzz -> target

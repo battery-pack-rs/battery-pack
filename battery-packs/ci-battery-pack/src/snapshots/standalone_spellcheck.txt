@@ -15,10 +15,10 @@ jobs:
   spellcheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
-      - uses: crate-ci/typos@[..] # v[..]
+      - uses: crate-ci/typos@[..]
 ── _typos.toml ──
 # https://github.com/crate-ci/typos
 [default.extend-words]

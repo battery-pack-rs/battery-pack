@@ -18,11 +18,11 @@ jobs:
   xtask:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo xtask codegen --check

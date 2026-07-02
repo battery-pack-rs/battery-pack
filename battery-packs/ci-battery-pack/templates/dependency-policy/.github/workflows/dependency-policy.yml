@@ -1,0 +1,29 @@
+{%- if ci_platform == "github" -%}
+# https://embarkstudios.github.io/cargo-deny/
+name: Dependency policy
+
+on:
+  push:
+    paths:
+      - ".github/workflows/dependency-policy.yml"
+      - "deny.toml"
+      - "**/Cargo.toml"
+      - "**/Cargo.lock"
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: {{ pin_github_action("actions/checkout", "v6") }}
+        with:
+          persist-credentials: false
+      - uses: {{ pin_github_action("EmbarkStudios/cargo-deny-action", "v2") }}
+        with:
+          command: check bans licenses sources
+{%- endif %}
