@@ -511,7 +511,9 @@ impl BatteryPackSpec {
     }
 
     /// Resolve all crates regardless of features or optional status.
-    pub fn resolve_all(&self) -> BTreeMap<String, CrateSpec> {
+    /// Only used in tests; prefer [`resolve_for_features`] for user-facing paths.
+    #[cfg(test)]
+    pub(crate) fn resolve_all(&self) -> BTreeMap<String, CrateSpec> {
         self.crates.clone()
     }
 
