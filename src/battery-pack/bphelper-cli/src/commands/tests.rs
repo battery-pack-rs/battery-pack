@@ -540,6 +540,11 @@ fn load_feature_syntax_spec() -> bphelper_manifest::BatteryPackSpec {
     parse_battery_pack_from_path(&fixture).unwrap()
 }
 
+fn load_implicit_feature_spec() -> bphelper_manifest::BatteryPackSpec {
+    let fixture = fixtures_dir().join("implicit-feature-battery-pack/Cargo.toml");
+    parse_battery_pack_from_path(&fixture).unwrap()
+}
+
 /// Like `unwrap_resolved` but yields the full `CrateSpec` map for assertions on per-dep features
 fn unwrap_crates(resolved: ResolvedAdd) -> BTreeMap<String, CrateSpec> {
     match resolved {
@@ -939,6 +944,31 @@ fn resolve_nested_bundle_expands_through_resolve() {
         serde.features.contains("derive"),
         "expected `derive` in fake-serde features, got {:?}",
         serde.features
+    );
+}
+
+// Regression: optional dep with only an implicit feature (no explicit feature entry
+// referencing it) must still be activated by --all-features.
+#[test]
+fn resolve_all_features_includes_implicit_optional_deps() {
+    let spec = load_implicit_feature_spec();
+    let resolved = super::resolve_add_crates(
+        &spec,
+        "implicit-feature-battery-pack",
+        &[],
+        false,
+        true,
+        &[],
+    );
+    let (_, crate_names) = unwrap_resolved(resolved);
+
+    assert!(
+        crate_names.contains("fake-anyhow"),
+        "fake-anyhow is in default feature"
+    );
+    assert!(
+        crate_names.contains("fake-insta"),
+        "fake-insta is optional with only an implicit feature; --all-features must include it"
     );
 }
 

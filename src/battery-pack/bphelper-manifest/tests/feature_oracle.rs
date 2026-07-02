@@ -58,6 +58,12 @@ const CASES: &[Case] = &[
         pack: "mixed-kinds-battery-pack",
         combo: &["all"],
     },
+    // Regression: optional dep with only an implicit feature (stripped during
+    // parsing). The default combo should NOT include it, matching cargo.
+    Case {
+        pack: "implicit-feature-battery-pack",
+        combo: &[],
+    },
 ];
 
 /// Shared `test/fixtures` directory at the workspace root.

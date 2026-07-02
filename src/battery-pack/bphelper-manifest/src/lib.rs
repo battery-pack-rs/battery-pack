@@ -524,6 +524,10 @@ impl BatteryPackSpec {
     /// Hidden crates are always excluded from the result -- this is the surface every
     /// user-facing caller (sync, status, `--all-features`, bp-managed rewrite) reads from.
     ///
+    /// When `All` is active, optional deps whose implicit feature was stripped during parsing
+    /// (i.e., they have no explicit feature entry referencing them) are also included. This
+    /// mirrors Cargo's behavior where `--all-features` activates every optional dep.
+    ///
     /// [impl format.hidden.effect]
     pub fn resolve_for_features(&self, active: &ActiveFeatures) -> BTreeMap<String, CrateSpec> {
         let expanded: Vec<&str> = match active {
@@ -532,6 +536,23 @@ impl BatteryPackSpec {
         };
 
         let mut resolved = self.resolve_crates(&expanded);
+
+        // When all features are active, also activate optional deps whose implicit
+        // feature (`feat = ["dep:feat"]`) was stripped during parsing. Cargo's
+        // `--all-features` activates these, so we must too.
+        if matches!(active, ActiveFeatures::All) {
+            let featured: BTreeSet<&str> = self
+                .features
+                .values()
+                .flat_map(|refs| refs.iter().map(FeatureRef::dep_name))
+                .collect();
+            for (name, spec) in &self.crates {
+                if spec.optional && !featured.contains(name.as_str()) {
+                    resolved.entry(name.clone()).or_insert_with(|| spec.clone());
+                }
+            }
+        }
+
         resolved.retain(|name, _| !self.is_hidden(name));
 
         resolved
@@ -1295,6 +1316,41 @@ mod tests {
             "hidden crate must not be returned by ActiveFeatures::All"
         );
         assert!(resolved.contains_key("serde"));
+    }
+
+    // Optional dep whose implicit feature (`feat = ["dep:feat"]`) was stripped during
+    // parsing must still appear when ActiveFeatures::All is active. Cargo's
+    // `--all-features` activates every optional dep regardless of whether it appears
+    // in an explicit feature entry.
+    #[test]
+    fn resolve_for_features_all_includes_implicit_optional_deps() {
+        let manifest = indoc! {r#"
+        [package]
+        name = "test-battery-pack"
+        version = "0.1.0"
+        keywords = ["battery-pack"]
+
+        [dependencies]
+        clap = { version = "4", optional = true }
+        indicatif = { version = "0.17", optional = true }
+
+        [features]
+        default = ["dep:clap"]
+        "#};
+
+        // `indicatif` has no explicit feature entry; its implicit `indicatif = ["dep:indicatif"]`
+        // is stripped during parsing. ActiveFeatures::All must still include it.
+        let spec = parse_test(manifest).unwrap();
+        let resolved = spec.resolve_for_features(&ActiveFeatures::All);
+
+        assert!(
+            resolved.contains_key("clap"),
+            "clap is in an explicit feature, should be resolved"
+        );
+        assert!(
+            resolved.contains_key("indicatif"),
+            "indicatif is optional with only an implicit feature; All must still include it"
+        );
     }
 
     // Two local features pointing at each other -- dfs_feature must report a cycle.
@@ -2144,7 +2200,7 @@ mod tests {
 
         let packs = discover_battery_packs(&fixtures_dir).unwrap();
 
-        assert_eq!(packs.len(), 7);
+        assert_eq!(packs.len(), 8);
 
         let names: Vec<&str> = packs.iter().map(|p| p.name.as_str()).collect();
         assert!(names.contains(&"basic-battery-pack"));
@@ -2154,6 +2210,7 @@ mod tests {
         assert!(names.contains(&"feature-syntax-battery-pack"));
         assert!(names.contains(&"optional-feature-battery-pack"));
         assert!(names.contains(&"mixed-kinds-battery-pack"));
+        assert!(names.contains(&"implicit-feature-battery-pack"));
 
         // Verify basic-battery-pack
         let basic = packs
@@ -2224,7 +2281,7 @@ mod tests {
         let member = workspace_root.join("tests/fixtures/basic-battery-pack");
 
         let packs = discover_battery_packs(&member).unwrap();
-        assert_eq!(packs.len(), 7);
+        assert_eq!(packs.len(), 8);
         let names: Vec<&str> = packs.iter().map(|p| p.name.as_str()).collect();
         assert!(names.contains(&"basic-battery-pack"));
         assert!(names.contains(&"fancy-battery-pack"));
