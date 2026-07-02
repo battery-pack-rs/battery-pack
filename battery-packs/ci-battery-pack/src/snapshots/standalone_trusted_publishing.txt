@@ -21,12 +21,12 @@ jobs:
     if: ${{ github.repository_owner == 'test-owner' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
-      - uses: rust-lang/crates-io-auth-action@[..] # v[..]
-      - uses: release-plz/action@[..] # v[..]
+      - uses: rust-lang/crates-io-auth-action@[..]
+      - uses: release-plz/action@[..]
         with:
           command: release
         env:
@@ -40,11 +40,11 @@ jobs:
       group: release-plz-${{ github.ref }}
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
-      - uses: release-plz/action@[..] # v[..]
+      - uses: release-plz/action@[..]
         with:
           command: release-pr
         env:

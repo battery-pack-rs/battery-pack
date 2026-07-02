@@ -31,7 +31,9 @@ The core CI workflow (`ci.yml`) runs on PRs, merge queue, and pushes to main. It
 | `minimal-versions` | Generates a minimal-version lockfile, then checks with stable |
 | `semver` | `cargo-semver-checks` (catches accidental breaking changes) |
 
-A separate `audit.yml` runs cargo-deny for advisories (non-blocking), licenses, bans, and sources (blocking).
+`audit.yml` runs RustSec audit-check daily and on Cargo manifest, lockfile, or audit workflow changes. Set `audit_issue=false` to run `cargo audit` without issue creation.
+
+`dependency-policy.yml` runs cargo-deny for licenses, bans, and sources. Set `dependency_policy=false` to skip it.
 
 ## The Gate Job Pattern
 
@@ -64,19 +66,21 @@ concurrency:
 
 ## Adding Features to an Existing Project
 
-Each optional feature is available as a standalone template:
+Each additional workflow or scaffold is available as a standalone template:
 
 ```sh
 cargo bp add ci -t trusted-publishing   # release-plz with OIDC
 cargo bp add ci -t binary-release       # cross-platform binaries
 cargo bp add ci -t fuzzing              # cargo-fuzz scaffold + CI
 cargo bp add ci -t benchmarks           # Criterion + Bencher CI
+cargo bp add ci -t security-scanning    # RustSec audit workflow
+cargo bp add ci -t dependency-policy    # cargo-deny licenses, bans, sources
 cargo bp add ci -t spellcheck           # typos config + workflow
 cargo bp add ci -t mutation-testing     # cargo-mutants workflow
 cargo bp add ci -t clippy-sarif         # PR annotations via SARIF
-cargo bp add ci -t mdbook              # mdBook + GitHub Pages
-cargo bp add ci -t xtask              # cargo-xtask scaffold
-cargo bp add ci -t stress-test         # nextest stress testing
+cargo bp add ci -t mdbook               # mdBook + GitHub Pages
+cargo bp add ci -t xtask                # cargo-xtask scaffold
+cargo bp add ci -t stress-test          # nextest stress testing
 ```
 
 Preview before applying: `cargo bp show ci -t fuzzing`

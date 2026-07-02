@@ -23,13 +23,13 @@ jobs:
     permissions:
       security-events: write
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@[..] # v[..]
+      - uses: Swatinem/rust-cache@[..]
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo install clippy-sarif --locked
@@ -40,7 +40,7 @@ jobs:
           | clippy-sarif | tee clippy-results.sarif | sarif-fmt
         continue-on-error: true
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@[..] # v[..]
+        uses: github/codeql-action/upload-sarif@[..]
         with:
           sarif_file: clippy-results.sarif
           wait-for-processing: true

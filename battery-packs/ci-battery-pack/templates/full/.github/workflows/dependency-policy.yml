@@ -1,0 +1,3 @@
+{%- if all or dependency_policy -%}
+{% include "templates/dependency-policy/.github/workflows/dependency-policy.yml" %}
+{%- endif %}

@@ -1,22 +1,22 @@
 # ci-battery-pack
 
-A [battery pack](https://crates.io/crates/battery-pack) for CI/CD workflows in Rust projects. Generates the kind of CI config you'd copy from tokio or hyper, but fresh with pinned SHAs and your project's MSRV.
-
-Currently supports GitHub Actions.
+A [battery pack](https://crates.io/crates/battery-pack) for GitHub Actions CI in Rust projects. Generates pinned workflows with the project's MSRV.
 
 ## Adding CI to an existing project
 
-Each CI feature is available as a standalone template you can merge into your project with `cargo bp add`:
+Each workflow or scaffold is available as a standalone template you can merge into your project with `cargo bp add`:
 
 ```sh
 cargo bp add ci -t spellcheck
 cargo bp add ci -t fuzzing -d ci_platform=github
+cargo bp add ci -t security-scanning
+cargo bp add ci -t dependency-policy
 cargo bp add ci -t trusted-publishing
 ```
 
 New files are written directly. For existing files, TOML and YAML are merged (new keys added, existing keys preserved), and other file types prompt you to skip, overwrite, or view a diff. See the [templates docs](https://battery-pack-rs.github.io/battery-pack/templates.html) for the full merge behavior and flags.
 
-Available standalone templates: `benchmarks`, `binary-release`, `clippy-sarif`, `fuzzing`, `mdbook`, `mutation-testing`, `spellcheck`, `stress-test`, `trusted-publishing`, `xtask`.
+Available standalone templates: `benchmarks`, `binary-release`, `clippy-sarif`, `dependency-policy`, `fuzzing`, `mdbook`, `mutation-testing`, `security-scanning`, `spellcheck`, `stress-test`, `trusted-publishing`, `xtask`.
 
 Preview any template before applying it:
 
@@ -33,7 +33,7 @@ The `full` template scaffolds a complete project (Cargo.toml, src/lib.rs, README
 cargo bp new ci --name my-project
 ```
 
-Enable all optional features with `-d all`, or pick individual ones interactively. You can also pass them on the command line:
+Use `-d all` to enable every optional feature, or pass individual flags:
 
 ```sh
 cargo bp new ci --name my-project -d benchmarks -d fuzzing -d spellcheck
@@ -44,17 +44,16 @@ cargo bp new ci --name my-project -d benchmarks -d fuzzing -d spellcheck
 ### Core CI (GitHub Actions)
 
 - CI workflow: fmt, clippy, warnings check, docsrs check, build matrix (stable × nightly), feature powerset, MSRV, semver-checks, gate job
-- Security audit workflow (cargo-deny, daily + on Cargo.toml changes)
+- RustSec audit workflow
+- Dependency policy workflow
 - Dependabot config for Cargo and GitHub Actions updates
-- cargo-deny config (`deny.toml`)
 
-### Optional features
-
-Use `-d all` to enable everything. Otherwise, each defaults to off (except `trusted_publishing` which defaults to on). In interactive mode, you'll be prompted for each.
+### Template flags
 
 | Flag | Default | What it adds | Curated deps |
 |------|---------|-------------|-------------|
 | `trusted_publishing` | true | [release-plz](https://release-plz.dev/) with OIDC trusted publishing | |
+| `dependency_policy` | true | [cargo-deny](https://embarkstudios.github.io/cargo-deny/) license, bans, and source policy | |
 | `binary_release` | false | Cross-platform binary builds for GitHub Releases + [cargo-binstall](https://github.com/cargo-bins/cargo-binstall) | |
 | `benchmarks` | false | [Criterion](https://crates.io/crates/criterion) bench scaffold + [Bencher](https://bencher.dev/) regression detection | `criterion` |
 | `fuzzing` | false | [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) scaffold + PR smoke test + nightly extended run | `libfuzzer-sys`, `arbitrary` |
@@ -103,6 +102,10 @@ Uploads clippy results to GitHub [Code Scanning](https://docs.github.com/en/code
 ### mdBook (if mdbook enabled)
 
 Enable GitHub Pages in repo settings (Settings → Pages → Source: GitHub Actions).
+
+### Dependency policy (if dependency_policy enabled)
+
+Review `deny.toml` before enforcing it; license policy is project-specific.
 
 ## License
 

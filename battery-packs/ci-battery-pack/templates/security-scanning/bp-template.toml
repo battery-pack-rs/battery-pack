@@ -1,0 +1,13 @@
+[placeholders.ci_platform]
+type = "select"
+prompt = "CI platform"
+options = ["github", "none"]
+default = "github"
+
+[placeholders.post_issue]
+type = "bool"
+prompt = "Post issues with RustSec audit findings on scheduled runs?"
+default = "true"
+
+[[hints]]
+message = "Edit .cargo/audit.toml for severity thresholds and advisory ignores."

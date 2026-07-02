@@ -24,16 +24,16 @@ jobs:
     env:
       MDBOOK_VERSION: "0.4.40"
     steps:
-      - uses: actions/checkout@[..] # v[..]
+      - uses: actions/checkout@[..]
         with:
           persist-credentials: false
       - name: Install mdBook
         run: |
           curl -sSL "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz" /
             | tar -xz -C /usr/local/bin
-      - uses: actions/configure-pages@[..] # v[..]
+      - uses: actions/configure-pages@[..]
       - run: mdbook build
-      - uses: actions/upload-pages-artifact@[..] # v[..]
+      - uses: actions/upload-pages-artifact@[..]
         with:
           path: ./book
 
@@ -46,7 +46,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@[..] # v[..]
+        uses: actions/deploy-pages@[..]
 ── book.toml ──
 [book]
 title = "test-project"
