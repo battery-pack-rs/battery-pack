@@ -776,26 +776,31 @@ pub(crate) fn add_battery_pack(
     // Skip merging when the user explicitly narrows (--no-default-features,
     // --all-features, or specific crates) since those signal a fresh selection.
     let user_manifest_path = find_user_manifest(project_dir)?;
-    let merged_features: Vec<String> = if !no_default_features
+    // If the user isn't resetting with --no-default-features or --all-features or specific
+    // crates, merge their -F flags with the previously stored feature set.
+    let (merged_features, all_features) = if !no_default_features
         && !all_features
         && specific_crates.is_empty()
     {
         if let Some(existing) = read_active_features_from_state(&user_manifest_path, &crate_name) {
-            let mut merged: Vec<String> = match existing {
-                bphelper_manifest::ActiveFeatures::All => vec!["all".to_string()],
-                bphelper_manifest::ActiveFeatures::Subset(set) => set.into_iter().collect(),
-            };
-            for f in with_features {
-                if !merged.contains(f) {
-                    merged.push(f.clone());
+            match existing {
+                // Previously had --all-features: keep that (adding more features is a no-op).
+                bphelper_manifest::ActiveFeatures::All => (vec![], true),
+                bphelper_manifest::ActiveFeatures::Subset(set) => {
+                    let mut merged: Vec<String> = set.into_iter().collect();
+                    for f in with_features {
+                        if !merged.contains(f) {
+                            merged.push(f.clone());
+                        }
+                    }
+                    (merged, false)
                 }
             }
-            merged
         } else {
-            with_features.to_vec()
+            (with_features.to_vec(), false)
         }
     } else {
-        with_features.to_vec()
+        (with_features.to_vec(), all_features)
     };
 
     let resolved = resolve_add_crates(
