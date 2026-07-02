@@ -11,9 +11,10 @@ use std::path::{Path, PathBuf};
 
 use crate::manifest::{
     add_dep_to_table, dep_kind_section, find_installed_bp_names, find_user_manifest,
-    find_workspace_manifest, read_active_features_for_project, read_managed_deps_for_project,
-    remove_battery_pack_state_entry, remove_deps_by_kind, should_upgrade_version,
-    sync_dep_in_table, write_battery_pack_state, write_deps_by_kind, write_workspace_refs_by_kind,
+    find_workspace_manifest, read_active_features_for_project, read_active_features_from_state,
+    read_managed_deps_for_project, remove_battery_pack_state_entry, remove_deps_by_kind,
+    should_upgrade_version, sync_dep_in_table, write_battery_pack_state, write_deps_by_kind,
+    write_workspace_refs_by_kind,
 };
 use crate::registry::{
     CrateSource, InstalledPack, TemplateConfig, fetch_battery_pack_detail,
@@ -771,10 +772,35 @@ pub(crate) fn add_battery_pack(
 
     // Step 2: Determine which crates to install — interactive picker, explicit flags, or defaults.
     // No manifest changes have been made yet, so cancellation is free.
+    //
+    // Merge previously stored features so that re-adding with `-F bar` is
+    // additive rather than replacing the existing feature set.
+    // Skip merging when the user explicitly narrows (--no-default-features,
+    // --all-features, or specific crates) since those signal a fresh selection.
+    let user_manifest_path = find_user_manifest(project_dir)?;
+    let merged_features: Vec<String> = if !no_default_features
+        && !all_features
+        && specific_crates.is_empty()
+    {
+        if let Some(existing) = read_active_features_from_state(&user_manifest_path, &crate_name) {
+            let mut merged: Vec<String> = existing.into_iter().collect();
+            for f in with_features {
+                if !merged.contains(f) {
+                    merged.push(f.clone());
+                }
+            }
+            merged
+        } else {
+            with_features.to_vec()
+        }
+    } else {
+        with_features.to_vec()
+    };
+
     let resolved = resolve_add_crates(
         &bp_spec,
         &crate_name,
-        with_features,
+        &merged_features,
         no_default_features,
         all_features,
         specific_crates,
@@ -808,7 +834,6 @@ pub(crate) fn add_battery_pack(
     }
 
     // Step 3: Now write everything — build-dep, workspace deps, crate deps, metadata.
-    let user_manifest_path = find_user_manifest(project_dir)?;
     let user_manifest_content =
         std::fs::read_to_string(&user_manifest_path).context("Failed to read Cargo.toml")?;
     // [impl manifest.toml.preserve]
