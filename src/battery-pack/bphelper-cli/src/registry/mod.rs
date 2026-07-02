@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail};
 use bphelper_manifest::{BatteryPackSpec, discover_battery_packs, parse_battery_pack_from_path};
 use flate2::read::GzDecoder;
 use serde::Deserialize;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tar::Archive;
@@ -580,7 +580,7 @@ pub(crate) struct InstalledPack {
     pub short_name: String,
     pub version: String,
     pub spec: bphelper_manifest::BatteryPackSpec,
-    pub active_features: BTreeSet<String>,
+    pub active_features: bphelper_manifest::ActiveFeatures,
 }
 
 pub(crate) fn fetch_battery_pack_list(

@@ -370,7 +370,7 @@ fn normalized_feature_set(features: &BTreeSet<String>) -> BTreeSet<String> {
     }
 }
 
-const STATE_FORMAT_VERSION: u32 = 1;
+const STATE_FORMAT_VERSION: u32 = 2;
 
 fn default_version() -> u32 {
     STATE_FORMAT_VERSION
@@ -393,13 +393,66 @@ impl Default for BatteryPackStateFile {
     }
 }
 
+/// A single battery pack entry in the state file.
+///
+/// v2 format uses `all-features = true` when every feature is active, and
+/// `features = [...]` for a specific subset. When `all-features` is true the
+/// `features` array is omitted. v1 files that used `features = ["all"]` as a
+/// sentinel are transparently upgraded on read.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct BatteryPackStateEntry {
     name: String,
-    #[serde(default = "default_feature_set")]
+    #[serde(rename = "all-features", default, skip_serializing_if = "is_false")]
+    all_features: bool,
+    #[serde(default = "default_feature_set", skip_serializing_if = "skip_features")]
     features: BTreeSet<String>,
     #[serde(rename = "managed-deps", default)]
     managed_deps: Vec<ManagedDepEntry>,
+}
+
+fn is_false(v: &bool) -> bool {
+    !v
+}
+
+/// Skip serializing `features` when `all-features` is true (redundant).
+/// We can't access sibling fields from serde's skip_serializing_if, so we
+/// use a heuristic: skip if the set contains only "all" (the v1 sentinel).
+/// The write path ensures features is empty when all_features is true.
+fn skip_features(features: &BTreeSet<String>) -> bool {
+    features.is_empty()
+}
+
+impl BatteryPackStateEntry {
+    /// Convert to `ActiveFeatures`.
+    fn active_features(&self) -> bphelper_manifest::ActiveFeatures {
+        if self.all_features || self.features.iter().any(|f| f == "all") {
+            bphelper_manifest::ActiveFeatures::All
+        } else {
+            bphelper_manifest::ActiveFeatures::Subset(normalized_feature_set(&self.features))
+        }
+    }
+
+    /// Create from an `ActiveFeatures` value.
+    fn from_active_features(
+        name: String,
+        active: &bphelper_manifest::ActiveFeatures,
+        managed_deps: Vec<ManagedDepEntry>,
+    ) -> Self {
+        match active {
+            bphelper_manifest::ActiveFeatures::All => Self {
+                name,
+                all_features: true,
+                features: BTreeSet::new(),
+                managed_deps,
+            },
+            bphelper_manifest::ActiveFeatures::Subset(set) => Self {
+                name,
+                all_features: false,
+                features: normalized_feature_set(set),
+                managed_deps,
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -465,10 +518,10 @@ fn write_state_file(state_path: &Path, state: &BatteryPackStateFile) -> Result<(
 pub(crate) fn read_active_features_from_state(
     user_manifest_path: &Path,
     bp_name: &str,
-) -> Option<BTreeSet<String>> {
+) -> Option<bphelper_manifest::ActiveFeatures> {
     let state_path = state_file_path(user_manifest_path);
     let state = read_state_file(&state_path).ok()?;
-    state_entry_for(&state, bp_name).map(|entry| normalized_feature_set(&entry.features))
+    state_entry_for(&state, bp_name).map(|entry| entry.active_features())
 }
 
 /// Read managed dependency names for a battery pack from `battery-pack.toml` if present.
@@ -518,8 +571,9 @@ pub(crate) fn read_active_features_for_project(
     user_manifest_path: &Path,
     _user_manifest_content: &str,
     bp_name: &str,
-) -> BTreeSet<String> {
-    read_active_features_from_state(user_manifest_path, bp_name).unwrap_or_else(default_feature_set)
+) -> bphelper_manifest::ActiveFeatures {
+    read_active_features_from_state(user_manifest_path, bp_name)
+        .unwrap_or_else(|| bphelper_manifest::ActiveFeatures::Subset(default_feature_set()))
 }
 
 /// Read managed deps for a pack in a project from `battery-pack.toml`.
@@ -535,7 +589,7 @@ pub(crate) fn read_managed_deps_for_project(
 pub(crate) fn write_battery_pack_state(
     user_manifest_path: &Path,
     bp_name: &str,
-    active_features: &BTreeSet<String>,
+    active_features: &bphelper_manifest::ActiveFeatures,
     managed_crates: &BTreeMap<String, bphelper_manifest::CrateSpec>,
 ) -> Result<()> {
     let state_path = state_file_path(user_manifest_path);
@@ -548,11 +602,11 @@ pub(crate) fn write_battery_pack_state(
         })
         .collect::<Vec<_>>();
 
-    let updated = BatteryPackStateEntry {
-        name: short_name(bp_name).to_string(),
-        features: normalized_feature_set(active_features),
+    let updated = BatteryPackStateEntry::from_active_features(
+        short_name(bp_name).to_string(),
+        active_features,
         managed_deps,
-    };
+    );
 
     if let Some(entry) = state
         .battery_pack
