@@ -5,9 +5,9 @@
 //! pure functions (`build_context`, `render_docs`) for testability,
 //! with `generate_docs` as the I/O entry point for build.rs.
 
-use bphelper_manifest::BatteryPackSpec;
+use bphelper_manifest::{BatteryPackSpec, parse_battery_pack_from_path};
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, path::Path};
 
 // ============================================================================
 // Error type
@@ -111,9 +111,9 @@ pub fn build_context(
     let features = spec
         .features
         .iter()
-        .map(|(name, crate_names)| FeatureEntry {
+        .map(|(name, refs)| FeatureEntry {
             name: name.clone(),
-            crates: crate_names.iter().cloned().collect(),
+            crates: refs.iter().map(|r| r.dep_name().to_string()).collect(),
         })
         .collect();
 
@@ -276,12 +276,8 @@ pub fn generate_docs_from_dir(
     let readme_path = format!("{manifest_dir}/README.md");
 
     // Parse the battery pack manifest.
-    let manifest_str = std::fs::read_to_string(&manifest_path).map_err(|e| Error::Io {
-        path: manifest_path,
-        source: e,
-    })?;
-    let spec = bphelper_manifest::parse_battery_pack(&manifest_str)
-        .map_err(|e| Error::Metadata(e.to_string()))?;
+    let spec = parse_battery_pack_from_path(Path::new(&manifest_path))
+        .map_err(|err| Error::Metadata(err.to_string()))?;
 
     // Read the template.
     let template = std::fs::read_to_string(&template_path).map_err(|e| Error::Io {

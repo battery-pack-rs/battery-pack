@@ -4,6 +4,7 @@
 //! Depends on `registry` and `manifest`.
 
 use anyhow::{Context, Result, bail};
+use bphelper_manifest::{ActiveFeatures, parse_battery_pack_from_path};
 use clap::{CommandFactory, Parser, Subcommand};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::IsTerminal;
@@ -469,9 +470,7 @@ fn new_from_battery_pack(opts: NewFromBpOpts<'_>) -> Result<()> {
 
     // Read template metadata from the Cargo.toml
     let manifest_path = resolved.dir.join("Cargo.toml");
-    let manifest_content = std::fs::read_to_string(&manifest_path)
-        .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
-    let templates = parse_template_metadata(&manifest_content, &crate_name)?;
+    let templates = parse_template_metadata(&manifest_path, &crate_name)?;
 
     // Resolve which template to use
     let template_path = resolve_template(&templates, opts.template.as_deref(), opts.interactive)?;
@@ -534,9 +533,11 @@ pub(crate) fn resolve_add_crates(
 
     if all_features {
         // [impl format.hidden.effect]
+        let crates = bp_spec.resolve_for_features(&ActiveFeatures::All);
+
         return ResolvedAdd::Crates {
             active_features: BTreeSet::from(["all".to_string()]),
-            crates: bp_spec.resolve_all_visible(),
+            crates,
         };
     }
 
@@ -666,9 +667,7 @@ fn add_template(opts: AddTemplateOpts<'_>) -> Result<()> {
 
     // Read template metadata and resolve which template to use.
     let manifest_path = crate_dir.join("Cargo.toml");
-    let manifest_content = std::fs::read_to_string(&manifest_path)
-        .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
-    let templates = parse_template_metadata(&manifest_content, &crate_name)?;
+    let templates = parse_template_metadata(&manifest_path, &crate_name)?;
     let template_path = resolve_template(&templates, Some(opts.template), opts.interactive)?;
 
     // Load post-merge hints before moving template_path.
@@ -761,10 +760,9 @@ pub(crate) fn add_battery_pack(
     // [impl cli.source.replace]
     let (bp_version, bp_spec) = if let Some(local_path) = path {
         let manifest_path = Path::new(local_path).join("Cargo.toml");
-        let manifest_content = std::fs::read_to_string(&manifest_path)
-            .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
-        let spec = bphelper_manifest::parse_battery_pack(&manifest_content)
-            .map_err(|e| anyhow::anyhow!("Failed to parse battery pack '{}': {}", crate_name, e))?;
+        let spec = parse_battery_pack_from_path(&manifest_path)
+            .with_context(|| format!("Failed to parse battery pack '{}'", crate_name))?;
+
         (None, spec)
     } else {
         fetch_bp_spec(source, name)?
@@ -1212,7 +1210,7 @@ fn sync_battery_packs(project_dir: &Path, path: Option<&str>, source: &CrateSour
             read_active_features_for_project(&user_manifest_path, &user_manifest_content, bp_name);
 
         // [impl format.hidden.effect]
-        let expected = bp_spec.resolve_for_features(&active_features);
+        let expected = bp_spec.resolve_for_features(&(&active_features).into());
 
         // [impl manifest.deps.workspace]
         // Sync each crate
@@ -1338,7 +1336,7 @@ fn pick_crates_interactive(
     use dialoguer::MultiSelect;
 
     // Collect non-default features with their member crates
-    let features: Vec<(&String, &BTreeSet<String>)> = bp_spec
+    let features: Vec<(&String, &BTreeSet<bphelper_manifest::FeatureRef>)> = bp_spec
         .features
         .iter()
         .filter(|(name, _)| name.as_str() != "default")
@@ -1374,8 +1372,8 @@ fn pick_crates_interactive(
     for (feat_name, feat_crates) in &features {
         let member_list = feat_crates
             .iter()
+            .map(|fref| fref.dep_name())
             .filter(|c| !bp_spec.is_hidden(c))
-            .cloned()
             .collect::<Vec<_>>()
             .join(", ");
         labels.push(format!(
@@ -1387,12 +1385,14 @@ fn pick_crates_interactive(
             // Feature is checked if all its visible members are in defaults
             feat_crates
                 .iter()
+                .map(|fref| fref.dep_name())
                 .filter(|c| !bp_spec.is_hidden(c))
                 .all(|c| default_crates.contains(c))
         } else {
             // Feature is checked if all its visible members are pre-selected
             feat_crates
                 .iter()
+                .map(|fref| fref.dep_name())
                 .filter(|c| !bp_spec.is_hidden(c))
                 .all(|c| pre_selected.contains(c))
         };
@@ -1444,58 +1444,76 @@ fn pick_crates_interactive(
         return Ok(None);
     };
 
-    // Determine which features and crates are selected
+    // Split the picker selection into feature names and direct crate names.
     let selected_set: BTreeSet<usize> = selected_indices.into_iter().collect();
-    let mut selected_crates: BTreeSet<String> = BTreeSet::new();
+    let mut picked_features = Vec::new();
+    let mut picked_crates = BTreeSet::new();
 
-    for (i, item) in items.iter().enumerate() {
-        if !selected_set.contains(&i) {
+    for (index, item) in items.iter().enumerate() {
+        if !selected_set.contains(&index) {
             continue;
         }
+
         match item {
-            PickerItem::Feature(feat_name) => {
-                if let Some(members) = bp_spec.features.get(feat_name) {
-                    for c in members {
-                        if !bp_spec.is_hidden(c) {
-                            selected_crates.insert(c.clone());
-                        }
-                    }
-                }
-            }
+            PickerItem::Feature(name) => picked_features.push(name.clone()),
             PickerItem::Crate(name) => {
-                selected_crates.insert(name.clone());
+                picked_crates.insert(name.clone());
             }
         }
     }
 
-    // Build the result
-    let mut crates = BTreeMap::new();
-    for name in &selected_crates {
+    // Route picked features through the main resolver so per-dep features (`serde/derive`)
+    // weak refs (`serde?/derive`), and nested refs (`bundle = ["fancy"]`) reach the
+    // result with correct CrateSpec.features.
+    let feature_strs = picked_features
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<&str>>();
+
+    let mut crates = if feature_strs.is_empty() {
+        BTreeMap::new()
+    } else {
+        bp_spec.resolve_crates(&feature_strs)
+    };
+
+    // Layer in directly-picked crates (their declared spec -- picked by name, not via
+    // a feature gate, so no per-dep feature accumulation).
+    for name in &picked_crates {
+        if bp_spec.is_hidden(name) {
+            continue;
+        }
+
         if let Some(spec) = bp_spec.crates.get(name) {
-            crates.insert(name.clone(), spec.clone());
+            crates.entry(name.clone()).or_insert_with(|| spec.clone());
         }
     }
 
-    // Determine which features are fully selected
+    // Mark a feature active when every visible member crate it would activate is in the resolved set.
+    let resolved_names = crates
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<&str>>();
     let mut active_features = BTreeSet::new();
-    // Check if all default crates are selected
     let default_members = bp_spec.features.get("default");
     if default_members.is_some_and(|members| {
         members
             .iter()
-            .filter(|c| !bp_spec.is_hidden(c))
-            .all(|c| selected_crates.contains(c))
+            .map(|fref| fref.dep_name())
+            .filter(|crate_name| !bp_spec.is_hidden(crate_name))
+            .all(|crate_name| resolved_names.contains(crate_name))
     }) {
         active_features.insert("default".to_string());
     }
+
     for (feat_name, feat_crates) in &bp_spec.features {
         if feat_name == "default" {
             continue;
         }
         if feat_crates
             .iter()
+            .map(|r| r.dep_name())
             .filter(|c| !bp_spec.is_hidden(c))
-            .all(|c| selected_crates.contains(c))
+            .all(|c| resolved_names.contains(c))
         {
             active_features.insert(feat_name.clone());
         }
@@ -1524,14 +1542,12 @@ fn generate_from_local(opts: NewOpts, local_path: &str, template: Option<String>
 
     // Read local Cargo.toml
     let manifest_path = local_path.join("Cargo.toml");
-    let manifest_content = std::fs::read_to_string(&manifest_path)
-        .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
 
     let crate_name = local_path
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("unknown");
-    let templates = parse_template_metadata(&manifest_content, crate_name)?;
+    let templates = parse_template_metadata(&manifest_path, crate_name)?;
     let template_path = resolve_template(&templates, template.as_deref(), opts.interactive)?;
 
     generate_from_path(opts, local_path, &template_path)
@@ -1595,11 +1611,10 @@ fn parse_define(s: &str) -> Result<(String, String), String> {
 }
 
 fn parse_template_metadata(
-    manifest_content: &str,
+    manifest_path: &Path,
     crate_name: &str,
 ) -> Result<BTreeMap<String, TemplateConfig>> {
-    let spec = bphelper_manifest::parse_battery_pack(manifest_content)
-        .map_err(|e| anyhow::anyhow!("Failed to parse Cargo.toml: {}", e))?;
+    let spec = parse_battery_pack_from_path(manifest_path).context("Failed to parse Cargo.toml")?;
 
     if spec.templates.is_empty() {
         bail!(
@@ -2216,7 +2231,9 @@ fn build_status_report(
         .iter()
         .map(|pack| {
             // Resolve which crates are expected for this pack's active features.
-            let expected = pack.spec.resolve_for_features(&pack.active_features);
+            let expected = pack
+                .spec
+                .resolve_for_features(&(&pack.active_features).into());
 
             // [impl cli.status.version-warn]
             let warnings = expected.iter().filter_map(|(dep_name, dep_spec)| {

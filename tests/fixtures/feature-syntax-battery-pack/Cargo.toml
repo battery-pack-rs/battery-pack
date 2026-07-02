@@ -1,0 +1,16 @@
+[package]
+name = "feature-syntax-battery-pack"
+version = "0.1.0"
+edition = "2021"
+description = "Exercises every Cargo feature-ref form for the oracle harness"
+keywords = ["battery-pack"]
+
+[dependencies]
+fake-serde = { path = "../_stubs/fake-serde", optional = true }
+fake-anyhow = { path = "../_stubs/fake-anyhow", optional = true }
+
+[features]
+default = ["fake-serde", "fake-anyhow"]
+derive = ["fake-serde/derive"]
+weak-derive = ["fake-serde?/derive"]
+bundle = ["derive", "weak-derive"]

@@ -3,8 +3,15 @@
 //! Parses battery pack Cargo.toml files to extract curated crates,
 //! features, hidden dependencies, and templates. Provides resolution
 //! logic to determine which crates to install based on active features.
+#[cfg(test)]
+mod test_support;
 
-use serde::Deserialize;
+mod feature_ref;
+pub use feature_ref::{FeatureParseError, FeatureRef};
+
+use cargo_metadata::{DependencyKind, Metadata, MetadataCommand, Package};
+use serde::{Deserialize, Serialize};
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -27,11 +34,32 @@ pub enum Error {
     #[error("feature '{feature}' references unknown crate '{crate_name}'")]
     UnknownCrateInFeature { feature: String, crate_name: String },
 
+    #[error("feature `{feature}` has invalid reference `{raw}`: {source}")]
+    FeatureRefParse {
+        feature: String,
+        raw: String,
+        #[source]
+        source: FeatureParseError,
+    },
+
+    #[error("cycle in local feature references: {path}")]
+    FeatureCycle { path: String },
+
     #[error("reading {path}: {source}")]
     Io {
         path: String,
         #[source]
         source: std::io::Error,
+    },
+
+    #[error("cargo metadata failed: {0}")]
+    Metadata(#[from] cargo_metadata::Error),
+
+    #[error("decoding [package.metadata] for `{package}`: {source}")]
+    MetadataDecode {
+        package: String,
+        #[source]
+        source: serde_json::Error,
     },
 }
 
@@ -105,7 +133,7 @@ impl ValidationReport {
 /// The dependency kind, determined by which section of the battery pack's
 /// Cargo.toml the crate appears in.
 // [impl format.deps.kind-mapping]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum DepKind {
     /// `[dependencies]` — becomes a regular dependency for the user.
     Normal,
@@ -127,7 +155,7 @@ impl std::fmt::Display for DepKind {
 
 /// A curated crate within a battery pack.
 // [impl format.deps.version-features]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CrateSpec {
     /// Recommended version.
     pub version: String,
@@ -141,17 +169,39 @@ pub struct CrateSpec {
 }
 
 /// Template metadata for project scaffolding.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TemplateSpec {
     pub path: String,
     pub description: Option<String>,
+}
+
+/// Active feature selection at the resolver boundary.
+///
+/// Note: Cargo permits `all` as a feature name (one exists in the `mixed-kind-battery-pack` oracle fixture), so a persisted [`BTreeSet<String>`] containing that literal is ambiguous.
+/// The [`From`] conversion always favors [`ActiveFeatures::All`]; a future tagged on-disk format would remove the ambiguity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ActiveFeatures {
+    /// Every declared feature is active
+    All,
+    /// An explicit subset (may include `"default"` to expand the default set).
+    Subset(BTreeSet<String>),
+}
+
+impl From<&BTreeSet<String>> for ActiveFeatures {
+    fn from(value: &BTreeSet<String>) -> Self {
+        if value.iter().any(|feat| feat == "all") {
+            Self::All
+        } else {
+            Self::Subset(value.clone())
+        }
+    }
 }
 
 /// Parsed battery pack specification.
 ///
 /// This is the core data model extracted from a battery pack's Cargo.toml.
 /// All curated crates, features, hidden deps, and templates are represented here.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatteryPackSpec {
     /// Crate name (e.g., `cli-battery-pack`).
     pub name: String,
@@ -166,9 +216,9 @@ pub struct BatteryPackSpec {
     /// All curated crates, keyed by crate name.
     // [impl format.deps.source-of-truth]
     pub crates: BTreeMap<String, CrateSpec>,
-    /// Named features from `[features]`, mapping feature name to crate names.
+    /// Named features from `[features]`, mapping feature name to parsed refs.
     // [impl format.features.grouping]
-    pub features: BTreeMap<String, BTreeSet<String>>,
+    pub features: BTreeMap<String, BTreeSet<FeatureRef>>,
     /// Hidden dependency patterns (may include globs).
     // [impl format.hidden.metadata]
     pub hidden: BTreeSet<String>,
@@ -178,9 +228,13 @@ pub struct BatteryPackSpec {
 
 impl BatteryPackSpec {
     /// Validate that this looks like a valid battery pack.
-    // [impl format.crate.name]
+    ///
+    /// Accepts both `battery-pack` (the meta package) and any crate suffixed `-battery-pack
+    /// -- matching the filter applied by [`discover-battery-packs`].
+    ///
+    /// [impl format.crate.name]
     pub fn validate(&self) -> Result<(), Error> {
-        if !self.name.ends_with("-battery-pack") {
+        if self.name != "battery-pack" && !self.name.ends_with("-battery-pack") {
             return Err(Error::InvalidName {
                 name: self.name.clone(),
             });
@@ -189,21 +243,77 @@ impl BatteryPackSpec {
         Ok(())
     }
 
-    /// Check that all feature entries reference crates that actually exist.
+    /// Check that all feature entries reference crates that actually exist, and that
+    /// local-feature references do not form cycles.
     fn validate_features(&self) -> Result<(), Error> {
-        for (feature_name, crate_names) in &self.features {
-            for crate_name in crate_names {
-                if !self.crates.contains_key(crate_name) {
+        for (feature_name, refs) in &self.features {
+            for fref in refs {
+                if !self.reference_resolves(fref) {
                     return Err(Error::UnknownCrateInFeature {
                         feature: feature_name.clone(),
-                        crate_name: crate_name.clone(),
+                        crate_name: fref.dep_name().to_string(),
                     });
                 }
             }
         }
+        // Cycle detection over local-feature edges.
+        let mut visited = BTreeSet::new();
+        let mut stack = Vec::new();
+
+        for start in self.features.keys() {
+            self.dfs_feature(start, &mut stack, &mut visited)?;
+        }
         Ok(())
     }
 
+    /// Does this reference's target exist?
+    /// `Dep`/`DepFeature` must point at a declared crate; bare `Feature` may be either
+    /// a local feature key or a dep.
+    fn reference_resolves(&self, fref: &FeatureRef) -> bool {
+        let target = fref.dep_name();
+
+        match fref {
+            FeatureRef::Dep(_) | FeatureRef::DepFeature { .. } => self.crates.contains_key(target),
+            FeatureRef::Feature(_) => {
+                self.crates.contains_key(target) || self.features.contains_key(target)
+            }
+        }
+    }
+
+    fn dfs_feature(
+        &self,
+        node: &str,
+        stack: &mut Vec<String>,
+        visited: &mut BTreeSet<String>,
+    ) -> Result<(), Error> {
+        if stack.iter().any(|stacked| stacked == node) {
+            let mut cycle = stack.clone();
+            cycle.push(node.to_string());
+
+            return Err(Error::FeatureCycle {
+                path: cycle.join("->"),
+            });
+        }
+
+        if !visited.insert(node.to_string()) {
+            return Ok(());
+        }
+
+        stack.push(node.to_string());
+
+        if let Some(refs) = self.features.get(node) {
+            for fref in refs {
+                if let FeatureRef::Feature(name) = fref
+                    && self.features.contains_key(name)
+                {
+                    self.dfs_feature(name, stack, visited)?;
+                }
+            }
+        }
+
+        stack.pop();
+        Ok(())
+    }
     /// Comprehensive spec validation — collects all issues rather than
     /// failing on the first one. Checks data-only rules from the spec.
     pub fn validate_spec(&self) -> ValidationReport {
@@ -234,14 +344,14 @@ impl BatteryPackSpec {
         }
 
         // [impl format.features.grouping]
-        for (feature_name, crate_names) in &self.features {
-            for crate_name in crate_names {
-                if !self.crates.contains_key(crate_name) {
+        for (feature_name, refs) in &self.features {
+            for fref in refs {
+                if !self.reference_resolves(fref) {
                     report.error(
                         "format.features.grouping",
                         format!(
-                            "feature '{}' references unknown crate '{}'",
-                            feature_name, crate_name
+                            "feature '{feature_name}' references unknown crate '{}'",
+                            fref.dep_name()
                         ),
                     );
                 }
@@ -261,16 +371,20 @@ impl BatteryPackSpec {
     // [impl format.features.additive]
     pub fn resolve_crates(&self, active_features: &[&str]) -> BTreeMap<String, CrateSpec> {
         let mut result: BTreeMap<String, CrateSpec> = BTreeMap::new();
+        let mut visiting: BTreeSet<String> = BTreeSet::new();
+
+        // Weak `foo?/bar` refs are deferred -- they only add features to deps activated by something else in this combo.
+        //  [impl feature-refs.resolution.weak]
+        let mut pending_weak: Vec<(String, String)> = Vec::new();
 
         if active_features.is_empty() {
-            // Default resolution
-            self.add_default_crates(&mut result);
+            self.add_default_crates(&mut result, &mut visiting, &mut pending_weak);
         } else {
             for feature_name in active_features {
                 if *feature_name == "default" {
-                    self.add_default_crates(&mut result);
-                } else if let Some(crate_names) = self.features.get(*feature_name) {
-                    self.add_feature_crates(crate_names, &mut result);
+                    self.add_default_crates(&mut result, &mut visiting, &mut pending_weak);
+                } else if let Some(refs) = self.features.get(*feature_name) {
+                    self.add_feature_crates(refs, &mut result, &mut visiting, &mut pending_weak);
                 }
             }
         }
@@ -282,7 +396,7 @@ impl BatteryPackSpec {
         let featured: std::collections::BTreeSet<&str> = self
             .features
             .values()
-            .flat_map(|names| names.iter().map(String::as_str))
+            .flat_map(|refs| refs.iter().map(FeatureRef::dep_name))
             .collect();
         for (name, spec) in &self.crates {
             let unconditional = spec.dep_kind != DepKind::Normal
@@ -292,17 +406,29 @@ impl BatteryPackSpec {
             }
         }
 
+        // Apply deferred weak refs to deps that were activated by other means.
+        for (dep, feature) in pending_weak {
+            if let Some(entry) = result.get_mut(&dep) {
+                entry.features.insert(feature);
+            }
+        }
+
         result
     }
 
     /// Add the default set of crates to the result map.
     // [impl format.features.default]
-    fn add_default_crates(&self, result: &mut BTreeMap<String, CrateSpec>) {
-        if let Some(default_crate_names) = self.features.get("default") {
-            // Explicit default feature exists — use it
-            self.add_feature_crates(default_crate_names, result);
+    fn add_default_crates(
+        &self,
+        result: &mut BTreeMap<String, CrateSpec>,
+        visiting: &mut BTreeSet<String>,
+        pending_weak: &mut Vec<(String, String)>,
+    ) {
+        if let Some(default_refs) = self.features.get("default") {
+            // Explicit default feature exists -- expand it.
+            self.add_feature_crates(default_refs, result, visiting, pending_weak);
         } else {
-            // No default feature — all non-optional crates
+            // No default feature -- include all non-optional crates.
             for (name, spec) in &self.crates {
                 if !spec.optional {
                     result.insert(name.clone(), spec.clone());
@@ -311,57 +437,125 @@ impl BatteryPackSpec {
         }
     }
 
-    /// Add crates from a feature's crate list to the result map.
+    /// Resolve a list of `FeatureRef`s into the result map.
     ///
-    /// If a crate is already present, its Cargo features are merged additively.
+    /// Strong `foo/bar` activates `foo` and adds feature `bar`.
+    /// Weak is deferred -- pushed into `pending_weak` for the final-pass apply in
+    /// `resolve_crates`.
+    /// Bare `Feature(name)` expands a local feature recursively (with cycle guard)
+    /// or falls back to dep lookup.
+    ///
     // [impl format.features.augment]
     fn add_feature_crates(
         &self,
-        crate_names: &BTreeSet<String>,
+        refs: &BTreeSet<FeatureRef>,
         result: &mut BTreeMap<String, CrateSpec>,
+        visiting: &mut BTreeSet<String>,
+        pending_weak: &mut Vec<(String, String)>,
     ) {
-        for crate_name in crate_names {
-            if let Some(spec) = self.crates.get(crate_name) {
-                if let Some(existing) = result.get_mut(crate_name) {
-                    // Already present — merge features additively
-                    existing.features.extend(spec.features.iter().cloned());
-                } else {
-                    result.insert(crate_name.clone(), spec.clone());
+        for fref in refs {
+            match fref {
+                // Bare `foo`: recurse into a local feature if one exists, else fall back to
+                // dep lookup (covers the implicit-feature case where `foo` is an optional dep).
+                FeatureRef::Feature(name) => {
+                    if let Some(inner) = self.features.get(name) {
+                        if visiting.insert(name.clone()) {
+                            self.add_feature_crates(inner, result, visiting, pending_weak);
+                            visiting.remove(name);
+                        }
+                    } else {
+                        self.add_dep(name, None, result);
+                    }
+                }
+                // `dep:foo`: activate the dep directly, never as a feature.
+                FeatureRef::Dep(name) => self.add_dep(name, None, result),
+                FeatureRef::DepFeature { dep, feature, weak } => {
+                    if *weak {
+                        pending_weak.push((dep.clone(), feature.clone()));
+                    } else {
+                        self.add_dep(dep, Some(feature), result);
+                    }
                 }
             }
         }
     }
 
+    /// Insert a dep into the result map, merging its row-declared features and
+    /// optionally adding one extra per-dep feature on top.
+    fn add_dep(
+        &self,
+        dep_name: &str,
+        extra_feature: Option<&str>,
+        result: &mut BTreeMap<String, CrateSpec>,
+    ) {
+        let Some(spec) = self.crates.get(dep_name) else {
+            return;
+        };
+
+        // Fresh insert: clone the spec (its declared features come along).
+        // Repeat insert: merge declared features into the existing entry. Either way, layer
+        // `extra_feature` on top.
+        let entry = match result.entry(dep_name.to_string()) {
+            Entry::Vacant(vacant_entry) => vacant_entry.insert(spec.clone()),
+            Entry::Occupied(occupied_entry) => {
+                let existing = occupied_entry.into_mut();
+                existing.features.extend(spec.features.iter().cloned());
+
+                existing
+            }
+        };
+
+        if let Some(extra) = extra_feature {
+            entry.features.insert(extra.to_string());
+        }
+    }
+
     /// Resolve all crates regardless of features or optional status.
-    pub fn resolve_all(&self) -> BTreeMap<String, CrateSpec> {
+    /// Only used in tests; prefer [`resolve_for_features`] for user-facing paths.
+    #[cfg(test)]
+    pub(crate) fn resolve_all(&self) -> BTreeMap<String, CrateSpec> {
         self.crates.clone()
     }
 
-    /// Resolve all visible (non-hidden) crates regardless of features or optional status.
-    // [impl format.hidden.effect]
-    pub fn resolve_all_visible(&self) -> BTreeMap<String, CrateSpec> {
-        self.crates
-            .iter()
-            .filter(|(name, _)| !self.is_hidden(name))
-            .map(|(name, spec)| (name.clone(), spec.clone()))
-            .collect()
-    }
-
-    /// Resolve crates for a set of active features, handling the "all" sentinel.
+    /// Resolve crates for a typed [`ActiveFeatures`] selection, filtered for visibility.
     ///
-    /// If `active_features` contains `"all"`, returns all visible crates.
-    /// Otherwise delegates to `resolve_crates`.
-    // [impl format.hidden.effect]
-    pub fn resolve_for_features(
-        &self,
-        active_features: &BTreeSet<String>,
-    ) -> BTreeMap<String, CrateSpec> {
-        if active_features.iter().any(|s| s == "all") {
-            self.resolve_all_visible()
-        } else {
-            let str_features: Vec<&str> = active_features.iter().map(|s| s.as_str()).collect();
-            self.resolve_crates(&str_features)
+    /// `ActiveFeatures::All` expands to every declared feature so per-dep activations
+    /// (`serde/derive`, `foo?/bar`, nested refs) reach `resolve_crates` instead of being dropped.
+    /// Hidden crates are always excluded from the result -- this is the surface every
+    /// user-facing caller (sync, status, `--all-features`, bp-managed rewrite) reads from.
+    ///
+    /// When `All` is active, optional deps whose implicit feature was stripped during parsing
+    /// (i.e., they have no explicit feature entry referencing them) are also included. This
+    /// mirrors Cargo's behavior where `--all-features` activates every optional dep.
+    ///
+    /// [impl format.hidden.effect]
+    pub fn resolve_for_features(&self, active: &ActiveFeatures) -> BTreeMap<String, CrateSpec> {
+        let expanded: Vec<&str> = match active {
+            ActiveFeatures::All => self.features.keys().map(String::as_str).collect(),
+            ActiveFeatures::Subset(features) => features.iter().map(String::as_str).collect(),
+        };
+
+        let mut resolved = self.resolve_crates(&expanded);
+
+        // When all features are active, also activate optional deps whose implicit
+        // feature (`feat = ["dep:feat"]`) was stripped during parsing. Cargo's
+        // `--all-features` activates these, so we must too.
+        if matches!(active, ActiveFeatures::All) {
+            let featured: BTreeSet<&str> = self
+                .features
+                .values()
+                .flat_map(|refs| refs.iter().map(FeatureRef::dep_name))
+                .collect();
+            for (name, spec) in &self.crates {
+                if spec.optional && !featured.contains(name.as_str()) {
+                    resolved.entry(name.clone()).or_insert_with(|| spec.clone());
+                }
+            }
         }
+
+        resolved.retain(|name, _| !self.is_hidden(name));
+
+        resolved
     }
 
     /// Check whether a crate name matches the hidden patterns.
@@ -395,16 +589,17 @@ impl BatteryPackSpec {
         let mut seen = std::collections::BTreeSet::new();
 
         // First, emit crates grouped by features
-        for (feature_name, crate_names) in &self.features {
-            for crate_name in crate_names {
-                if self.is_hidden(crate_name) {
+        for (feature_name, refs) in &self.features {
+            for fref in refs {
+                let key = fref.dep_name();
+                if self.is_hidden(key) {
                     continue;
                 }
-                if let Some(spec) = self.crates.get(crate_name)
-                    && seen.insert(crate_name.clone())
+                if let Some(spec) = self.crates.get(key)
+                    && seen.insert(key.to_string())
                 {
-                    let is_default = default_crates.contains_key(crate_name);
-                    result.push((feature_name.clone(), crate_name.clone(), spec, is_default));
+                    let is_default = default_crates.contains_key(key);
+                    result.push((feature_name.clone(), key.to_string(), spec, is_default))
                 }
             }
         }
@@ -608,33 +803,6 @@ fn merge_dep_kinds(existing: &[DepKind], incoming: DepKind) -> Vec<DepKind> {
 // ============================================================================
 
 #[derive(Deserialize)]
-struct RawManifest {
-    package: Option<RawPackage>,
-    #[serde(default)]
-    features: BTreeMap<String, Vec<String>>,
-    #[serde(default)]
-    dependencies: BTreeMap<String, toml::Value>,
-    #[serde(default, rename = "dev-dependencies")]
-    dev_dependencies: BTreeMap<String, toml::Value>,
-    #[serde(default, rename = "build-dependencies")]
-    build_dependencies: BTreeMap<String, toml::Value>,
-}
-
-#[derive(Deserialize)]
-struct RawPackage {
-    name: Option<String>,
-    version: Option<String>,
-    #[serde(default)]
-    description: Option<String>,
-    #[serde(default)]
-    repository: Option<String>,
-    #[serde(default)]
-    keywords: Vec<String>,
-    #[serde(default)]
-    metadata: Option<RawMetadata>,
-}
-
-#[derive(Deserialize)]
 struct RawMetadata {
     #[serde(default, rename = "battery-pack")]
     battery_pack: Option<RawBatteryPackMetadata>,
@@ -661,61 +829,111 @@ struct RawTemplateSpec {
     description: Option<String>,
 }
 
-/// Parsed fields from a single dependency entry.
-struct RawDep {
-    version: String,
-    features: Vec<String>,
-    optional: bool,
-}
-
 // ============================================================================
 // Parsing
 // ============================================================================
 
-/// Parse a battery pack's Cargo.toml into a `BatteryPackSpec`.
-pub fn parse_battery_pack(manifest_str: &str) -> Result<BatteryPackSpec, Error> {
-    let raw: RawManifest = toml::from_str(manifest_str)?;
+fn package_to_spec(pkg: &Package) -> Result<BatteryPackSpec, Error> {
+    // -- direct field copies --
+    let name = pkg.name.to_string();
+    let version = pkg.version.to_string();
+    let description = pkg.description.clone().unwrap_or_default();
+    let repository = pkg.repository.clone();
+    let keywords = pkg.keywords.clone();
 
-    let package = raw
-        .package
-        .ok_or(Error::MissingField("[package] section"))?;
-    let name = package.name.ok_or(Error::MissingField("package.name"))?;
-    let version = package
-        .version
-        .ok_or(Error::MissingField("package.version"))?;
-    let description = package.description.unwrap_or_default();
-    let repository = package.repository;
-    let keywords = package.keywords;
-
-    // Parse crates from all three dependency sections
+    // -- dep mapping: cargo_metadata::Dependency -> CrateSpec --
     let mut crates = BTreeMap::new();
-    parse_dep_section(&raw.dependencies, DepKind::Normal, &mut crates);
-    parse_dep_section(&raw.dev_dependencies, DepKind::Dev, &mut crates);
-    parse_dep_section(&raw.build_dependencies, DepKind::Build, &mut crates);
+    for dep in &pkg.dependencies {
+        let kind = match dep.kind {
+            DependencyKind::Normal => DepKind::Normal,
+            DependencyKind::Development => DepKind::Dev,
+            DependencyKind::Build => DepKind::Build,
+            _ => {
+                eprintln!(
+                    "warning: skipping dependency '{}' with unrecognized kind {:?}",
+                    dep.name, dep.kind
+                );
+                continue;
+            }
+        };
 
-    // Parse features (standard Cargo features)
-    let features: BTreeMap<String, BTreeSet<String>> = raw
-        .features
-        .into_iter()
-        .map(|(k, v)| (k, v.into_iter().collect()))
-        .collect();
+        // Strip the implicit caret cargo_metadata adds so emitted Cargo.toml
+        // entries match `cargo add` convention (`"1"` not `"^1"`).
+        let version = dep.req.to_string();
+        let version = version
+            .strip_prefix('^')
+            .map(str::to_owned)
+            .unwrap_or(version);
 
-    // Parse hidden deps from package.metadata.battery-pack
-    let hidden: BTreeSet<String> = package
-        .metadata
+        crates.insert(
+            dep.name.clone(),
+            CrateSpec {
+                version,
+                features: dep.features.iter().cloned().collect(),
+                dep_kind: kind,
+                optional: dep.optional,
+            },
+        );
+    }
+
+    // -- features: filter out auto-gen optional-dep features --
+    let optional_dep_names = pkg
+        .dependencies
+        .iter()
+        .filter(|dep| dep.optional)
+        .map(|dep| dep.name.as_str())
+        .collect::<BTreeSet<_>>();
+
+    // Skip cargo's auto-generated `feat = ["dep:feat"]` entries that mirror an
+    // optional dep one-to-one — they're noise, not author intent.
+    let is_auto_optional = |key: &str, value: &[String]| {
+        optional_dep_names.contains(key)
+            && value.len() == 1
+            && value[0].strip_prefix("dep:") == Some(key)
+    };
+    let mut features: BTreeMap<String, BTreeSet<FeatureRef>> = BTreeMap::new();
+    for (key, value) in &pkg.features {
+        if is_auto_optional(key.as_str(), value) {
+            continue;
+        }
+        let parsed = value
+            .iter()
+            .map(|raw| {
+                FeatureRef::parse(raw).map_err(|source| Error::FeatureRefParse {
+                    feature: key.to_string(),
+                    raw: raw.clone(),
+                    source,
+                })
+            })
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        features.insert(key.to_string(), parsed);
+    }
+
+    // -- read [package.metadata.battery-pack].hidden + battery.templates --
+    let raw_meta: Option<RawMetadata> = if pkg.metadata.is_null() {
+        None
+    } else {
+        Some(
+            serde_json::from_value(pkg.metadata.clone()).map_err(|source| {
+                Error::MetadataDecode {
+                    package: pkg.name.to_string(),
+                    source,
+                }
+            })?,
+        )
+    };
+
+    let hidden = raw_meta
         .as_ref()
-        .and_then(|m| m.battery_pack.as_ref())
-        .map(|bp| bp.hidden.iter().cloned().collect())
+        .and_then(|meta| meta.battery_pack.as_ref())
+        .map(|raw| raw.hidden.iter().cloned().collect::<BTreeSet<_>>())
         .unwrap_or_default();
 
-    // [impl format.templates.metadata]
-    // Parse templates from package.metadata.battery.templates
-    let templates = package
-        .metadata
+    let templates = raw_meta
         .as_ref()
-        .and_then(|m| m.battery.as_ref())
-        .map(|b| {
-            b.templates
+        .and_then(|meta| meta.battery.as_ref())
+        .map(|bp| {
+            bp.templates
                 .iter()
                 .map(|(name, raw)| {
                     (
@@ -743,155 +961,65 @@ pub fn parse_battery_pack(manifest_str: &str) -> Result<BatteryPackSpec, Error> 
     })
 }
 
-/// Parse a single dependency section into the crates map.
-fn parse_dep_section(
-    raw: &BTreeMap<String, toml::Value>,
-    kind: DepKind,
-    crates: &mut BTreeMap<String, CrateSpec>,
-) {
-    for (name, value) in raw {
-        let dep = parse_single_dep(value);
-        crates.insert(
-            name.clone(),
-            CrateSpec {
-                version: dep.version,
-                features: dep.features.into_iter().collect(),
-                dep_kind: kind,
-                optional: dep.optional,
-            },
-        );
-    }
-}
-
-/// Extract version, features, and optional flag from a dependency value.
-fn parse_single_dep(value: &toml::Value) -> RawDep {
-    match value {
-        toml::Value::String(version) => RawDep {
-            version: version.clone(),
-            features: Vec::new(),
-            optional: false,
-        },
-        toml::Value::Table(table) => {
-            let version = table
-                .get("version")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let features = table
-                .get("features")
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect()
-                })
-                .unwrap_or_default();
-            let optional = table
-                .get("optional")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            RawDep {
-                version,
-                features,
-                optional,
-            }
-        }
-        _ => RawDep {
-            version: String::new(),
-            features: Vec::new(),
-            optional: false,
-        },
-    }
-}
-
 // ============================================================================
 // Source discovery
 // ============================================================================
 
-/// Discover battery packs in a workspace by scanning members for
-/// crates whose names end in `-battery-pack`.
-// [impl cli.source.discover]
-pub fn discover_battery_packs(workspace_path: &Path) -> Result<Vec<BatteryPackSpec>, Error> {
-    let workspace_toml = workspace_path.join("Cargo.toml");
-    let content = std::fs::read_to_string(&workspace_toml).map_err(|e| Error::Io {
-        path: workspace_toml.display().to_string(),
-        source: e,
-    })?;
-
-    let raw: RawWorkspace = toml::from_str(&content)?;
-
-    let members = raw
-        .workspace
-        .ok_or(Error::MissingField("[workspace] section"))?
-        .members;
-
-    let mut packs = Vec::new();
-
-    for member_path in &members {
-        let member_dir = workspace_path.join(member_path);
-        let member_toml = member_dir.join("Cargo.toml");
-
-        if !member_toml.exists() {
-            continue;
-        }
-
-        let member_content = std::fs::read_to_string(&member_toml).map_err(|e| Error::Io {
-            path: member_toml.display().to_string(),
-            source: e,
-        })?;
-
-        // Parse once, check name, keep if it's a battery pack
-        // [impl format.crate.name]
-        let spec = parse_battery_pack(&member_content)?;
-        if spec.name == "battery-pack" || spec.name.ends_with("-battery-pack") {
-            packs.push(spec);
-        }
-    }
-
-    Ok(packs)
+/// Run `cargo metadata --manifest-path PATH --no-deps`.
+fn load_metadata(manifest_path: &Path) -> Result<Metadata, Error> {
+    MetadataCommand::new()
+        .manifest_path(manifest_path)
+        .no_deps()
+        .exec()
+        .map_err(Error::Metadata)
 }
 
-/// Discover battery packs reachable from a crate root.
+/// Discover battery packs reachable from a path.
 ///
-/// Walks up from `crate_root` looking for a workspace, then discovers
-/// battery packs within it. Falls back to parsing `crate_root` itself
-/// as a standalone battery pack if no workspace is found.
-// TODO: Replace with `cargo_metadata` when available (#13).
-// [impl cli.source.discover]
-pub fn discover_from_crate_root(crate_root: &Path) -> Result<Vec<BatteryPackSpec>, Error> {
-    // Try the crate root itself (it may be a workspace root).
-    if let Ok(specs) = discover_battery_packs(crate_root) {
-        return Ok(specs);
-    }
+/// `path` may be a workspace root or any crate within a workspace;
+/// `cargo metadata` walks up to find the workspace root either way.
+/// A crate without a `[workspace]` section is treated as a 1-member workspace, so
+/// standalone packs are also covered.
+pub fn discover_battery_packs(path: &Path) -> Result<Vec<BatteryPackSpec>, Error> {
+    let manifest_path = path.join("Cargo.toml");
+    let metadata = load_metadata(&manifest_path)?;
 
-    // Walk up looking for a workspace.
-    let mut dir = crate_root.to_path_buf();
-    while dir.pop() {
-        if let Ok(specs) = discover_battery_packs(&dir) {
-            return Ok(specs);
-        }
-    }
+    metadata
+        .workspace_packages()
+        .into_iter()
+        .filter(|pkg| pkg.name == "battery-pack" || pkg.name.ends_with("-battery-pack"))
+        .map(package_to_spec)
+        .collect()
+}
 
-    // Standalone battery pack — parse it directly.
-    let cargo_toml = crate_root.join("Cargo.toml");
-    let content = std::fs::read_to_string(&cargo_toml).map_err(|e| Error::Io {
-        path: cargo_toml.display().to_string(),
-        source: e,
+/// Parse a single battery pack from its `Cargo.toml` path.
+///
+/// Runs `cargo metadata` against the given manifest and returns the spec for the matching package.
+///
+/// Note: Does NOT call [`BatteryPackSpec::validate`] -- `bphelper-build` consumes this from
+/// the build script of scaffolded user crates whose package name isn't a `*-battery-pack`.
+/// Callers that install or sync (CLI commands, registry fetches) must validate explicitly.
+pub fn parse_battery_pack_from_path(manifest_path: &Path) -> Result<BatteryPackSpec, Error> {
+    let metadata = load_metadata(manifest_path)?;
+
+    let target = manifest_path.canonicalize().map_err(|err| Error::Io {
+        path: manifest_path.display().to_string(),
+        source: err,
     })?;
-    let spec = parse_battery_pack(&content)?;
-    Ok(vec![spec])
-}
 
-/// Minimal workspace-level deserialization for member discovery.
-#[derive(Deserialize)]
-struct RawWorkspace {
-    workspace: Option<RawWorkspaceInner>,
-}
+    let pkg = metadata
+        .packages
+        .iter()
+        .find(|pkg| {
+            pkg.manifest_path
+                .as_std_path()
+                .canonicalize()
+                .map(|path| path == target)
+                .unwrap_or(false)
+        })
+        .ok_or(Error::MissingField("package for manifest"))?;
 
-#[derive(Deserialize)]
-struct RawWorkspaceInner {
-    #[serde(default)]
-    members: Vec<String>,
+    package_to_spec(pkg)
 }
 
 // ============================================================================
@@ -1027,7 +1155,240 @@ fn validate_templates_on_disk(
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
+    use crate::{
+        ActiveFeatures,
+        feature_ref::FeatureRef,
+        test_support::{WorkspaceFixture, parse_test},
+    };
+
     use super::*;
+    use indoc::indoc;
+
+    // -- Helper unit tests --
+
+    #[test]
+    fn parse_bp_from_path_normalizes_non_canonical_input() {
+        let mut fx = WorkspaceFixture::new();
+        fx.add_pack(
+            "test-pack",
+            indoc! {r#"
+                [package]
+                name = "test-battery-pack"
+                version = "0.1.0"
+                keywords = ["battery-pack"]
+            "#},
+        );
+
+        let root = fx.finalize();
+        let non_canonical = root
+            .join("test-pack")
+            .join("..")
+            .join("test-pack")
+            .join("Cargo.toml");
+
+        let spec = parse_battery_pack_from_path(&non_canonical).unwrap();
+
+        // Snapshot: identity survives path normalization.
+        snapbox::assert_data_eq!(
+            format!("{} {}", spec.name, spec.version),
+            snapbox::str![[r#"test-battery-pack 0.1.0"#]]
+        );
+
+        // Point assertion retained for direct failure messages.
+        assert_eq!(spec.name, "test-battery-pack");
+    }
+
+    #[test]
+    fn feature_with_dep_prefix_resolves() {
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [dependencies]
+            indicatif = { version = "0.17", optional = true }
+
+            [features]
+            indicators = ["dep:indicatif"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        spec.validate().unwrap();
+        let resolved = spec.resolve_for_features(&ActiveFeatures::Subset(BTreeSet::from([
+            "indicators".to_string(),
+        ])));
+
+        // Snapshot: `dep:indicatif` pulls indicatif into the resolved set.
+        snapbox::assert_data_eq!(
+            render_resolved(&resolved),
+            snapbox::str![[r#"indicatif 0.17"#]]
+        );
+
+        // Point assertion retained.
+        assert!(resolved.contains_key("indicatif"));
+    }
+
+    #[test]
+    fn feature_with_slash_feature_resolves() {
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [dependencies]
+            serde = { version = "1", optional = true }
+
+            [features]
+            fancy = ["serde/derive"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        spec.validate().unwrap();
+        let resolved = spec.resolve_for_features(&ActiveFeatures::Subset(BTreeSet::from([
+            "fancy".to_string(),
+        ])));
+
+        // Snapshot: `serde/derive` pulls serde into the resolved set.
+        snapbox::assert_data_eq!(render_resolved(&resolved), snapbox::str![[r#"serde 1"#]]);
+
+        // Point assertion retained.
+        assert!(resolved.contains_key("serde"));
+    }
+
+    #[test]
+    fn feature_with_weak_slash_feature_resolve() {
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [dependencies]
+            serde = { version = "1", optional = true }
+
+            [features]
+            maybe-derive = ["serde?/derive"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        spec.validate().unwrap();
+        let resolved = spec.resolve_for_features(&ActiveFeatures::Subset(BTreeSet::from([
+            "maybe-derive".to_string(),
+        ])));
+
+        // Weak-only refs do not activate the dep on their own — matches
+        // Cargo's weak-dep semantics. See `feature-refs.resolution.weak`.
+        snapbox::assert_data_eq!(render_resolved(&resolved), snapbox::str![""]);
+        assert!(!resolved.contains_key("serde"));
+    }
+
+    // Hidden crate referenced from a feature; ActiveFeatures::All must filter it out so
+    // callers (--all-features, sync verify, status verify, bp-managed rewrite) never
+    // see it in their resolved set.
+    #[test]
+    fn resolve_for_features_excludes_hidden_crates() {
+        let manifest = indoc! {r#"
+        [package]
+        name = "test-battery-pack"
+        version = "0.1.0"
+        keywords = ["battery-pack"]
+
+        [package.metadata.battery-pack]
+        hidden = ["serde_derive"]
+
+        [dependencies]
+        serde = { version = "1.0.0", optional = true }
+        serde_derive = { version = "1.0.0", optional = true }
+
+        [features]
+        fancy = ["dep:serde", "dep:serde_derive"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let resolved = spec.resolve_for_features(&ActiveFeatures::All);
+
+        assert!(
+            !resolved.contains_key("serde_derive"),
+            "hidden crate must not be returned by ActiveFeatures::All"
+        );
+        assert!(resolved.contains_key("serde"));
+    }
+
+    // Optional dep whose implicit feature (`feat = ["dep:feat"]`) was stripped during
+    // parsing must still appear when ActiveFeatures::All is active. Cargo's
+    // `--all-features` activates every optional dep regardless of whether it appears
+    // in an explicit feature entry.
+    #[test]
+    fn resolve_for_features_all_includes_implicit_optional_deps() {
+        let manifest = indoc! {r#"
+        [package]
+        name = "test-battery-pack"
+        version = "0.1.0"
+        keywords = ["battery-pack"]
+
+        [dependencies]
+        clap = { version = "4", optional = true }
+        indicatif = { version = "0.17", optional = true }
+
+        [features]
+        default = ["dep:clap"]
+        "#};
+
+        // `indicatif` has no explicit feature entry; its implicit `indicatif = ["dep:indicatif"]`
+        // is stripped during parsing. ActiveFeatures::All must still include it.
+        let spec = parse_test(manifest).unwrap();
+        let resolved = spec.resolve_for_features(&ActiveFeatures::All);
+
+        assert!(
+            resolved.contains_key("clap"),
+            "clap is in an explicit feature, should be resolved"
+        );
+        assert!(
+            resolved.contains_key("indicatif"),
+            "indicatif is optional with only an implicit feature; All must still include it"
+        );
+    }
+
+    // Two local features pointing at each other -- dfs_feature must report a cycle.
+    #[test]
+    fn validate_rejects_feature_cycle() {
+        let manifest = indoc! {r#"
+        [package]
+        name = "test-battery-pack"
+        version = "0.1.0"
+        keywords = ["battery-pack"]
+
+        [features]
+        a = ["b"]
+        b = ["a"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+
+        match spec.validate() {
+            Err(Error::FeatureCycle { path }) => {
+                assert!(path.contains("a") && path.contains("b"), "path = {path}");
+            }
+            other => panic!("expected FeatureCycle, got {other:?}"),
+        }
+    }
+
+    // Documented Limitation: a persisted set containing "all" always collapses to ActiveFeatures::All,
+    // even when the spec declares a literal feature named `all`.
+    #[test]
+    fn active_features_from_btreeset_treats_all_literal_as_sentinel() {
+        let set = BTreeSet::from(["all".to_string()]);
+        let active: ActiveFeatures = (&set).into();
+        assert_eq!(active, ActiveFeatures::All);
+
+        let explicit = BTreeSet::from(["default".to_string(), "fancy".to_string()]);
+        let active: ActiveFeatures = (&explicit).into();
+        assert_eq!(active, ActiveFeatures::Subset(explicit));
+    }
 
     // -- Parsing tests --
 
@@ -1035,7 +1396,7 @@ mod tests {
     // [verify format.deps.source-of-truth]
     // [verify format.deps.kind-mapping]
     fn parse_deps_from_all_sections() {
-        let manifest = r#"
+        let manifest = indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
@@ -1048,9 +1409,9 @@ mod tests {
 
             [build-dependencies]
             cc = "1.0"
-        "#;
+        "#};
 
-        let spec = parse_battery_pack(manifest).unwrap();
+        let spec = parse_test(manifest).unwrap();
         assert_eq!(spec.crates.len(), 3);
 
         let serde = &spec.crates["serde"];
@@ -1070,7 +1431,7 @@ mod tests {
     #[test]
     // [verify format.deps.version-features]
     fn parse_version_and_features() {
-        let manifest = r#"
+        let manifest = indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
@@ -1078,9 +1439,9 @@ mod tests {
             [dependencies]
             tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
             anyhow = "1"
-        "#;
+        "#};
 
-        let spec = parse_battery_pack(manifest).unwrap();
+        let spec = parse_test(manifest).unwrap();
         let tokio = &spec.crates["tokio"];
         assert_eq!(tokio.version, "1");
         assert_eq!(
@@ -1097,7 +1458,7 @@ mod tests {
     #[test]
     // [verify format.features.optional]
     fn parse_optional_deps() {
-        let manifest = r#"
+        let manifest = indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
@@ -1105,9 +1466,9 @@ mod tests {
             [dependencies]
             clap = { version = "4", features = ["derive"] }
             indicatif = { version = "0.17", optional = true }
-        "#;
+        "#};
 
-        let spec = parse_battery_pack(manifest).unwrap();
+        let spec = parse_test(manifest).unwrap();
         assert!(!spec.crates["clap"].optional);
         assert!(spec.crates["indicatif"].optional);
     }
@@ -1115,38 +1476,44 @@ mod tests {
     #[test]
     // [verify format.features.grouping]
     fn parse_cargo_features() {
-        let manifest = r#"
+        let manifest = indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
 
             [dependencies]
-            clap = { version = "4", features = ["derive"] }
-            dialoguer = "0.11"
+            clap = { version = "4", features = ["derive"], optional = true }
+            dialoguer = { version = "0.11", optional = true }
             indicatif = { version = "0.17", optional = true }
             console = { version = "0.15", optional = true }
 
             [features]
             default = ["clap", "dialoguer"]
             indicators = ["indicatif", "console"]
-        "#;
+        "#};
 
-        let spec = parse_battery_pack(manifest).unwrap();
+        let spec = parse_test(manifest).unwrap();
         assert_eq!(spec.features.len(), 2);
         assert_eq!(
             spec.features["default"],
-            BTreeSet::from(["clap".to_string(), "dialoguer".to_string()])
+            BTreeSet::from([
+                FeatureRef::Feature("clap".into()),
+                FeatureRef::Feature("dialoguer".into()),
+            ])
         );
         assert_eq!(
             spec.features["indicators"],
-            BTreeSet::from(["indicatif".to_string(), "console".to_string()])
+            BTreeSet::from([
+                FeatureRef::Feature("indicatif".into()),
+                FeatureRef::Feature("console".into()),
+            ])
         );
     }
 
     #[test]
     // [verify format.hidden.metadata]
     fn parse_hidden_deps() {
-        let manifest = r#"
+        let manifest = indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
@@ -1159,15 +1526,15 @@ mod tests {
 
             [package.metadata.battery-pack]
             hidden = ["serde*"]
-        "#;
+        "#};
 
-        let spec = parse_battery_pack(manifest).unwrap();
+        let spec = parse_test(manifest).unwrap();
         assert_eq!(spec.hidden, BTreeSet::from(["serde*".to_string()]));
     }
 
     #[test]
     fn parse_templates() {
-        let manifest = r#"
+        let manifest = indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
@@ -1175,9 +1542,9 @@ mod tests {
             [package.metadata.battery.templates]
             default = { path = "templates/default", description = "A basic starting point" }
             advanced = { path = "templates/advanced", description = "Full-featured setup" }
-        "#;
+        "#};
 
-        let spec = parse_battery_pack(manifest).unwrap();
+        let spec = parse_test(manifest).unwrap();
         assert_eq!(spec.templates.len(), 2);
         assert_eq!(spec.templates["default"].path, "templates/default");
         assert_eq!(
@@ -1188,15 +1555,15 @@ mod tests {
 
     #[test]
     fn parse_description_and_repository() {
-        let manifest = r#"
+        let manifest = indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
             description = "Error handling crates"
             repository = "https://github.com/example/repo"
-        "#;
+        "#};
 
-        let spec = parse_battery_pack(manifest).unwrap();
+        let spec = parse_test(manifest).unwrap();
         assert_eq!(spec.description, "Error handling crates");
         assert_eq!(
             spec.repository.as_deref(),
@@ -1209,55 +1576,71 @@ mod tests {
     #[test]
     // [verify format.crate.name]
     fn validate_name() {
-        let manifest = r#"
+        let manifest = indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
-        "#;
-        let spec = parse_battery_pack(manifest).unwrap();
+        "#};
+        let spec = parse_test(manifest).unwrap();
         assert!(spec.validate().is_ok());
 
-        let manifest_bad = r#"
+        let manifest_bad = indoc! {r#"
             [package]
             name = "not-a-battery-pack-crate"
             version = "0.1.0"
-        "#;
-        let spec_bad = parse_battery_pack(manifest_bad).unwrap();
+        "#};
+        let spec_bad = parse_test(manifest_bad).unwrap();
         let err = spec_bad.validate().unwrap_err();
         assert!(matches!(err, Error::InvalidName { .. }));
     }
 
     #[test]
     fn validate_features_reference_real_crates() {
-        let manifest = r#"
-            [package]
-            name = "test-battery-pack"
-            version = "0.1.0"
-
-            [dependencies]
-            clap = "4"
-
-            [features]
-            default = ["clap", "nonexistent"]
-        "#;
-        let spec = parse_battery_pack(manifest).unwrap();
-        let err = spec.validate().unwrap_err();
+        // Constructed manually: cargo metadata also rejects feature refs to
+        // unknown crates, so this case can't reach `validate()` via parse_test.
+        // The check still guards manually-constructed specs (e.g. from JSON state).
+        let bad = BatteryPackSpec {
+            name: "test-battery-pack".into(),
+            version: "0.1.0".into(),
+            description: String::new(),
+            repository: None,
+            keywords: vec![],
+            crates: BTreeMap::from([(
+                "clap".into(),
+                CrateSpec {
+                    version: "4".into(),
+                    features: BTreeSet::new(),
+                    dep_kind: DepKind::Normal,
+                    optional: true,
+                },
+            )]),
+            features: BTreeMap::from([(
+                "default".into(),
+                BTreeSet::from([
+                    FeatureRef::Feature("clap".into()),
+                    FeatureRef::Feature("nonexistent".into()),
+                ]),
+            )]),
+            hidden: BTreeSet::new(),
+            templates: BTreeMap::new(),
+        };
+        let err = bad.validate().unwrap_err();
         assert!(matches!(err, Error::UnknownCrateInFeature { .. }));
 
-        // Valid case
-        let manifest_ok = r#"
+        // Valid case (round-tripped through parse_test)
+        let manifest_ok = indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
 
             [dependencies]
-            clap = "4"
-            dialoguer = "0.11"
+            clap = { version = "4", optional = true }
+            dialoguer = { version = "0.11", optional = true }
 
             [features]
             default = ["clap", "dialoguer"]
-        "#;
-        let spec_ok = parse_battery_pack(manifest_ok).unwrap();
+        "#};
+        let spec_ok = parse_test(manifest_ok).unwrap();
         assert!(spec_ok.validate().is_ok());
     }
 
@@ -1266,22 +1649,22 @@ mod tests {
     #[test]
     // [verify format.features.default]
     fn resolve_default_feature() {
-        let manifest = r#"
+        let manifest = indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
 
             [dependencies]
-            clap = { version = "4", features = ["derive"] }
-            dialoguer = "0.11"
+            clap = { version = "4", features = ["derive"], optional = true }
+            dialoguer = { version = "0.11", optional = true }
             indicatif = { version = "0.17", optional = true }
 
             [features]
             default = ["clap", "dialoguer"]
             indicators = ["indicatif"]
-        "#;
+        "#};
 
-        let spec = parse_battery_pack(manifest).unwrap();
+        let spec = parse_test(manifest).unwrap();
         let resolved = spec.resolve_crates(&[]);
 
         assert_eq!(resolved.len(), 2);
@@ -1293,7 +1676,7 @@ mod tests {
     #[test]
     // [verify format.features.default]
     fn resolve_no_default_feature() {
-        let manifest = r#"
+        let manifest = indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
@@ -1302,9 +1685,9 @@ mod tests {
             clap = "4"
             dialoguer = "0.11"
             indicatif = { version = "0.17", optional = true }
-        "#;
+        "#};
 
-        let spec = parse_battery_pack(manifest).unwrap();
+        let spec = parse_test(manifest).unwrap();
         // No features section at all
         let resolved = spec.resolve_crates(&[]);
 
@@ -1318,23 +1701,23 @@ mod tests {
     #[test]
     // [verify format.features.additive]
     fn resolve_additive_features() {
-        let manifest = r#"
+        let manifest = indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
 
             [dependencies]
-            clap = "4"
-            dialoguer = "0.11"
+            clap = { version = "4", optional = true }
+            dialoguer = { version = "0.11", optional = true }
             indicatif = { version = "0.17", optional = true }
             console = { version = "0.15", optional = true }
 
             [features]
             default = ["clap", "dialoguer"]
             indicators = ["indicatif", "console"]
-        "#;
+        "#};
 
-        let spec = parse_battery_pack(manifest).unwrap();
+        let spec = parse_test(manifest).unwrap();
         let resolved = spec.resolve_crates(&["default", "indicators"]);
 
         assert_eq!(resolved.len(), 4);
@@ -1346,22 +1729,22 @@ mod tests {
 
     #[test]
     fn resolve_feature_without_default() {
-        let manifest = r#"
+        let manifest = indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
 
             [dependencies]
-            clap = "4"
-            dialoguer = "0.11"
+            clap = { version = "4", optional = true }
+            dialoguer = { version = "0.11", optional = true }
             indicatif = { version = "0.17", optional = true }
 
             [features]
             default = ["clap", "dialoguer"]
             indicators = ["indicatif"]
-        "#;
+        "#};
 
-        let spec = parse_battery_pack(manifest).unwrap();
+        let spec = parse_test(manifest).unwrap();
         // Only indicators, no default
         let resolved = spec.resolve_crates(&["indicators"]);
 
@@ -1373,20 +1756,20 @@ mod tests {
     #[test]
     // [verify format.features.augment]
     fn resolve_feature_augmentation() {
-        let manifest = r#"
+        let manifest = indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
 
             [dependencies]
-            tokio = { version = "1", features = ["macros", "rt"] }
+            tokio = { version = "1", features = ["macros", "rt"], optional = true }
 
             [features]
             default = ["tokio"]
             full = ["tokio"]
-        "#;
+        "#};
 
-        let spec = parse_battery_pack(manifest).unwrap();
+        let spec = parse_test(manifest).unwrap();
         // Both default and full reference tokio — features should be merged
         let resolved = spec.resolve_crates(&["default", "full"]);
 
@@ -1397,14 +1780,134 @@ mod tests {
     }
 
     #[test]
+    // [verify feature-refs.resolution.dep-feature]
+    fn resolve_dep_feature_adds_per_dep_fx() {
+        // Regression: `fancy = ["serde/derive"]` previously dropped the `derive`
+        // feature and resolved bare `serde`
+
+        let manifest = indoc! {r#"
+          [package]
+          name = "test-battery-pack"
+          version = "0.1.0"
+
+          [dependencies]
+          serde = { version = "1", optional = true }
+
+          [features]
+          fancy = ["serde/derive"]
+          "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let resolved = spec.resolve_crates(&["fancy"]);
+
+        assert_eq!(resolved.len(), 1);
+        assert!(resolved["serde"].features.contains("derive"));
+    }
+
+    #[test]
+    // [verify feature-refs.resolution.weak]
+    fn resolve_weak_alone_does_not_activate_dep() {
+        let manifest = indoc! {r#"
+        [package]
+        name = "test-battery-pack"
+        version = "0.1.0"
+
+        [dependencies]
+        serde = { version = "1", optional = true }
+
+        [features]
+        weak = ["serde?/derive"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let resolved = spec.resolve_crates(&["weak"]);
+
+        // Weak-only must not pull `serde` in.
+        assert!(!resolved.contains_key("serde"));
+    }
+
+    #[test]
+    // [verify feature-refs.resolution.weak]
+    fn resolve_weak_adds_feature_when_dep_otherwise_activated() {
+        let manifest = indoc! {r#"
+        [package]
+        name = "test-battery-pack"
+        version = "0.1.0"
+
+        [dependencies]
+        serde = { version = "1", optional = true }
+
+        [features]
+        weak = ["serde?/derive"]
+        strong = ["serde"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let resolved = spec.resolve_crates(&["weak", "strong"]);
+
+        // `strong` activates serde; `weak` then adds the `derive` feature.
+        assert!(resolved["serde"].features.contains("derive"));
+    }
+
+    #[test]
+    // [verify feature-refs.resolution.recursion]
+    fn resolve_recurses_through_local_features() {
+        let manifest = indoc! {r#"
+        [package]
+        name = "test-battery-pack"
+        version = "0.1.0"
+
+        [dependencies]
+        serde = { version = "1", optional = true }
+
+        [features]
+        fancy = ["super-fancy"]
+        super-fancy = ["serde/derive"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let resolved = spec.resolve_crates(&["fancy"]);
+
+        assert!(resolved["serde"].features.contains("derive"));
+    }
+
+    #[test]
+    // [verify feature-refs.validation.cycles]
+    fn validate_rejects_feature_cyc() {
+        let bad = BatteryPackSpec {
+            name: "test-battery-pack".into(),
+            version: "0.1.0".into(),
+            description: String::new(),
+            repository: None,
+            keywords: vec![],
+            crates: BTreeMap::new(),
+            features: BTreeMap::from([
+                (
+                    "a".to_string(),
+                    BTreeSet::from([FeatureRef::Feature("b".into())]),
+                ),
+                (
+                    "b".to_string(),
+                    BTreeSet::from([FeatureRef::Feature("a".into())]),
+                ),
+            ]),
+            hidden: BTreeSet::new(),
+            templates: BTreeMap::new(),
+        };
+
+        let err = bad.validate().unwrap_err();
+        assert!(matches!(err, Error::FeatureCycle { .. }))
+    }
+
+    #[test]
     fn resolve_all() {
-        let manifest = r#"
+        let manifest = indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
 
             [dependencies]
-            clap = "4"
+            clap = { version = "4", optional = true }
             indicatif = { version = "0.17", optional = true }
 
             [dev-dependencies]
@@ -1412,9 +1915,9 @@ mod tests {
 
             [features]
             default = ["clap"]
-        "#;
+        "#};
 
-        let spec = parse_battery_pack(manifest).unwrap();
+        let spec = parse_test(manifest).unwrap();
         let all = spec.resolve_all();
 
         // Everything including optional and dev-deps
@@ -1429,7 +1932,7 @@ mod tests {
     #[test]
     // [verify format.hidden.effect]
     fn hidden_exact_match() {
-        let manifest = r#"
+        let manifest = indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
@@ -1440,9 +1943,9 @@ mod tests {
 
             [package.metadata.battery-pack]
             hidden = ["serde"]
-        "#;
+        "#};
 
-        let spec = parse_battery_pack(manifest).unwrap();
+        let spec = parse_test(manifest).unwrap();
         assert!(spec.is_hidden("serde"));
         assert!(!spec.is_hidden("clap"));
     }
@@ -1450,7 +1953,7 @@ mod tests {
     #[test]
     // [verify format.hidden.glob]
     fn hidden_glob_pattern() {
-        let manifest = r#"
+        let manifest = indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
@@ -1463,9 +1966,9 @@ mod tests {
 
             [package.metadata.battery-pack]
             hidden = ["serde*"]
-        "#;
+        "#};
 
-        let spec = parse_battery_pack(manifest).unwrap();
+        let spec = parse_test(manifest).unwrap();
         assert!(spec.is_hidden("serde"));
         assert!(spec.is_hidden("serde_json"));
         assert!(spec.is_hidden("serde_derive"));
@@ -1475,7 +1978,7 @@ mod tests {
     #[test]
     // [verify format.hidden.wildcard]
     fn hidden_wildcard_all() {
-        let manifest = r#"
+        let manifest = indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
@@ -1486,9 +1989,9 @@ mod tests {
 
             [package.metadata.battery-pack]
             hidden = ["*"]
-        "#;
+        "#};
 
-        let spec = parse_battery_pack(manifest).unwrap();
+        let spec = parse_test(manifest).unwrap();
         assert!(spec.is_hidden("serde"));
         assert!(spec.is_hidden("clap"));
         assert!(spec.is_hidden("anything"));
@@ -1496,7 +1999,7 @@ mod tests {
 
     #[test]
     fn visible_crates_filters_hidden() {
-        let manifest = r#"
+        let manifest = indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
@@ -1509,9 +2012,9 @@ mod tests {
 
             [package.metadata.battery-pack]
             hidden = ["serde*"]
-        "#;
+        "#};
 
-        let spec = parse_battery_pack(manifest).unwrap();
+        let spec = parse_test(manifest).unwrap();
         let visible = spec.visible_crates();
 
         assert_eq!(visible.len(), 2);
@@ -1525,7 +2028,7 @@ mod tests {
     // [verify tui.browse.hidden]
     #[test]
     fn all_crates_with_grouping_filters_hidden() {
-        let manifest = r#"
+        let manifest = indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
@@ -1538,9 +2041,9 @@ mod tests {
 
             [package.metadata.battery-pack]
             hidden = ["serde*"]
-        "#;
+        "#};
 
-        let spec = parse_battery_pack(manifest).unwrap();
+        let spec = parse_test(manifest).unwrap();
         let grouped = spec.all_crates_with_grouping();
         let names: Vec<&str> = grouped.iter().map(|(_, n, _, _)| n.as_str()).collect();
         assert!(names.contains(&"clap"));
@@ -1576,21 +2079,23 @@ mod tests {
 
     #[test]
     fn error_on_invalid_toml() {
-        let result = parse_battery_pack("not valid toml [[[");
-        assert!(matches!(result, Err(Error::Toml(_))));
+        // cargo metadata rejects unparsable manifests before our parser runs.
+        let result = parse_test("not valid toml [[[");
+        assert!(matches!(result, Err(Error::Metadata(_))));
     }
 
     #[test]
     fn error_on_missing_package() {
-        let result = parse_battery_pack("[dependencies]\nfoo = \"1\"");
-        assert!(matches!(result, Err(Error::MissingField(_))));
+        // cargo metadata rejects manifests without [package].
+        let result = parse_test("[dependencies]\nfoo = \"1\"");
+        assert!(matches!(result, Err(Error::Metadata(_))));
     }
 
     // -- Comprehensive battery pack test --
 
     #[test]
     fn full_battery_pack_parse() {
-        let manifest = r#"
+        let manifest = indoc! {r#"
             [package]
             name = "cli-battery-pack"
             version = "0.3.0"
@@ -1599,8 +2104,8 @@ mod tests {
             keywords = ["battery-pack"]
 
             [dependencies]
-            clap = { version = "4", features = ["derive"] }
-            dialoguer = "0.11"
+            clap = { version = "4", features = ["derive"], optional = true }
+            dialoguer = { version = "0.11", optional = true }
             indicatif = { version = "0.17", optional = true }
             console = { version = "0.15", optional = true }
 
@@ -1620,9 +2125,9 @@ mod tests {
 
             [package.metadata.battery.templates]
             default = { path = "templates/default", description = "Basic CLI app" }
-        "#;
+        "#};
 
-        let spec = parse_battery_pack(manifest).unwrap();
+        let spec = parse_test(manifest).unwrap();
         assert!(spec.validate().is_ok());
 
         // Basic fields
@@ -1636,9 +2141,9 @@ mod tests {
         assert_eq!(spec.crates["assert_cmd"].dep_kind, DepKind::Dev);
         assert_eq!(spec.crates["cc"].dep_kind, DepKind::Build);
 
-        // Optional
+        // Optional (clap is now optional so default-feature gating is meaningful)
         assert!(spec.crates["indicatif"].optional);
-        assert!(!spec.crates["clap"].optional);
+        assert!(spec.crates["clap"].optional);
 
         // Features
         assert_eq!(spec.features.len(), 3);
@@ -1695,13 +2200,17 @@ mod tests {
 
         let packs = discover_battery_packs(&fixtures_dir).unwrap();
 
-        assert_eq!(packs.len(), 4);
+        assert_eq!(packs.len(), 8);
 
         let names: Vec<&str> = packs.iter().map(|p| p.name.as_str()).collect();
         assert!(names.contains(&"basic-battery-pack"));
         assert!(names.contains(&"fancy-battery-pack"));
         assert!(names.contains(&"broken-battery-pack"));
         assert!(names.contains(&"managed-battery-pack"));
+        assert!(names.contains(&"feature-syntax-battery-pack"));
+        assert!(names.contains(&"optional-feature-battery-pack"));
+        assert!(names.contains(&"mixed-kinds-battery-pack"));
+        assert!(names.contains(&"implicit-feature-battery-pack"));
 
         // Verify basic-battery-pack
         let basic = packs
@@ -1760,7 +2269,7 @@ mod tests {
 
     #[test]
     // [verify cli.source.discover] workspace case — member crate discovers siblings
-    fn discover_from_crate_root_finds_workspace() {
+    fn discover_battery_packs_finds_workspace() {
         let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         let workspace_root = manifest_dir
             .parent()
@@ -1771,47 +2280,165 @@ mod tests {
             .unwrap();
         let member = workspace_root.join("tests/fixtures/basic-battery-pack");
 
-        let packs = discover_from_crate_root(&member).unwrap();
-        assert_eq!(packs.len(), 4);
+        let packs = discover_battery_packs(&member).unwrap();
+        assert_eq!(packs.len(), 8);
         let names: Vec<&str> = packs.iter().map(|p| p.name.as_str()).collect();
         assert!(names.contains(&"basic-battery-pack"));
         assert!(names.contains(&"fancy-battery-pack"));
     }
 
+    /// [verify cli.source.discover] negative case -- non-battery-pack members are excluded.
     #[test]
-    // [verify cli.source.discover] standalone case — no workspace, parses crate directly
-    fn discover_from_crate_root_standalone() {
+    fn discover_battery_packs_excludes_non_battery_pack_members() {
+        let mut fx = WorkspaceFixture::new();
+        fx.add_pack(
+            "cli-pack",
+            indoc! {r#"
+        [package]
+        name = "cli-battery-pack"
+        version = "0.1.0"
+        "#},
+        );
+        fx.add_pack(
+            "helper",
+            indoc! {r#"
+        [package]
+        name = "regular-helper"
+        version = "0.1.0"
+        "#},
+        );
+
+        let root = fx.finalize();
+        let packs = discover_battery_packs(root).unwrap();
+
+        // Snapshot: only the BP member survives the filter; the helper is dropped.
+        let summary = render_discovered(&packs);
+        snapbox::assert_data_eq!(summary, snapbox::str![[r#"cli-battery-pack 0.1.0"#]]);
+
+        // Point assertions retained for direct failure messages.
+        let names = packs.iter().map(|pk| pk.name.as_str()).collect::<Vec<_>>();
+        assert!(names.contains(&"cli-battery-pack"));
+        assert!(!names.contains(&"regular-helper"));
+    }
+
+    /// [verify cli.source.discover] glob members - `members = ["crates/*"]` is expanded
+    #[test]
+    fn discover_bp_handles_glob_members() {
         let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(
-            tmp.path().join("Cargo.toml"),
-            r#"
-[package]
-name = "solo-battery-pack"
-version = "1.0.0"
+        let root = tmp.path();
 
-[features]
-default = ["dep:tokio"]
-
-[dependencies]
-tokio = { version = "1", optional = true }
-"#,
+        // Pure workspace root using a glob members pattern.
+        fs::write(
+            root.join("Cargo.toml"),
+            indoc! {r#"
+                [workspace]
+                resolver = "2"
+                members = ["crates/*"]
+            "#},
         )
         .unwrap();
 
-        let packs = discover_from_crate_root(tmp.path()).unwrap();
+        // Two battery-pack members under crates/ for the glob to expand to.
+        for name in ["foo-battery-pack", "bar-battery-pack"] {
+            let pkg_dir = root.join("crates").join(name);
+            fs::create_dir_all(pkg_dir.join("src")).unwrap();
+            fs::write(pkg_dir.join("src").join("lib.rs"), "").unwrap();
+            fs::write(
+                pkg_dir.join("Cargo.toml"),
+                format!(
+                    indoc! {r#"
+                        [package]
+                        name = "{name}"
+                        version = "0.1.0"
+                    "#},
+                    name = name
+                ),
+            )
+            .unwrap();
+        }
+
+        let packs = discover_battery_packs(root).unwrap();
+
+        // Snapshot: glob expanded to both members.
+        let summary = render_discovered(&packs);
+        snapbox::assert_data_eq!(
+            summary,
+            snapbox::str![[r#"
+bar-battery-pack 0.1.0
+foo-battery-pack 0.1.0
+"#]]
+        );
+
+        // Point assertions retained for direct failure messages.
+        let names = packs.iter().map(|pk| pk.name.as_str()).collect::<Vec<_>>();
+
+        assert!(names.contains(&"bar-battery-pack"));
+        assert!(names.contains(&"foo-battery-pack"));
+    }
+
+    /// Render discovered packs as a stable, sorted `name version` listing for snapshots.
+    fn render_discovered(packs: &[BatteryPackSpec]) -> String {
+        let mut lines: Vec<String> = packs
+            .iter()
+            .map(|p| format!("{} {}", p.name, p.version))
+            .collect();
+        lines.sort();
+        lines.join("\n")
+    }
+
+    /// Render a resolved crate map as a `name version` listing for snapshots
+    fn render_resolved(crates: &BTreeMap<String, CrateSpec>) -> String {
+        crates
+            .iter()
+            .map(|(name, spec)| format!("{} {}", name, spec.version))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    // [verify cli.source.discover] standalone case — no workspace, parses crate directly
+    fn discover_battery_packs_standalone() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(
+            tmp.path().join("Cargo.toml"),
+            indoc! {r#"
+                [package]
+                name = "solo-battery-pack"
+                version = "1.0.0"
+
+                [features]
+                default = ["dep:tokio"]
+
+                [dependencies]
+                tokio = { version = "1", optional = true }
+            "#},
+        )
+        .unwrap();
+        std::fs::create_dir(tmp.path().join("src")).unwrap();
+        std::fs::write(tmp.path().join("src/lib.rs"), "").unwrap();
+
+        let packs = discover_battery_packs(tmp.path()).unwrap();
+
+        // Snapshot: standalone crate is treated as a 1-member workspace.
+        snapbox::assert_data_eq!(
+            render_discovered(&packs),
+            snapbox::str![[r#"solo-battery-pack 1.0.0"#]]
+        );
+
+        // Point assertions retained.
         assert_eq!(packs.len(), 1);
         assert_eq!(packs[0].name, "solo-battery-pack");
         assert_eq!(packs[0].version, "1.0.0");
     }
 
     #[test]
-    fn discover_from_crate_root_includes_battery_pack_itself() {
+    fn discover_battery_packs_includes_battery_pack_itself() {
         // battery-pack (the framework crate) should be discoverable from its
         // own directory, so bp-managed self-references resolve correctly.
         let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
         let bp_crate = manifest_dir.parent().unwrap();
 
-        let packs = discover_from_crate_root(bp_crate).unwrap();
+        let packs = discover_battery_packs(bp_crate).unwrap();
         let names: Vec<&str> = packs.iter().map(|p| p.name.as_str()).collect();
         assert!(
             names.contains(&"battery-pack"),
@@ -1825,38 +2452,32 @@ tokio = { version = "1", optional = true }
     #[test]
     // [verify format.crate.name]
     fn validate_spec_name() {
-        let good = parse_battery_pack(
-            r#"
+        let good = parse_test(indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
             repository = "https://github.com/example/test"
             keywords = ["battery-pack"]
-        "#,
-        )
+        "#})
         .unwrap();
         assert!(good.validate_spec().is_clean());
 
-        let exact = parse_battery_pack(
-            r#"
+        let exact = parse_test(indoc! {r#"
             [package]
             name = "battery-pack"
             version = "0.1.0"
             repository = "https://github.com/example/test"
             keywords = ["battery-pack"]
-        "#,
-        )
+        "#})
         .unwrap();
         assert!(exact.validate_spec().is_clean());
 
-        let bad = parse_battery_pack(
-            r#"
+        let bad = parse_test(indoc! {r#"
             [package]
             name = "not-a-pack"
             version = "0.1.0"
             keywords = ["battery-pack"]
-        "#,
-        )
+        "#})
         .unwrap();
         let report = bad.validate_spec();
         assert!(report.has_errors());
@@ -1871,25 +2492,21 @@ tokio = { version = "1", optional = true }
     #[test]
     // [verify format.crate.keyword]
     fn validate_spec_keyword() {
-        let good = parse_battery_pack(
-            r#"
+        let good = parse_test(indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
             repository = "https://github.com/example/test"
             keywords = ["battery-pack", "helpers"]
-        "#,
-        )
+        "#})
         .unwrap();
         assert!(good.validate_spec().is_clean());
 
-        let missing = parse_battery_pack(
-            r#"
+        let missing = parse_test(indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
-        "#,
-        )
+        "#})
         .unwrap();
         let report = missing.validate_spec();
         assert!(report.has_errors());
@@ -1900,14 +2517,12 @@ tokio = { version = "1", optional = true }
                 .any(|d| d.rule == "format.crate.keyword")
         );
 
-        let wrong = parse_battery_pack(
-            r#"
+        let wrong = parse_test(indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
             keywords = ["cli", "helpers"]
-        "#,
-        )
+        "#})
         .unwrap();
         let report = wrong.validate_spec();
         assert!(report.has_errors());
@@ -1922,8 +2537,7 @@ tokio = { version = "1", optional = true }
     #[test]
     // [verify format.features.grouping]
     fn validate_spec_features() {
-        let good = parse_battery_pack(
-            r#"
+        let good = parse_test(indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
@@ -1931,30 +2545,41 @@ tokio = { version = "1", optional = true }
             keywords = ["battery-pack"]
 
             [dependencies]
-            clap = "4"
+            clap = { version = "4", optional = true }
 
             [features]
             default = ["clap"]
-        "#,
-        )
+        "#})
         .unwrap();
         assert!(good.validate_spec().is_clean());
 
-        let bad = parse_battery_pack(
-            r#"
-            [package]
-            name = "test-battery-pack"
-            version = "0.1.0"
-            keywords = ["battery-pack"]
-
-            [dependencies]
-            clap = "4"
-
-            [features]
-            default = ["clap", "ghost"]
-        "#,
-        )
-        .unwrap();
+        // Constructed manually: cargo metadata rejects features referencing unknown crates
+        // so this case can't be reached through parse_test.
+        let bad = BatteryPackSpec {
+            name: "test-battery-pack".into(),
+            version: "0.1.0".into(),
+            description: String::new(),
+            repository: None,
+            keywords: vec!["battery-pack".into()],
+            crates: BTreeMap::from([(
+                "clap".into(),
+                CrateSpec {
+                    version: "4".into(),
+                    features: BTreeSet::new(),
+                    dep_kind: DepKind::Normal,
+                    optional: true,
+                },
+            )]),
+            features: BTreeMap::from([(
+                "default".into(),
+                BTreeSet::from([
+                    FeatureRef::Feature("clap".into()),
+                    FeatureRef::Feature("ghost".into()),
+                ]),
+            )]),
+            hidden: BTreeSet::new(),
+            templates: BTreeMap::new(),
+        };
         let report = bad.validate_spec();
         assert!(report.has_errors());
         assert!(
@@ -1979,14 +2604,12 @@ tokio = { version = "1", optional = true }
         )
         .unwrap();
 
-        let spec = parse_battery_pack(
-            r#"
+        let spec = parse_test(indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
             keywords = ["battery-pack"]
-        "#,
-        )
+        "#})
         .unwrap();
 
         let report = validate_on_disk(&spec, dir.path());
@@ -2001,14 +2624,12 @@ tokio = { version = "1", optional = true }
         std::fs::create_dir(&src).unwrap();
         std::fs::write(src.join("lib.rs"), "//! Doc comment\npub fn hello() {}\n").unwrap();
 
-        let spec = parse_battery_pack(
-            r#"
+        let spec = parse_test(indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
             keywords = ["battery-pack"]
-        "#,
-        )
+        "#})
         .unwrap();
 
         let report = validate_on_disk(&spec, dir.path());
@@ -2030,14 +2651,12 @@ tokio = { version = "1", optional = true }
         std::fs::create_dir(&src).unwrap();
         std::fs::write(src.join("lib.rs"), "//! Doc\n").unwrap();
 
-        let spec = parse_battery_pack(
-            r#"
+        let spec = parse_test(indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
             keywords = ["battery-pack"]
-        "#,
-        )
+        "#})
         .unwrap();
 
         // Clean case — only lib.rs
@@ -2064,8 +2683,7 @@ tokio = { version = "1", optional = true }
         std::fs::create_dir(&src).unwrap();
         std::fs::write(src.join("lib.rs"), "//! Doc\n").unwrap();
 
-        let spec = parse_battery_pack(
-            r#"
+        let spec = parse_test(indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
@@ -2073,8 +2691,7 @@ tokio = { version = "1", optional = true }
 
             [package.metadata.battery.templates]
             default = { path = "templates/default", description = "Basic" }
-        "#,
-        )
+        "#})
         .unwrap();
 
         // Missing template directory
@@ -2106,8 +2723,7 @@ tokio = { version = "1", optional = true }
         std::fs::create_dir(&src).unwrap();
         std::fs::write(src.join("lib.rs"), "//! Doc\n").unwrap();
 
-        let spec = parse_battery_pack(
-            r#"
+        let spec = parse_test(indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
@@ -2115,8 +2731,7 @@ tokio = { version = "1", optional = true }
 
             [package.metadata.battery.templates]
             default = { path = "templates/default", description = "Basic" }
-        "#,
-        )
+        "#})
         .unwrap();
 
         let tmpl = dir.path().join("templates/default");
@@ -2141,8 +2756,7 @@ tokio = { version = "1", optional = true }
         std::fs::create_dir(&src).unwrap();
         std::fs::write(src.join("lib.rs"), "//! Doc\n").unwrap();
 
-        let spec = parse_battery_pack(
-            r#"
+        let spec = parse_test(indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
@@ -2150,8 +2764,7 @@ tokio = { version = "1", optional = true }
 
             [package.metadata.battery.templates]
             default = { path = "templates/default", description = "Basic" }
-        "#,
-        )
+        "#})
         .unwrap();
 
         let tmpl = dir.path().join("templates/default");
@@ -2172,14 +2785,12 @@ tokio = { version = "1", optional = true }
     #[test]
     // [verify format.crate.repository]
     fn validate_warns_on_missing_repository() {
-        let spec = parse_battery_pack(
-            r#"
+        let spec = parse_test(indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
             keywords = ["battery-pack"]
-        "#,
-        )
+        "#})
         .unwrap();
         let report = spec.validate_spec();
         assert!(
@@ -2198,15 +2809,13 @@ tokio = { version = "1", optional = true }
     #[test]
     // [verify format.crate.repository]
     fn validate_no_warning_when_repository_present() {
-        let spec = parse_battery_pack(
-            r#"
+        let spec = parse_test(indoc! {r#"
             [package]
             name = "test-battery-pack"
             version = "0.1.0"
             repository = "https://github.com/example/repo"
             keywords = ["battery-pack"]
-        "#,
-        )
+        "#})
         .unwrap();
         let report = spec.validate_spec();
         assert!(
@@ -2233,7 +2842,7 @@ tokio = { version = "1", optional = true }
         let fixture = workspace_root.join("tests/fixtures/basic-battery-pack");
 
         let content = std::fs::read_to_string(fixture.join("Cargo.toml")).unwrap();
-        let spec = parse_battery_pack(&content).unwrap();
+        let spec = parse_test(&content).unwrap();
 
         let mut report = spec.validate_spec();
         report.merge(validate_on_disk(&spec, &fixture));
@@ -2265,7 +2874,7 @@ tokio = { version = "1", optional = true }
         let fixture = workspace_root.join("tests/fixtures/fancy-battery-pack");
 
         let content = std::fs::read_to_string(fixture.join("Cargo.toml")).unwrap();
-        let spec = parse_battery_pack(&content).unwrap();
+        let spec = parse_test(&content).unwrap();
 
         let mut report = spec.validate_spec();
         report.merge(validate_on_disk(&spec, &fixture));
@@ -2289,7 +2898,7 @@ tokio = { version = "1", optional = true }
         let fixture = workspace_root.join("tests/fixtures/broken-battery-pack");
 
         let content = std::fs::read_to_string(fixture.join("Cargo.toml")).unwrap();
-        let spec = parse_battery_pack(&content).unwrap();
+        let spec = parse_test(&content).unwrap();
 
         let mut report = spec.validate_spec();
         report.merge(validate_on_disk(&spec, &fixture));
@@ -2334,7 +2943,7 @@ tokio = { version = "1", optional = true }
         let fixture = workspace_root.join("tests/fixtures/managed-battery-pack");
 
         let content = std::fs::read_to_string(fixture.join("Cargo.toml")).unwrap();
-        let spec = parse_battery_pack(&content).unwrap();
+        let spec = parse_test(&content).unwrap();
 
         let mut report = spec.validate_spec();
         report.merge(validate_on_disk(&spec, &fixture));
@@ -2597,7 +3206,7 @@ tokio = { version = "1", optional = true }
             [features]
             cli = ["clap"]
         "#;
-        let spec = parse_battery_pack(manifest).unwrap();
+        let spec = parse_test(manifest).unwrap();
         let resolved = spec.resolve_crates(&["cli"]);
         assert!(
             resolved.contains_key("clap"),

@@ -16,9 +16,9 @@ fn fixtures_dir() -> std::path::PathBuf {
 
 fn parse_fixture(name: &str) -> BatteryPackSpec {
     let path = fixtures_dir().join(name).join("Cargo.toml");
-    let manifest = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("reading {}: {e}", path.display()));
-    bphelper_manifest::parse_battery_pack(&manifest).unwrap()
+
+    parse_battery_pack_from_path(&path)
+        .unwrap_or_else(|err| panic!("parsing {}: {}", path.display(), err))
 }
 
 fn mock_descriptions() -> BTreeMap<String, String> {
@@ -127,6 +127,7 @@ fn test_context_features() {
         .iter()
         .find(|f| f.name == "indicators")
         .unwrap();
+    // Lexicographic order from `BTreeSet<FeatureRef>` iteration.
     assert_eq!(indicators.crates, vec!["console", "indicatif"]);
 }
 
@@ -502,6 +503,9 @@ CLI tools.
 fn setup_docgen_dir(manifest: &str, template: &str, readme: Option<&str>) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("Cargo.toml"), manifest).unwrap();
+    // cargo_metadata requires a target; give the pack an empty lib.
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::fs::write(dir.path().join("src/lib.rs"), "").unwrap();
     std::fs::write(dir.path().join("docs.handlebars.md"), template).unwrap();
     if let Some(readme) = readme {
         std::fs::write(dir.path().join("README.md"), readme).unwrap();
@@ -588,6 +592,8 @@ fn test_generate_docs_missing_template_errors() {
     // Set up dir with Cargo.toml but NO template file.
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("Cargo.toml"), &manifest).unwrap();
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::fs::write(dir.path().join("src/lib.rs"), "").unwrap();
 
     let out_dir = tempfile::tempdir().unwrap();
     let descriptions = mock_descriptions();

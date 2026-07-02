@@ -1,0 +1,10 @@
+[package]
+name = "implicit-feature-battery-pack"
+version = "0.1.0"
+edition = "2021"
+description = "Regression fixture: optional dep with only an implicit feature must be included by --all-features"
+keywords = ["battery-pack"]
+
+[dependencies]
+fake-anyhow = { path = "../_stubs/fake-anyhow" }
+fake-insta = { path = "../_stubs/fake-insta", optional = true }

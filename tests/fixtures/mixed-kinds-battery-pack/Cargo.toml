@@ -1,0 +1,19 @@
+[package]
+name = "mixed-kinds-battery-pack"
+version = "0.1.0"
+edition = "2021"
+description = "Dev/build + optional-normal tangle for dev-build-always invariant"
+keywords = ["battery-pack"]
+
+[dependencies]
+fake-serde = { path = "../_stubs/fake-serde", optional = true }
+
+[dev-dependencies]
+fake-insta = { path = "../_stubs/fake-insta" }
+
+[build-dependencies]
+fake-cc = { path = "../_stubs/fake-cc" }
+
+[features]
+default = ["fake-serde/derive"]
+all = ["fake-serde"]
