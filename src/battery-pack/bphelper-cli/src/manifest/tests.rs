@@ -1415,8 +1415,7 @@ fn read_state_migrates_v1_all_sentinel() {
     std::fs::write(tmp.path().join("battery-pack.toml"), v1_state).unwrap();
 
     // "cli" pack reads as Subset
-    let cli =
-        super::read_active_features_from_state(&manifest_path, "cli-battery-pack").unwrap();
+    let cli = super::read_active_features_from_state(&manifest_path, "cli-battery-pack").unwrap();
     assert_eq!(
         cli,
         bphelper_manifest::ActiveFeatures::Subset(BTreeSet::from([
@@ -1468,8 +1467,7 @@ fn write_all_features_then_read_round_trips() {
     );
 
     // Read back
-    let read =
-        super::read_active_features_from_state(&manifest_path, "cli-battery-pack").unwrap();
+    let read = super::read_active_features_from_state(&manifest_path, "cli-battery-pack").unwrap();
     assert_eq!(read, bphelper_manifest::ActiveFeatures::All);
 }
 
@@ -1508,7 +1506,6 @@ fn write_subset_features_then_read_round_trips() {
     );
 
     // Read back
-    let read =
-        super::read_active_features_from_state(&manifest_path, "cli-battery-pack").unwrap();
+    let read = super::read_active_features_from_state(&manifest_path, "cli-battery-pack").unwrap();
     assert_eq!(read, features);
 }
