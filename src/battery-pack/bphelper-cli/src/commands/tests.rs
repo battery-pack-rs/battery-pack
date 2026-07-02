@@ -1492,14 +1492,11 @@ fn add_all_features_records_metadata() {
 
     let state = read_bp_state_toml(&tmp);
     let entry = extract_state_entry(&state, "basic-battery-pack").expect("state entry exists");
-    let features = entry
-        .get("features")
-        .and_then(|v| v.as_array())
-        .expect("features array");
-    assert!(
-        features.iter().any(|v| v.as_str() == Some("all")),
-        "expected all feature in state"
-    );
+    let all_features = entry
+        .get("all-features")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    assert!(all_features, "expected all-features = true in state");
 }
 
 // [verify cli.add.all-features]

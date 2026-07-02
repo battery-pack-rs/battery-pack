@@ -1383,3 +1383,132 @@ anyhow = \"1.0.0\"
         "document should be byte-identical when nothing changed"
     );
 }
+
+// ============================================================================
+// State format: v1 migration and v2 round-trip
+// ============================================================================
+
+/// A v1 state file (features as flat array, `"all"` sentinel) is read correctly
+/// by the new code and transparently upgraded on next write.
+#[test]
+fn read_state_migrates_v1_all_sentinel() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let manifest_path = tmp.path().join("Cargo.toml");
+    std::fs::write(&manifest_path, "[package]\nname = \"test\"\n").unwrap();
+
+    // v1 file: uses "all" sentinel in the features array
+    let v1_state = indoc::indoc! {r#"
+        version = 1
+
+        [[battery-pack]]
+        name = "cli"
+        features = ["default", "indicators"]
+
+        [[battery-pack.managed-deps]]
+        name = "clap"
+        version = "4"
+
+        [[battery-pack]]
+        name = "error"
+        features = ["all"]
+    "#};
+    std::fs::write(tmp.path().join("battery-pack.toml"), v1_state).unwrap();
+
+    // "cli" pack reads as Subset
+    let cli =
+        super::read_active_features_from_state(&manifest_path, "cli-battery-pack").unwrap();
+    assert_eq!(
+        cli,
+        bphelper_manifest::ActiveFeatures::Subset(BTreeSet::from([
+            "default".to_string(),
+            "indicators".to_string(),
+        ]))
+    );
+
+    // "error" pack reads as All (the "all" sentinel triggers conversion)
+    let error =
+        super::read_active_features_from_state(&manifest_path, "error-battery-pack").unwrap();
+    assert_eq!(error, bphelper_manifest::ActiveFeatures::All);
+}
+
+/// Writing with All then reading back produces `all-features = true` in the file
+/// and reads back as `ActiveFeatures::All`.
+#[test]
+fn write_all_features_then_read_round_trips() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let manifest_path = tmp.path().join("Cargo.toml");
+    std::fs::write(&manifest_path, "[package]\nname = \"test\"\n").unwrap();
+
+    let crates = std::collections::BTreeMap::from([(
+        "clap".to_string(),
+        bphelper_manifest::CrateSpec {
+            version: "4".to_string(),
+            features: BTreeSet::new(),
+            dep_kind: bphelper_manifest::DepKind::Normal,
+            optional: false,
+        },
+    )]);
+    super::write_battery_pack_state(
+        &manifest_path,
+        "cli-battery-pack",
+        &bphelper_manifest::ActiveFeatures::All,
+        &crates,
+    )
+    .unwrap();
+
+    // Verify the file uses `all-features = true`
+    let content = std::fs::read_to_string(tmp.path().join("battery-pack.toml")).unwrap();
+    assert!(
+        content.contains("all-features = true"),
+        "expected all-features flag in state file, got:\n{content}"
+    );
+    assert!(
+        !content.contains("\nfeatures"),
+        "features array should be omitted when all-features is true, got:\n{content}"
+    );
+
+    // Read back
+    let read =
+        super::read_active_features_from_state(&manifest_path, "cli-battery-pack").unwrap();
+    assert_eq!(read, bphelper_manifest::ActiveFeatures::All);
+}
+
+/// Writing with Subset then reading back preserves the feature list.
+#[test]
+fn write_subset_features_then_read_round_trips() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let manifest_path = tmp.path().join("Cargo.toml");
+    std::fs::write(&manifest_path, "[package]\nname = \"test\"\n").unwrap();
+
+    let features = bphelper_manifest::ActiveFeatures::Subset(BTreeSet::from([
+        "default".to_string(),
+        "fancy".to_string(),
+    ]));
+    let crates = std::collections::BTreeMap::from([(
+        "clap".to_string(),
+        bphelper_manifest::CrateSpec {
+            version: "4".to_string(),
+            features: BTreeSet::new(),
+            dep_kind: bphelper_manifest::DepKind::Normal,
+            optional: false,
+        },
+    )]);
+    super::write_battery_pack_state(&manifest_path, "cli-battery-pack", &features, &crates)
+        .unwrap();
+
+    // Verify the file uses features array (no all-features flag)
+    let content = std::fs::read_to_string(tmp.path().join("battery-pack.toml")).unwrap();
+    assert!(
+        content.contains("features = ["),
+        "expected features array in state file, got:\n{content}"
+    );
+    assert!(
+        !content.contains("all-features"),
+        "all-features should not appear for Subset, got:\n{content}"
+    );
+
+    // Read back
+    let read =
+        super::read_active_features_from_state(&manifest_path, "cli-battery-pack").unwrap();
+    assert_eq!(read, features);
+}

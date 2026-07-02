@@ -781,7 +781,10 @@ pub(crate) fn add_battery_pack(
         && specific_crates.is_empty()
     {
         if let Some(existing) = read_active_features_from_state(&user_manifest_path, &crate_name) {
-            let mut merged: Vec<String> = existing.into_iter().collect();
+            let mut merged: Vec<String> = match existing {
+                bphelper_manifest::ActiveFeatures::All => vec!["all".to_string()],
+                bphelper_manifest::ActiveFeatures::Subset(set) => set.into_iter().collect(),
+            };
             for f in with_features {
                 if !merged.contains(f) {
                     merged.push(f.clone());
@@ -937,7 +940,7 @@ pub(crate) fn add_battery_pack(
     write_battery_pack_state(
         &user_manifest_path,
         &crate_name,
-        &active_features,
+        &(&active_features).into(),
         &crates_to_sync,
     )?;
 
@@ -1210,7 +1213,7 @@ fn sync_battery_packs(project_dir: &Path, path: Option<&str>, source: &CrateSour
             read_active_features_for_project(&user_manifest_path, &user_manifest_content, bp_name);
 
         // [impl format.hidden.effect]
-        let expected = bp_spec.resolve_for_features(&(&active_features).into());
+        let expected = bp_spec.resolve_for_features(&active_features);
 
         // [impl manifest.deps.workspace]
         // Sync each crate
@@ -1909,20 +1912,29 @@ fn build_show_report(
     if !managed_deps.is_empty() {
         report = report.with_installed_crates(managed_deps);
     }
-    if !active_features.is_empty() {
-        report = report.with_active_features(active_features);
+    match &active_features {
+        bphelper_manifest::ActiveFeatures::All => {
+            report = report.with_active_features(["all".to_string()]);
+        }
+        bphelper_manifest::ActiveFeatures::Subset(features) if !features.is_empty() => {
+            report = report.with_active_features(features.iter().cloned());
+        }
+        _ => {}
     }
 
     Ok(report)
 }
 
 /// Read installed state (managed-deps and active features) for a battery pack.
-/// Returns empty sets if not in a project or pack not installed.
+/// Returns empty managed-deps set and active features for the pack.
 fn read_installed_state(
     project_dir: &Path,
     crate_name: &str,
-) -> (BTreeSet<String>, BTreeSet<String>) {
-    let empty = (BTreeSet::new(), BTreeSet::new());
+) -> (BTreeSet<String>, bphelper_manifest::ActiveFeatures) {
+    let empty = (
+        BTreeSet::new(),
+        bphelper_manifest::ActiveFeatures::Subset(BTreeSet::from(["default".to_string()])),
+    );
     let Ok(manifest_path) = find_user_manifest(project_dir) else {
         return empty;
     };
@@ -2231,9 +2243,7 @@ fn build_status_report(
         .iter()
         .map(|pack| {
             // Resolve which crates are expected for this pack's active features.
-            let expected = pack
-                .spec
-                .resolve_for_features(&(&pack.active_features).into());
+            let expected = pack.spec.resolve_for_features(&pack.active_features);
 
             // [impl cli.status.version-warn]
             let warnings = expected.iter().filter_map(|(dep_name, dep_spec)| {
@@ -2251,12 +2261,17 @@ fn build_status_report(
                 ))
             });
 
+            let feature_strings: Vec<String> = match &pack.active_features {
+                bphelper_manifest::ActiveFeatures::All => vec!["all".to_string()],
+                bphelper_manifest::ActiveFeatures::Subset(set) => set.iter().cloned().collect(),
+            };
+
             cargo_bp_script::InstalledPackStatus::new(
                 &pack.short_name,
                 &pack.spec.name,
                 &pack.version,
             )
-            .with_active_features(pack.active_features.iter().cloned())
+            .with_active_features(feature_strings)
             .with_warnings(warnings)
         })
         .collect();
