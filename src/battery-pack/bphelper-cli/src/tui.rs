@@ -1524,7 +1524,7 @@ fn render_form(frame: &mut Frame, state: &FormScreen) {
 }
 
 /// Convert rendered template files into syntax-highlighted [`Text`].
-fn highlight_preview(files: &[crate::template_engine::RenderedFile]) -> Text<'static> {
+pub(crate) fn highlight_preview(files: &[crate::template_engine::RenderedFile]) -> Text<'static> {
     use syntect::easy::HighlightLines;
     use syntect::highlighting::ThemeSet;
 
@@ -1571,6 +1571,86 @@ fn highlight_preview(files: &[crate::template_engine::RenderedFile]) -> Text<'st
     }
 
     Text::from(lines)
+}
+
+/// Show a scrollable syntax-highlighted preview. Blocks until the user presses Esc.
+pub(crate) fn show_preview(
+    terminal: &mut ratatui::DefaultTerminal,
+    title: &str,
+    content: Text<'static>,
+) {
+    let line_count = content.lines.len() as u16;
+    let mut scroll: u16 = 0;
+
+    loop {
+        let _ = terminal.draw(|frame| {
+            render_standalone_preview(frame, title, &content, scroll);
+        });
+
+        if event::poll(Duration::from_millis(100)).unwrap_or(false)
+            && let Ok(Event::Key(key)) = event::read()
+        {
+            if key.kind != KeyEventKind::Press {
+                continue;
+            }
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('q') => break,
+                KeyCode::Down | KeyCode::Char('j') => {
+                    scroll = scroll.saturating_add(1).min(line_count.saturating_sub(1));
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    scroll = scroll.saturating_sub(1);
+                }
+                KeyCode::PageDown | KeyCode::Char('f') => {
+                    scroll = scroll.saturating_add(20).min(line_count.saturating_sub(1));
+                }
+                KeyCode::PageUp | KeyCode::Char('b') => {
+                    scroll = scroll.saturating_sub(20);
+                }
+                KeyCode::Home | KeyCode::Char('g') => {
+                    scroll = 0;
+                }
+                KeyCode::End | KeyCode::Char('G') => {
+                    scroll = line_count.saturating_sub(1);
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+fn render_standalone_preview(frame: &mut Frame, title: &str, content: &Text<'_>, scroll: u16) {
+    let area = frame.area();
+    let [header, main, footer] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Fill(1),
+        Constraint::Length(1),
+    ])
+    .areas(area);
+
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(
+            title,
+            Style::default().fg(Color::Cyan).bold(),
+        )))
+        .centered(),
+        header,
+    );
+
+    let preview = Paragraph::new(content.clone())
+        .block(
+            Block::default()
+                .borders(Borders::BOTTOM)
+                .padding(ratatui::widgets::Padding::horizontal(1)),
+        )
+        .scroll((scroll, 0));
+    frame.render_widget(preview, main);
+
+    frame.render_widget(
+        Paragraph::new("↑↓/jk/PgUp/PgDn Scroll | Esc Back")
+            .style(Style::default().white().on_dark_gray()),
+        footer,
+    );
 }
 
 fn render_preview(frame: &mut Frame, state: &PreviewScreen) {

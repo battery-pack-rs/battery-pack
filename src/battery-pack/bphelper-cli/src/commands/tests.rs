@@ -124,7 +124,8 @@ fn resolve_template_single_template_uses_it() {
     );
 
     let result = super::resolve_template(&templates, None, true).unwrap();
-    assert_eq!(result, "templates/simple");
+    assert_eq!(result.name, "simple");
+    assert_eq!(result.path, "templates/simple");
 }
 
 // [verify cli.new.template-select]
@@ -148,7 +149,8 @@ fn resolve_template_picks_default_when_present() {
     );
 
     let result = super::resolve_template(&templates, None, true).unwrap();
-    assert_eq!(result, "templates/default");
+    assert_eq!(result.name, "default");
+    assert_eq!(result.path, "templates/default");
 }
 
 // [verify cli.new.template-select]
@@ -202,7 +204,8 @@ fn resolve_template_explicit_flag_overrides() {
     );
 
     let result = super::resolve_template(&templates, Some("advanced"), true).unwrap();
-    assert_eq!(result, "templates/advanced");
+    assert_eq!(result.name, "advanced");
+    assert_eq!(result.path, "templates/advanced");
 }
 
 // ============================================================================

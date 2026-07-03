@@ -13,9 +13,9 @@ use std::path::{Path, PathBuf};
 use crate::manifest::{
     add_dep_to_table, dep_kind_section, find_installed_bp_names, find_user_manifest,
     find_workspace_manifest, read_active_features_for_project, read_active_features_from_state,
-    read_managed_deps_for_project, remove_battery_pack_state_entry, remove_deps_by_kind,
-    should_upgrade_version, sync_dep_in_table, write_battery_pack_state, write_deps_by_kind,
-    write_workspace_refs_by_kind,
+    read_applied_templates_from_state, read_managed_deps_for_project, record_applied_template,
+    remove_battery_pack_state_entry, remove_deps_by_kind, should_upgrade_version,
+    sync_dep_in_table, write_battery_pack_state, write_deps_by_kind, write_workspace_refs_by_kind,
 };
 use crate::registry::{
     CrateSource, InstalledPack, TemplateConfig, fetch_battery_pack_detail,
@@ -473,10 +473,15 @@ fn new_from_battery_pack(opts: NewFromBpOpts<'_>) -> Result<()> {
     let templates = parse_template_metadata(&manifest_path, &crate_name)?;
 
     // Resolve which template to use
-    let template_path = resolve_template(&templates, opts.template.as_deref(), opts.interactive)?;
+    let resolved_tmpl = resolve_template(&templates, opts.template.as_deref(), opts.interactive)?;
 
     // Generate the project from the crate directory
-    generate_from_path(new_opts, &resolved.dir, &template_path)
+    generate_from_path(
+        new_opts,
+        &resolved.dir,
+        &resolved_tmpl.name,
+        &resolved_tmpl.path,
+    )
 }
 
 /// Result of resolving which crates to add from a battery pack.
@@ -668,10 +673,10 @@ fn add_template(opts: AddTemplateOpts<'_>) -> Result<()> {
     // Read template metadata and resolve which template to use.
     let manifest_path = crate_dir.join("Cargo.toml");
     let templates = parse_template_metadata(&manifest_path, &crate_name)?;
-    let template_path = resolve_template(&templates, Some(opts.template), opts.interactive)?;
+    let resolved_tmpl = resolve_template(&templates, Some(opts.template), opts.interactive)?;
 
     // Load post-merge hints before moving template_path.
-    let hints = crate::template_engine::load_template_hints(&crate_dir, &template_path);
+    let hints = crate::template_engine::load_template_hints(&crate_dir, &resolved_tmpl.path);
 
     // Infer project_name from the current Cargo.toml or directory name.
     let project_name = infer_project_name(opts.project_dir)?;
@@ -680,7 +685,7 @@ fn add_template(opts: AddTemplateOpts<'_>) -> Result<()> {
     let interactive_override = if opts.interactive { None } else { Some(false) };
     let render_opts = crate::template_engine::RenderOpts {
         crate_root: crate_dir,
-        template_path,
+        template_path: resolved_tmpl.path,
         project_name,
         defines: opts.defines,
         interactive_override,
@@ -695,6 +700,10 @@ fn add_template(opts: AddTemplateOpts<'_>) -> Result<()> {
     };
     let results = crate::merge::apply_rendered_files(&files, &apply_opts)?;
     crate::merge::print_summary(&results);
+
+    // Record the applied template in battery-pack.toml.
+    let user_manifest_path = find_user_manifest(opts.project_dir)?;
+    record_applied_template(&user_manifest_path, &crate_name, &resolved_tmpl.name)?;
 
     // Print post-merge hints if the template defines any.
     if !hints.is_empty() {
@@ -811,16 +820,25 @@ pub(crate) fn add_battery_pack(
         all_features,
         specific_crates,
     );
-    let (active_features, crates_to_sync) = match resolved {
+    let (active_features, crates_to_sync, selected_templates) = match resolved {
         ResolvedAdd::Crates {
             active_features,
             crates,
-        } => (active_features, crates),
+        } => (active_features, crates, Vec::new()),
         ResolvedAdd::Interactive if std::io::stdout().is_terminal() => {
             // Pre-select crates already in the project (edit mode)
             let pre_selected = compute_pre_selection(&bp_spec, project_dir);
-            match pick_crates_interactive(&bp_spec, &pre_selected)? {
-                Some(result) => (result.active_features, result.crates),
+            let preview_ctx = Some(PickerPreviewContext {
+                battery_pack: crate_name.clone(),
+                path: path.map(|s| s.to_string()),
+                source: source.clone(),
+            });
+            match pick_crates_interactive(&bp_spec, &pre_selected, preview_ctx)? {
+                Some(result) => (
+                    result.active_features,
+                    result.crates,
+                    result.selected_templates,
+                ),
                 None => {
                     println!("Cancelled.");
                     return Ok(());
@@ -830,135 +848,153 @@ pub(crate) fn add_battery_pack(
         ResolvedAdd::Interactive => {
             // Non-interactive fallback: use defaults
             let crates = bp_spec.resolve_crates(&["default"]);
-            (BTreeSet::from(["default".to_string()]), crates)
+            (BTreeSet::from(["default".to_string()]), crates, Vec::new())
         }
     };
 
-    if crates_to_sync.is_empty() {
-        println!("No crates selected.");
+    if crates_to_sync.is_empty() && selected_templates.is_empty() {
+        println!("No crates or templates selected.");
         return Ok(());
     }
 
     // Step 3: Now write everything — build-dep, workspace deps, crate deps, metadata.
-    let user_manifest_content =
-        std::fs::read_to_string(&user_manifest_path).context("Failed to read Cargo.toml")?;
-    // [impl manifest.toml.preserve]
-    let mut user_doc: toml_edit::DocumentMut = user_manifest_content
-        .parse()
-        .context("Failed to parse Cargo.toml")?;
+    if !crates_to_sync.is_empty() {
+        let user_manifest_content =
+            std::fs::read_to_string(&user_manifest_path).context("Failed to read Cargo.toml")?;
+        // [impl manifest.toml.preserve]
+        let mut user_doc: toml_edit::DocumentMut = user_manifest_content
+            .parse()
+            .context("Failed to parse Cargo.toml")?;
 
-    // [impl manifest.register.workspace-default]
-    let workspace_manifest = find_workspace_manifest(&user_manifest_path)?;
+        // [impl manifest.register.workspace-default]
+        let workspace_manifest = find_workspace_manifest(&user_manifest_path)?;
 
-    // [impl manifest.deps.workspace]
-    // Add crate dependencies + workspace deps (including the battery pack itself).
-    // Load workspace doc once; both deps and metadata are written to it before a
-    // single flush at the end (avoids a double read-modify-write).
-    let mut ws_doc: Option<toml_edit::DocumentMut> = if let Some(ref ws_path) = workspace_manifest {
-        let ws_content =
-            std::fs::read_to_string(ws_path).context("Failed to read workspace Cargo.toml")?;
-        Some(
-            ws_content
-                .parse()
-                .context("Failed to parse workspace Cargo.toml")?,
-        )
-    } else {
-        None
-    };
-
-    if let Some(ref mut doc) = ws_doc {
-        let ws_deps = doc["workspace"]["dependencies"]
-            .or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
-        if let Some(ws_table) = ws_deps.as_table_mut() {
-            // Add the battery pack itself to workspace deps
-            if let Some(local_path) = path {
-                let mut dep = toml_edit::InlineTable::new();
-                dep.insert("path", toml_edit::Value::from(local_path));
-                ws_table.insert(
-                    &crate_name,
-                    toml_edit::Item::Value(toml_edit::Value::InlineTable(dep)),
-                );
+        // [impl manifest.deps.workspace]
+        // Add crate dependencies + workspace deps (including the battery pack itself).
+        // Load workspace doc once; both deps and metadata are written to it before a
+        // single flush at the end (avoids a double read-modify-write).
+        let mut ws_doc: Option<toml_edit::DocumentMut> =
+            if let Some(ref ws_path) = workspace_manifest {
+                let ws_content = std::fs::read_to_string(ws_path)
+                    .context("Failed to read workspace Cargo.toml")?;
+                Some(
+                    ws_content
+                        .parse()
+                        .context("Failed to parse workspace Cargo.toml")?,
+                )
             } else {
-                let version = bp_version
-                    .as_ref()
-                    .context("battery pack version not available (--path without workspace)")?;
-                ws_table.insert(&crate_name, toml_edit::value(version));
-            }
-            // Add the resolved crate dependencies
-            for (dep_name, dep_spec) in &crates_to_sync {
-                add_dep_to_table(ws_table, dep_name, dep_spec);
-            }
-        }
+                None
+            };
 
-        // [impl cli.add.dep-kind]
-        write_workspace_refs_by_kind(&mut user_doc, &crates_to_sync, false);
-    } else {
-        // [impl manifest.deps.no-workspace]
-        // [impl cli.add.dep-kind]
-        write_deps_by_kind(&mut user_doc, &crates_to_sync, false);
-    }
-
-    // Edit semantics: remove deselected crates from previous installation
-    let prev_managed =
-        read_managed_deps_for_project(&user_manifest_path, &user_manifest_content, &crate_name);
-    let new_crate_names: BTreeSet<String> = crates_to_sync.keys().cloned().collect();
-    let mut removed_count = 0;
-
-    if let Some(prev) = &prev_managed {
-        // Find crates that were previously managed but are no longer selected
-        let to_remove: BTreeMap<String, bphelper_manifest::CrateSpec> = prev
-            .iter()
-            .filter(|name| !new_crate_names.contains(name.as_str()))
-            .filter_map(|name| {
-                bp_spec
-                    .crates
-                    .get(name)
-                    .map(|spec| (name.clone(), spec.clone()))
-            })
-            .collect();
-
-        if !to_remove.is_empty() {
-            if let Some(ref mut doc) = ws_doc {
-                // Remove from workspace deps
-                let ws_deps = doc["workspace"]["dependencies"].as_table_mut();
-                if let Some(ws_table) = ws_deps {
-                    for name in to_remove.keys() {
-                        ws_table.remove(name);
-                    }
+        if let Some(ref mut doc) = ws_doc {
+            let ws_deps = doc["workspace"]["dependencies"]
+                .or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+            if let Some(ws_table) = ws_deps.as_table_mut() {
+                // Add the battery pack itself to workspace deps
+                if let Some(local_path) = path {
+                    let mut dep = toml_edit::InlineTable::new();
+                    dep.insert("path", toml_edit::Value::from(local_path));
+                    ws_table.insert(
+                        &crate_name,
+                        toml_edit::Item::Value(toml_edit::Value::InlineTable(dep)),
+                    );
+                } else {
+                    let version = bp_version
+                        .as_ref()
+                        .context("battery pack version not available (--path without workspace)")?;
+                    ws_table.insert(&crate_name, toml_edit::value(version));
+                }
+                // Add the resolved crate dependencies
+                for (dep_name, dep_spec) in &crates_to_sync {
+                    add_dep_to_table(ws_table, dep_name, dep_spec);
                 }
             }
-            removed_count = remove_deps_by_kind(&mut user_doc, &to_remove);
+
+            // [impl cli.add.dep-kind]
+            write_workspace_refs_by_kind(&mut user_doc, &crates_to_sync, false);
+        } else {
+            // [impl manifest.deps.no-workspace]
+            // [impl cli.add.dep-kind]
+            write_deps_by_kind(&mut user_doc, &crates_to_sync, false);
+        }
+
+        // Edit semantics: remove deselected crates from previous installation
+        let prev_managed =
+            read_managed_deps_for_project(&user_manifest_path, &user_manifest_content, &crate_name);
+        let new_crate_names: BTreeSet<String> = crates_to_sync.keys().cloned().collect();
+        let mut removed_count = 0;
+
+        if let Some(prev) = &prev_managed {
+            // Find crates that were previously managed but are no longer selected
+            let to_remove: BTreeMap<String, bphelper_manifest::CrateSpec> = prev
+                .iter()
+                .filter(|name| !new_crate_names.contains(name.as_str()))
+                .filter_map(|name| {
+                    bp_spec
+                        .crates
+                        .get(name)
+                        .map(|spec| (name.clone(), spec.clone()))
+                })
+                .collect();
+
+            if !to_remove.is_empty() {
+                if let Some(ref mut doc) = ws_doc {
+                    // Remove from workspace deps
+                    let ws_deps = doc["workspace"]["dependencies"].as_table_mut();
+                    if let Some(ws_table) = ws_deps {
+                        for name in to_remove.keys() {
+                            ws_table.remove(name);
+                        }
+                    }
+                }
+                removed_count = remove_deps_by_kind(&mut user_doc, &to_remove);
+            }
+        }
+
+        // Write workspace Cargo.toml once (deps combined)
+        if let (Some(ws_path), Some(doc)) = (&workspace_manifest, &ws_doc) {
+            // [impl manifest.toml.preserve]
+            std::fs::write(ws_path, doc.to_string())
+                .context("Failed to write workspace Cargo.toml")?;
+        }
+
+        // Write the final Cargo.toml
+        // [impl manifest.toml.preserve]
+        std::fs::write(&user_manifest_path, user_doc.to_string())
+            .context("Failed to write Cargo.toml")?;
+
+        write_battery_pack_state(
+            &user_manifest_path,
+            &crate_name,
+            &(&active_features).into(),
+            &crates_to_sync,
+        )?;
+
+        println!(
+            "Added {} with {} crate(s)",
+            crate_name,
+            crates_to_sync.len()
+        );
+        for dep_name in crates_to_sync.keys() {
+            println!("  + {}", dep_name);
+        }
+        if removed_count > 0 {
+            println!("Removed {} deselected crate(s)", removed_count);
         }
     }
 
-    // Write workspace Cargo.toml once (deps combined)
-    if let (Some(ws_path), Some(doc)) = (&workspace_manifest, &ws_doc) {
-        // [impl manifest.toml.preserve]
-        std::fs::write(ws_path, doc.to_string()).context("Failed to write workspace Cargo.toml")?;
-    }
-
-    // Write the final Cargo.toml
-    // [impl manifest.toml.preserve]
-    std::fs::write(&user_manifest_path, user_doc.to_string())
-        .context("Failed to write Cargo.toml")?;
-
-    write_battery_pack_state(
-        &user_manifest_path,
-        &crate_name,
-        &(&active_features).into(),
-        &crates_to_sync,
-    )?;
-
-    println!(
-        "Added {} with {} crate(s)",
-        crate_name,
-        crates_to_sync.len()
-    );
-    for dep_name in crates_to_sync.keys() {
-        println!("  + {}", dep_name);
-    }
-    if removed_count > 0 {
-        println!("Removed {} deselected crate(s)", removed_count);
+    // Step 4: Apply any selected templates.
+    for tmpl_name in &selected_templates {
+        add_template(AddTemplateOpts {
+            battery_pack: name,
+            template: tmpl_name,
+            path_override: path,
+            source,
+            project_dir,
+            defines: BTreeMap::new(),
+            overwrite: false,
+            interactive: std::io::stdout().is_terminal(),
+        })?;
     }
 
     Ok(())
@@ -1321,36 +1357,39 @@ pub(crate) struct PickerResult {
     pub crates: BTreeMap<String, bphelper_manifest::CrateSpec>,
     /// Which feature names are fully selected (for metadata recording).
     pub active_features: BTreeSet<String>,
+    /// Template names selected by the user for application.
+    pub selected_templates: Vec<String>,
 }
 
-/// An item in the picker — either a feature or an individual crate.
-enum PickerItem {
-    Feature(String), // feature name
-    Crate(String),   // crate name
+/// Context needed for template preview in the interactive picker.
+struct PickerPreviewContext {
+    battery_pack: String,
+    path: Option<String>,
+    source: CrateSource,
 }
 
 /// Show an interactive multi-select picker for choosing which crates to install.
 ///
-/// Features are listed first, then individual crates. `pre_selected` contains
-/// crate names already present in the project (for edit mode); when empty,
-/// the pack's default feature set is used for initial selection.
+/// Features are listed first, then individual crates, then actions (templates).
+/// `pre_selected` contains crate names already present in the project (for edit
+/// mode); when empty, the pack's default feature set is used for initial selection.
 ///
 /// Returns `None` if the user cancels.
 fn pick_crates_interactive(
     bp_spec: &bphelper_manifest::BatteryPackSpec,
     pre_selected: &BTreeSet<String>,
+    preview_ctx: Option<PickerPreviewContext>,
 ) -> Result<Option<PickerResult>> {
-    use console::style;
-    use dialoguer::MultiSelect;
+    use sectioned_picker::{PickerAction, PickerOutcome, Section, SectionItem, run_picker};
 
-    // Collect non-default features with their member crates
+    // Collect non-default features with their member crates.
     let features: Vec<(&String, &BTreeSet<bphelper_manifest::FeatureRef>)> = bp_spec
         .features
         .iter()
         .filter(|(name, _)| name.as_str() != "default")
         .collect();
 
-    // Collect all visible crates
+    // Collect all visible crates.
     let visible_crates: Vec<(&String, &bphelper_manifest::CrateSpec)> = bp_spec
         .crates
         .iter()
@@ -1372,105 +1411,211 @@ fn pick_crates_interactive(
         BTreeSet::new()
     };
 
-    // Build picker items: features first, then crates
-    let mut items: Vec<PickerItem> = Vec::new();
-    let mut labels: Vec<String> = Vec::new();
-    let mut defaults: Vec<bool> = Vec::new();
+    // Build sections for the picker.
+    let mut sections: Vec<Section> = Vec::new();
 
-    for (feat_name, feat_crates) in &features {
-        let member_list = feat_crates
+    // -- Features section --
+    if !features.is_empty() {
+        let items = features
             .iter()
-            .map(|fref| fref.dep_name())
-            .filter(|c| !bp_spec.is_hidden(c))
-            .collect::<Vec<_>>()
-            .join(", ");
-        labels.push(format!(
-            "✦ {} {}",
-            feat_name,
-            style(format!("[{}]", member_list)).dim()
-        ));
-        let checked = if use_defaults {
-            // Feature is checked if all its visible members are in defaults
-            feat_crates
-                .iter()
-                .map(|fref| fref.dep_name())
-                .filter(|c| !bp_spec.is_hidden(c))
-                .all(|c| default_crates.contains(c))
-        } else {
-            // Feature is checked if all its visible members are pre-selected
-            feat_crates
-                .iter()
-                .map(|fref| fref.dep_name())
-                .filter(|c| !bp_spec.is_hidden(c))
-                .all(|c| pre_selected.contains(c))
-        };
-        defaults.push(checked);
-        items.push(PickerItem::Feature(feat_name.to_string()));
-    }
-
-    for (crate_name, spec) in &visible_crates {
-        let version_info = if spec.features.is_empty() {
-            format!("({})", spec.version)
-        } else {
-            format!(
-                "({}, features: {})",
-                spec.version,
-                spec.features
+            .map(|(feat_name, feat_crates)| {
+                let member_list = feat_crates
                     .iter()
-                    .map(|s| s.as_str())
+                    .map(|fref| fref.dep_name())
+                    .filter(|c| !bp_spec.is_hidden(c))
                     .collect::<Vec<_>>()
-                    .join(", ")
-            )
-        };
-        labels.push(format!("  {} {}", crate_name, style(&version_info).dim()));
-        let checked = if use_defaults {
-            default_crates.contains(crate_name.as_str())
-        } else {
-            pre_selected.contains(crate_name.as_str())
-        };
-        defaults.push(checked);
-        items.push(PickerItem::Crate(crate_name.to_string()));
+                    .join(", ");
+                let checked = if use_defaults {
+                    feat_crates
+                        .iter()
+                        .map(|fref| fref.dep_name())
+                        .filter(|c| !bp_spec.is_hidden(c))
+                        .all(|c| default_crates.contains(c))
+                } else {
+                    feat_crates
+                        .iter()
+                        .map(|fref| fref.dep_name())
+                        .filter(|c| !bp_spec.is_hidden(c))
+                        .all(|c| pre_selected.contains(c))
+                };
+                SectionItem {
+                    label: format!("✦ {} [{}]", feat_name, member_list),
+                    checked,
+                }
+            })
+            .collect();
+        sections.push(Section {
+            title: "Features:".to_string(),
+            items,
+        });
     }
 
-    // Show the picker
-    println!();
-    println!(
-        "  {} v{}",
-        style(&bp_spec.name).green().bold(),
-        style(&bp_spec.version).dim()
-    );
-    println!();
+    // -- Dependencies section --
+    let dep_items = visible_crates
+        .iter()
+        .map(|(crate_name, spec)| {
+            let version_info = if spec.features.is_empty() {
+                format!("({})", spec.version)
+            } else {
+                format!(
+                    "({}, features: {})",
+                    spec.version,
+                    spec.features
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            };
+            let checked = if use_defaults {
+                default_crates.contains(crate_name.as_str())
+            } else {
+                pre_selected.contains(crate_name.as_str())
+            };
+            SectionItem {
+                label: format!("{} {}", crate_name, version_info),
+                checked,
+            }
+        })
+        .collect();
+    sections.push(Section {
+        title: "Dependencies:".to_string(),
+        items: dep_items,
+    });
 
-    let selections = MultiSelect::new()
-        .with_prompt("Select features and crates")
-        .items(&labels)
-        .defaults(&defaults)
-        .interact_opt()
-        .context("Failed to show crate picker")?;
+    // -- Actions section --
+    if !bp_spec.templates.is_empty() {
+        let items = bp_spec
+            .templates
+            .iter()
+            .map(|(tmpl_name, tmpl_spec)| {
+                let label = match &tmpl_spec.description {
+                    Some(desc) => format!("Add `{}` template — {}", tmpl_name, desc),
+                    None => format!("Add `{}` template", tmpl_name),
+                };
+                SectionItem {
+                    label,
+                    checked: false,
+                }
+            })
+            .collect();
+        sections.push(Section {
+            title: "Actions:".to_string(),
+            items,
+        });
+    }
 
-    let Some(selected_indices) = selections else {
-        return Ok(None);
+    // Build preview action: press 'p' to preview templates.
+    let has_features = !features.is_empty();
+    let has_templates = !bp_spec.templates.is_empty();
+    let template_names: Vec<String> = bp_spec.templates.keys().cloned().collect();
+    let template_paths: Vec<String> = bp_spec.templates.values().map(|t| t.path.clone()).collect();
+
+    let mut actions: Vec<PickerAction<'_>> = Vec::new();
+    if let Some(ref ctx) = preview_ctx
+        && has_templates
+    {
+        let battery_pack = ctx.battery_pack.clone();
+        let path = ctx.path.clone();
+        let source = ctx.source.clone();
+        let tmpl_paths = template_paths.clone();
+        let tmpl_names = template_names.clone();
+
+        // Determine the section index for Actions (depends on whether features exist).
+        let actions_section_idx = if has_features { 2 } else { 1 };
+
+        actions.push(PickerAction {
+            key: 'p',
+            label: "Preview",
+            handler: Box::new(move |ctx: &mut sectioned_picker::ActionContext<'_>| {
+                // Only handle preview for the Actions section.
+                if ctx.section() != actions_section_idx {
+                    return;
+                }
+
+                let Some(template_path) = tmpl_paths.get(ctx.item()) else {
+                    return;
+                };
+                let template_name = tmpl_names
+                    .get(ctx.item())
+                    .map(|s| s.as_str())
+                    .unwrap_or("template");
+
+                // Resolve crate directory and render the template preview.
+                let content = match crate::registry::resolve_crate_dir(
+                    &battery_pack,
+                    path.as_deref(),
+                    &source,
+                ) {
+                    Ok(resolved) => {
+                        let opts = crate::template_engine::RenderOpts {
+                            crate_root: resolved.dir,
+                            template_path: template_path.clone(),
+                            project_name: "my-project".to_string(),
+                            defines: std::collections::BTreeMap::new(),
+                            interactive_override: Some(false),
+                        };
+                        match crate::template_engine::preview(opts) {
+                            Ok(files) => crate::tui::highlight_preview(&files),
+                            Err(e) => ratatui::text::Text::from(format!("Preview error: {e}")),
+                        }
+                    }
+                    Err(e) => ratatui::text::Text::from(format!("Preview unavailable: {e:#}")),
+                };
+
+                let title = format!("Preview: {}", template_name);
+                crate::tui::show_preview(ctx.terminal(), &title, content);
+            }),
+        });
+    }
+
+    // Run the picker.
+    let title = format!("{} v{}", bp_spec.name, bp_spec.version);
+    let outcome = run_picker(&title, sections, actions)?;
+
+    let section_results = match outcome {
+        PickerOutcome::Confirmed(results) => results,
+        PickerOutcome::Cancelled => return Ok(None),
     };
 
-    // Split the picker selection into feature names and direct crate names.
-    let selected_set: BTreeSet<usize> = selected_indices.into_iter().collect();
-    let mut picked_features = Vec::new();
-    let mut picked_crates = BTreeSet::new();
+    // Interpret the results by section.
+    let mut section_iter = section_results.into_iter();
+    let mut picked_features: Vec<String> = Vec::new();
+    let mut picked_crates: BTreeSet<String> = BTreeSet::new();
+    let mut selected_templates: Vec<String> = Vec::new();
 
-    for (index, item) in items.iter().enumerate() {
-        if !selected_set.contains(&index) {
-            continue;
-        }
-
-        match item {
-            PickerItem::Feature(name) => picked_features.push(name.clone()),
-            PickerItem::Crate(name) => {
-                picked_crates.insert(name.clone());
+    // Features section (if present).
+    if !features.is_empty()
+        && let Some(feature_checks) = section_iter.next()
+    {
+        for (checked, (feat_name, _)) in feature_checks.iter().zip(features.iter()) {
+            if *checked {
+                picked_features.push(feat_name.to_string());
             }
         }
     }
 
-    // Route picked features through the main resolver so per-dep features (`serde/derive`)
+    // Dependencies section.
+    if let Some(dep_checks) = section_iter.next() {
+        for (checked, (crate_name, _)) in dep_checks.iter().zip(visible_crates.iter()) {
+            if *checked {
+                picked_crates.insert(crate_name.to_string());
+            }
+        }
+    }
+
+    // Actions section (if present).
+    if !bp_spec.templates.is_empty()
+        && let Some(action_checks) = section_iter.next()
+    {
+        for (checked, tmpl_name) in action_checks.iter().zip(bp_spec.templates.keys()) {
+            if *checked {
+                selected_templates.push(tmpl_name.clone());
+            }
+        }
+    }
+
+    // Route picked features through the main resolver so per-dep features (`serde/derive`),
     // weak refs (`serde?/derive`), and nested refs (`bundle = ["fancy"]`) reach the
     // result with correct CrateSpec.features.
     let feature_strs = picked_features
@@ -1484,7 +1629,7 @@ fn pick_crates_interactive(
         bp_spec.resolve_crates(&feature_strs)
     };
 
-    // Layer in directly-picked crates (their declared spec -- picked by name, not via
+    // Layer in directly-picked crates (their declared spec, picked by name, not via
     // a feature gate, so no per-dep feature accumulation).
     for name in &picked_crates {
         if bp_spec.is_hidden(name) {
@@ -1530,6 +1675,7 @@ fn pick_crates_interactive(
     Ok(Some(PickerResult {
         crates,
         active_features,
+        selected_templates,
     }))
 }
 
@@ -1556,9 +1702,9 @@ fn generate_from_local(opts: NewOpts, local_path: &str, template: Option<String>
         .and_then(|s| s.to_str())
         .unwrap_or("unknown");
     let templates = parse_template_metadata(&manifest_path, crate_name)?;
-    let template_path = resolve_template(&templates, template.as_deref(), opts.interactive)?;
+    let resolved_tmpl = resolve_template(&templates, template.as_deref(), opts.interactive)?;
 
-    generate_from_path(opts, local_path, &template_path)
+    generate_from_path(opts, local_path, &resolved_tmpl.name, &resolved_tmpl.path)
 }
 
 /// Prompt for a project name if not provided.
@@ -1583,7 +1729,12 @@ fn ensure_battery_pack_suffix(name: String) -> String {
     }
 }
 
-fn generate_from_path(opts: NewOpts, crate_path: &Path, template_path: &str) -> Result<()> {
+fn generate_from_path(
+    opts: NewOpts,
+    crate_path: &Path,
+    template_name: &str,
+    template_path: &str,
+) -> Result<()> {
     let raw = prompt_project_name(opts.name)?;
     let project_name = if opts.battery_pack == "battery-pack" {
         ensure_battery_pack_suffix(raw)
@@ -1605,7 +1756,16 @@ fn generate_from_path(opts: NewOpts, crate_path: &Path, template_path: &str) -> 
         git_init: true,
     };
 
-    crate::template_engine::generate(gen_opts)?;
+    let project_dir = crate::template_engine::generate(gen_opts)?;
+
+    // Record the applied template in the new project's battery-pack.toml.
+    let user_manifest_path = project_dir.join("Cargo.toml");
+    if user_manifest_path.exists() {
+        let bp_name = resolve_crate_name(&opts.battery_pack);
+        if let Err(e) = record_applied_template(&user_manifest_path, &bp_name, template_name) {
+            eprintln!("warning: failed to record template in state: {e}");
+        }
+    }
 
     Ok(())
 }
@@ -1634,13 +1794,20 @@ fn parse_template_metadata(
     Ok(spec.templates)
 }
 
+/// Resolved template: the logical name and the filesystem path within the crate.
+#[derive(Debug)]
+pub(crate) struct ResolvedTemplate {
+    pub name: String,
+    pub path: String,
+}
+
 // [impl format.templates.selection]
 // [impl cli.new.template-select]
 pub(crate) fn resolve_template(
     templates: &BTreeMap<String, TemplateConfig>,
     requested: Option<&str>,
     interactive: bool,
-) -> Result<String> {
+) -> Result<ResolvedTemplate> {
     match requested {
         Some(name) => {
             let config = templates.get(name).ok_or_else(|| {
@@ -1651,14 +1818,23 @@ pub(crate) fn resolve_template(
                     available.join(", ")
                 )
             })?;
-            Ok(config.path.clone())
+            Ok(ResolvedTemplate {
+                name: name.to_string(),
+                path: config.path.clone(),
+            })
         }
         None => {
             if templates.len() == 1 {
-                let (_, config) = templates.iter().next().unwrap();
-                Ok(config.path.clone())
+                let (name, config) = templates.iter().next().unwrap();
+                Ok(ResolvedTemplate {
+                    name: name.clone(),
+                    path: config.path.clone(),
+                })
             } else if let Some(config) = templates.get("default") {
-                Ok(config.path.clone())
+                Ok(ResolvedTemplate {
+                    name: "default".to_string(),
+                    path: config.path.clone(),
+                })
             } else {
                 prompt_for_template(templates, interactive)
             }
@@ -1669,7 +1845,7 @@ pub(crate) fn resolve_template(
 fn prompt_for_template(
     templates: &BTreeMap<String, TemplateConfig>,
     interactive: bool,
-) -> Result<String> {
+) -> Result<ResolvedTemplate> {
     use dialoguer::{Select, theme::ColorfulTheme};
 
     // Build display items with descriptions
@@ -1702,12 +1878,15 @@ fn prompt_for_template(
         .interact()
         .context("Failed to select template")?;
 
-    // Get the selected template's path
-    let (_, config) = templates
+    // Get the selected template's name and path
+    let (name, config) = templates
         .iter()
         .nth(selection)
         .ok_or_else(|| anyhow::anyhow!("Invalid template selection"))?;
-    Ok(config.path.clone())
+    Ok(ResolvedTemplate {
+        name: name.clone(),
+        path: config.path.clone(),
+    })
 }
 
 // ============================================================================
@@ -2271,12 +2450,16 @@ fn build_status_report(
                 bphelper_manifest::ActiveFeatures::Subset(set) => set.iter().cloned().collect(),
             };
 
+            let applied_templates =
+                read_applied_templates_from_state(&user_manifest_path, &pack.spec.name);
+
             cargo_bp_script::InstalledPackStatus::new(
                 &pack.short_name,
                 &pack.spec.name,
                 &pack.version,
             )
             .with_active_features(feature_strings)
+            .with_applied_templates(applied_templates)
             .with_warnings(warnings)
         })
         .collect();

@@ -383,3 +383,174 @@ fn add_template_registry_download_keeps_tempdir_alive() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+#[test]
+fn add_template_records_in_state_and_shows_in_status() {
+    let tmp = tempfile::tempdir().unwrap();
+
+    let fixture = fixtures_dir().join("fancy-battery-pack");
+
+    // Create a project that has fancy-battery-pack as a build-dep so status can find it.
+    std::fs::write(
+        tmp.path().join("Cargo.toml"),
+        "[package]\nname = \"my-app\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\nserde = \"1\"\n\n[build-dependencies]\nfancy-battery-pack = \"0.2.0\"\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(tmp.path().join("src")).unwrap();
+    std::fs::write(tmp.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+
+    // Apply a template.
+    let output = cargo_bp()
+        .args([
+            "bp",
+            "add",
+            "fancy",
+            "-t",
+            "default",
+            "--path",
+            &fixture.to_string_lossy(),
+            "-N",
+        ])
+        .current_dir(tmp.path())
+        .output()
+        .expect("failed to run cargo-bp");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Verify battery-pack.toml records the applied template.
+    let state_content = std::fs::read_to_string(tmp.path().join("battery-pack.toml")).unwrap();
+    assert!(
+        state_content.contains("applied-templates"),
+        "state file should contain applied-templates section:\n{state_content}"
+    );
+    assert!(
+        state_content.contains(r#"applied-templates = ["default"]"#),
+        "state file should record the 'default' template:\n{state_content}"
+    );
+
+    // Verify status --json includes the applied template.
+    let status_output = cargo_bp()
+        .args([
+            "bp",
+            "status",
+            "--json",
+            "--path",
+            &fixture.to_string_lossy(),
+        ])
+        .current_dir(tmp.path())
+        .output()
+        .expect("failed to run cargo-bp");
+
+    assert!(
+        status_output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&status_output.stderr)
+    );
+
+    let report: serde_json::Value =
+        serde_json::from_slice(&status_output.stdout).expect("valid JSON from status");
+    let pack = &report["packs"][0];
+    assert_eq!(
+        pack["applied_templates"],
+        serde_json::json!(["default"]),
+        "status JSON should include the applied template"
+    );
+}
+
+#[test]
+fn add_template_twice_does_not_duplicate_in_state() {
+    let tmp = tempfile::tempdir().unwrap();
+    create_existing_project(tmp.path());
+
+    let fixture = fixtures_dir().join("fancy-battery-pack");
+
+    // Apply the same template twice.
+    for _ in 0..2 {
+        let output = cargo_bp()
+            .args([
+                "bp",
+                "add",
+                "fancy",
+                "-t",
+                "default",
+                "--path",
+                &fixture.to_string_lossy(),
+                "-N",
+                "--overwrite",
+            ])
+            .current_dir(tmp.path())
+            .output()
+            .expect("failed to run cargo-bp");
+
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    // Verify applied-templates list contains exactly one entry.
+    let state_content = std::fs::read_to_string(tmp.path().join("battery-pack.toml")).unwrap();
+    let count = state_content.matches("applied-templates").count();
+    assert_eq!(
+        count, 1,
+        "applied-templates should appear once in state, found {count}:\n{state_content}"
+    );
+    assert!(
+        state_content.contains(r#"applied-templates = ["default"]"#),
+        "should contain exactly one entry:\n{state_content}"
+    );
+}
+
+#[test]
+fn new_from_template_records_in_state() {
+    let tmp = tempfile::tempdir().unwrap();
+    let fixture = fixtures_dir().join("fancy-battery-pack");
+
+    // Generate a new project from the fancy battery pack's "default" template.
+    let output = cargo_bp()
+        .args([
+            "bp",
+            "new",
+            "fancy",
+            "--name",
+            "my-app",
+            "--path",
+            &fixture.to_string_lossy(),
+            "-t",
+            "default",
+        ])
+        .current_dir(tmp.path())
+        .output()
+        .expect("failed to run cargo-bp");
+
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // The generated project should have a battery-pack.toml recording the template.
+    let project_dir = tmp.path().join("my-app");
+    assert!(project_dir.join("Cargo.toml").exists());
+
+    let state_path = project_dir.join("battery-pack.toml");
+    assert!(
+        state_path.exists(),
+        "battery-pack.toml should be created in the new project"
+    );
+
+    let state_content = std::fs::read_to_string(&state_path).unwrap();
+    assert!(
+        state_content.contains(r#"applied-templates = ["default"]"#),
+        "state file should record the template used:\n{state_content}"
+    );
+    assert!(
+        state_content.contains(r#"name = "fancy""#),
+        "state file should reference the battery pack:\n{state_content}"
+    );
+}

@@ -78,6 +78,10 @@ pub struct InstalledPackStatus {
     /// Sorted alphabetically.
     pub active_features: Vec<String>,
 
+    /// Templates that have been applied from this battery pack.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub applied_templates: Vec<String>,
+
     /// Per-dependency warnings for this pack — each entry indicates
     /// a dependency whose user-side version is older than what the
     /// battery pack recommends.
@@ -158,6 +162,7 @@ impl InstalledPackStatus {
             name: name.into(),
             version: version.into(),
             active_features: Vec::new(),
+            applied_templates: Vec::new(),
             warnings: Vec::new(),
         }
     }
@@ -176,6 +181,17 @@ impl InstalledPackStatus {
     {
         self.active_features
             .extend(features.into_iter().map(Into::into));
+        self
+    }
+
+    /// Append applied template names.
+    pub fn with_applied_templates<I, S>(mut self, templates: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.applied_templates
+            .extend(templates.into_iter().map(Into::into));
         self
     }
 

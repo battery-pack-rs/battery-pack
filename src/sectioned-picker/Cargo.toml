@@ -1,0 +1,16 @@
+[package]
+name = "sectioned-picker"
+version = "0.1.0"
+edition = "2024"
+description = "Interactive terminal multi-select picker with non-selectable section headers"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/battery-pack-rs/battery-pack"
+keywords = ["tui", "picker", "multi-select", "ratatui"]
+
+[dependencies]
+ratatui = "0.30"
+crossterm = "0.28"
+anyhow = "1"
+
+[dev-dependencies]
+snapbox = { workspace = true }
