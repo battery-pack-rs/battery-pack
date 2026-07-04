@@ -76,7 +76,7 @@ fn toggle_updates_checkbox() {
 #[test]
 fn footer_shows_keybindings() {
     let mut state = PickerState::new(vec![section("S:", &[("a", false)])]);
-    let output = render_to_string(80, 8, "test", &mut state);
+    let output = render_to_string(160, 8, "test", &mut state);
 
     assert!(output.contains("Navigate"), "navigation hint missing");
     assert!(output.contains("Toggle"), "toggle hint missing");
@@ -135,16 +135,16 @@ fn snapshot_single_section() {
     assert_data_eq!(
         output,
         str![[r#"
-"                        cli-pack v2.0                       "
+"────────────────────────────────────────────────────────────"
+" Dependencies:                                              "
+" > [x] tokio (1.38)                                         "
+"   [x] serde (1.0)                                          "
+"   [ ] anyhow (1)                                           "
 "                                                            "
-"┌──────────────────────────────────────────────────────────┐"
-"│Dependencies:                                             │"
-"│> [x] tokio (1.38)                                        │"
-"│  [x] serde (1.0)                                         │"
-"│  [ ] anyhow (1)                                          │"
-"│                                                          │"
-"└──────────────────────────────────────────────────────────┘"
-"↑↓/jk Navigate | Space Toggle | a Toggle section | Enter Con"
+"                                                            "
+"                                                            "
+"                                                            "
+" cli-pack v2.0  ↑↓/jk Navigate | Space Toggle | a Toggle sec"
 
 "#]]
     );
@@ -164,20 +164,20 @@ fn snapshot_multiple_sections() {
     assert_data_eq!(
         output,
         str![[r#"
-"                         fancy v1.0                         "
+"────────────────────────────────────────────────────────────"
+" Features:                                                  "
+" > [x] observability                                        "
+"   [ ] resilience                                           "
 "                                                            "
-"┌──────────────────────────────────────────────────────────┐"
-"│Features:                                                 │"
-"│> [x] observability                                       │"
-"│  [ ] resilience                                          │"
-"│                                                          │"
-"│Dependencies:                                             │"
-"│  [x] tokio                                               │"
-"│                                                          │"
-"│Actions:                                                  │"
-"│  [ ] Add `ci` template                                   │"
-"└──────────────────────────────────────────────────────────┘"
-"↑↓/jk Navigate | Space Toggle | a Toggle section | Enter Con"
+" Dependencies:                                              "
+"   [x] tokio                                                "
+"                                                            "
+" Actions:                                                   "
+"   [ ] Add `ci` template                                    "
+"                                                            "
+"                                                            "
+"                                                            "
+" fancy v1.0  ↑↓/jk Navigate | Space Toggle | a Toggle sectio"
 
 "#]]
     );
