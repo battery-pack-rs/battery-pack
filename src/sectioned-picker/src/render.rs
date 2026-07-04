@@ -2,6 +2,9 @@
 
 use crate::PickerAction;
 use crate::state::{Entry, PickerState};
+use ratatui::macros::span;
+use ratatui::style::Stylize;
+use ratatui::widgets::Padding;
 use ratatui::{
     Frame,
     layout::{Constraint, Layout},
@@ -22,28 +25,12 @@ pub fn render_picker(
 ) {
     let area = frame.area();
 
-    let [header_area, main_area, footer_area] = Layout::vertical([
-        Constraint::Length(2),
-        Constraint::Fill(1),
-        Constraint::Length(1),
-    ])
-    .areas(area);
+    let [main_area, footer_area] =
+        Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(area);
 
     // Update visible height from actual terminal geometry.
     state.visible_height = main_area.height.saturating_sub(2) as usize;
     state.ensure_cursor_visible();
-
-    // Title
-    frame.render_widget(
-        Paragraph::new(title)
-            .style(
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .centered(),
-        header_area,
-    );
 
     // Build the content lines.
     let current_entry_idx = state.current_entry_idx();
@@ -80,13 +67,25 @@ pub fn render_picker(
     }
 
     let content = Paragraph::new(lines)
-        .block(Block::default().borders(Borders::ALL))
+        .block(
+            Block::default()
+                .borders(Borders::TOP)
+                .padding(Padding::horizontal(1))
+                .border_style(Style::new().dim()),
+        )
         .scroll((state.scroll as u16, 0));
     frame.render_widget(content, main_area);
 
     // Footer — built-in keys + caller-defined action labels.
+    let [footer_left, footer_right] = Layout::horizontal([
+        Constraint::Length(title.len() as u16 + 2),
+        Constraint::Fill(1),
+    ])
+    .areas(footer_area);
+    let left_footer = span!(" {title} ").on_green().black().bold();
+    frame.render_widget(left_footer, footer_left);
     let mut footer_parts = vec![
-        "↑↓/jk Navigate".to_string(),
+        " ↑↓/jk Navigate".to_string(),
         "Space Toggle".to_string(),
         "a Toggle section".to_string(),
     ];
@@ -98,6 +97,6 @@ pub fn render_picker(
 
     frame.render_widget(
         Paragraph::new(footer_parts.join(" | ")).style(Style::default().white().on_dark_gray()),
-        footer_area,
+        footer_right,
     );
 }
