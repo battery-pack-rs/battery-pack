@@ -840,7 +840,6 @@ pub(crate) fn add_battery_pack(
                     result.selected_templates,
                 ),
                 None => {
-                    println!("Cancelled.");
                     return Ok(());
                 }
             }

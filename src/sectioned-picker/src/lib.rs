@@ -67,6 +67,13 @@ mod state;
 mod tests;
 
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use ratatui::{
+    TerminalOptions, Viewport,
+    crossterm::{
+        ExecutableCommand,
+        terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    },
+};
 use std::time::Duration;
 
 pub use render::render_picker;
@@ -144,15 +151,36 @@ pub fn run_picker(
     sections: Vec<Section>,
     actions: Vec<PickerAction<'_>>,
 ) -> anyhow::Result<PickerOutcome> {
+    let height: u16 = sections
+        .iter()
+        .map(|sec| sec.items.len() as u16 + 2)
+        .sum::<u16>()
+        + 2;
     let mut state = PickerState::new(sections);
-
     if state.is_empty() {
         return Ok(PickerOutcome::Confirmed(Vec::new()));
     }
 
-    let mut terminal = ratatui::init();
+    let mut is_fullscreen = false;
+    let viewport = if let Ok((_, r)) = ratatui::crossterm::terminal::size()
+        && r > height
+    {
+        Viewport::Inline(height)
+    } else {
+        is_fullscreen = true;
+        Viewport::Fullscreen
+    };
+
+    let mut terminal = ratatui::init_with_options(TerminalOptions { viewport });
+    enable_raw_mode()?;
+    if is_fullscreen {
+        terminal.backend_mut().execute(EnterAlternateScreen)?;
+    }
     let result = run_picker_loop(&mut terminal, title, &mut state, actions);
-    ratatui::restore();
+    disable_raw_mode()?;
+    if is_fullscreen {
+        terminal.backend_mut().execute(LeaveAlternateScreen)?;
+    }
     result
 }
 
