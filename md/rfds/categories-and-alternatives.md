@@ -470,15 +470,41 @@ The categories/exclusive metadata works at *any* level — both the high-level
 `embedded-battery-pack` choosing between vendors, and within
 `stm32-battery-pack` choosing between chip families.
 
-## Validation
+## Error conditions
 
-`cargo bp validate` gains new checks:
+### Authoring errors (`cargo bp validate`)
 
-- **r[format.features.exclusive-conflict]**: If two features in the same
-  `at-most-one` category are both in `default`, emit an error.
-- **r[format.categories.defined]**: Every `category` value referenced in a
-  feature annotation must have a corresponding `categories.<name>` entry (or
-  be an ancestor via dot notation).
+These are errors in the battery pack's Cargo.toml, caught when the pack
+author runs `cargo bp validate`:
+
+| Rule | Condition | Message |
+|------|-----------|---------|
+| `format.categories.defined` | A feature's `category` references a name with no corresponding `categories.<name>` entry (or ancestor) | `feature 'stm32f4' references undefined category 'hal'` |
+| `format.categories.template-defined` | A template's `category` references an undefined category | `template 'binary-release' references undefined category 'release'` |
+| `format.features.exclusive-conflict` | Two or more features in the same `at-most-one` category are both listed in `default` | `features 'jemalloc' and 'mimalloc-alloc' are both in default but belong to at-most-one category 'allocator'` |
+| `format.categories.empty` | A category is declared but no feature or template references it | warning: `category 'foo' is declared but has no members` |
+| `format.categories.pick-missing-title` | A category has `pick = "at-most-one"` but no `title` | warning: `at-most-one category 'hal' should have a title for the picker UI` |
+| `format.features.unknown-feature` | `[package.metadata.battery-pack.features.X]` where `X` is not a key in `[features]` | `feature metadata 'X' does not match any entry in [features]` |
+| `format.template.category-placeholder-mismatch` | A template uses `type = "category"` referencing a category that doesn't exist | `template placeholder 'allocator' references undefined category 'allocator'` |
+
+### Usage errors (`cargo bp add`)
+
+These are errors at install time, caused by the user's selection:
+
+| Context | Condition | Message |
+|---------|-----------|---------|
+| Non-interactive `-F` | Two features from the same `at-most-one` category passed | `error: features 'stm32f4' and 'nrf52840' are exclusive (category: hal)` |
+| Non-interactive `-t` | Two templates from the same `at-most-one` category passed | `error: templates 'trusted-publishing' and 'binary-release' are exclusive (category: release)` |
+| Interactive (picker) | User presses Enter with >1 selection in an `at-most-one` category | Inline error in the picker: `"category 'hal' allows at most one selection"` — picker refuses to confirm |
+| `--all-features` | Multiple exclusive selections | No error — `--all-features` bypasses exclusive checks |
+
+### Edge case: pre-existing multi-selection
+
+If the user previously installed features via `cargo add` that conflict with
+an `at-most-one` constraint, the picker shows them honestly (multiple radio
+buttons filled). The user must deselect down to one (or zero) before the
+picker will confirm. If they select a new item, the others are automatically
+deselected. On confirm, deselected crates are removed from `Cargo.toml`.
 
 ## Interaction with existing features
 
