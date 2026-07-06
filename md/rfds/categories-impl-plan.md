@@ -7,18 +7,19 @@ TDD-driven implementation plan for the [Categories and Exclusive Picks RFD](./ca
 ```
 Phase 1 (parsing) ──→ Phase 2 (validation) ──→ Phase 7 (validate/show)
      │                       │
-     ├───────────────────────├──→ Phase 5 (CLI -F validation)
+     │                       ├──→ Phase 5 (CLI -F validation)
      │                       │
-     └──→ Phase 3 (picker) ─├──→ Phase 4 (CLI picker wiring)
+Phase 3 (picker) ────────────├──→ Phase 4 (CLI picker wiring)
                              │
                              └──→ Phase 6 (template category placeholders)
                                        │
                                        └──→ Phase 8 (migration)
 ```
 
-Phases 1–2 are foundational. Phase 3 is independent from 2 but depends on 1's
-types. Phases 4–6 can proceed in parallel once their prerequisites land. Phase
-7 depends on 2. Phase 8 is last (depends on everything).
+Phase 1 and Phase 3 are **fully independent** — Phase 1 adds types to
+`bphelper-manifest`, Phase 3 adds `SelectionMode` to the `sectioned-picker`
+crate. They share no types. Phase 4 is the integration point where manifest
+types meet picker types.
 
 ---
 
@@ -56,7 +57,7 @@ pub enum PickMode {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CategorySpec {
-    pub title: String,
+    pub title: Option<String>,
     pub description: Option<String>,
     #[serde(default)]
     pub pick: PickMode,
@@ -80,20 +81,43 @@ Add to `TemplateSpec`:
 pub category: Option<String>,
 ```
 
+Note: `CategorySpec.title` is `Option<String>` (not required) — validation
+warns if missing for `at-most-one` categories, but it's not a parse error.
+
 ### 1.3 Implement parsing
 
 **File**: `src/battery-pack/bphelper-manifest/src/lib.rs`
 
-Extend `RawBatteryPackMetadata` deserialization to include `categories` and
-`features` maps. Extend `RawTemplateSpec` with `category`. Populate new fields
-in `package_to_spec()`.
+Two deserialization structs need changes:
+
+1. **`RawBatteryPackMetadata`** (currently only has `hidden`) — add:
+   ```rust
+   #[serde(default)]
+   categories: BTreeMap<String, CategorySpec>,
+   #[serde(default)]
+   features: BTreeMap<String, FeatureMeta>,
+   ```
+
+2. **`RawTemplateSpec`** (under `RawBatteryMetadata`, which lives under
+   `[package.metadata.battery]`) — add:
+   ```rust
+   #[serde(default)]
+   category: Option<String>,
+   ```
+
+   Note: templates live under `[package.metadata.battery.templates]`, NOT
+   `[package.metadata.battery-pack]`. The category and features maps live
+   under `battery-pack`. This is a two-struct split that already exists in the
+   code; we just extend each side.
+
+Populate new `BatteryPackSpec` fields in `package_to_spec()` (~line 936).
 
 ---
 
 ## Phase 2: Validation Rules
 
-**Goal**: Enforce `format.features.exclusive-conflict` and
-`format.categories.defined`.
+**Goal**: Enforce `format.features.exclusive-conflict`,
+`format.categories.defined`, and related checks.
 
 ### 2.1 Write tests
 
@@ -105,24 +129,32 @@ in `package_to_spec()`.
 | `validate_exclusive_conflict_not_triggered_for_any` | Two features in an `any` category both in default | No error |
 | `validate_category_reference_exists` | `category = "nonexistent"` | Error `format.categories.defined` |
 | `validate_nested_category_resolves_to_ancestor` | `category = "hal.stm32"` when `categories.hal` exists | No error |
+| `validate_orphaned_subcategory` | `category = "hal.stm32"` declared, but no `categories.hal` parent | Error `format.categories.defined` |
 | `validate_clean_when_exclusive_not_in_default` | Two exclusive features, only one in default | No error |
 | `validate_template_category_reference_exists` | Template `category = "bogus"` | Error `format.categories.defined` |
 | `validate_empty_category_warns` | Category declared but no feature or template references it | Warning `format.categories.empty` |
 | `validate_at_most_one_missing_title_warns` | `pick = "at-most-one"` with no `title` field | Warning `format.categories.pick-missing-title` |
-| `validate_feature_metadata_for_unknown_feature` | `[features.X]` metadata where `X` not in `[features]` | Error `format.features.unknown-feature` |
+| `validate_feature_metadata_for_unknown_feature` | `[package.metadata.battery-pack.features.X]` where `X` not in `[features]` | Error `format.features.unknown-feature` |
 
 ### 2.2 Implement
 
 **File**: `src/battery-pack/bphelper-manifest/src/lib.rs`
 
-Add `validate_categories()` to `validate_spec()`:
+Add category validation checks inside the existing `validate_spec()` function
+(~line 319). This is not a separate function to wire — it's additional checks
+within the existing validation flow.
+
+Checks:
 
 - **r[format.categories.defined]**: For each feature's `category` and each
-  template's `category`, check that a matching `categories.<name>` entry
-  exists (or an ancestor via dot notation).
+  template's `category`, verify a matching `categories.<name>` entry exists
+  (or an ancestor via dot notation).
 - **r[format.features.exclusive-conflict]**: Collect features in each
   `at-most-one` category that appear in `default`. If any category has >1,
   emit error.
+- **r[format.categories.empty]**: Warning for declared but unreferenced categories.
+- **r[format.categories.pick-missing-title]**: Warning for `at-most-one` without title.
+- **r[format.features.unknown-feature]**: Error for metadata on non-existent feature.
 
 Helper:
 ```rust
@@ -139,7 +171,8 @@ fn category_exists(&self, name: &str) -> bool {
 ## Phase 3: Picker UI Changes (Radio Buttons, Collapsing)
 
 **Goal**: Extend `sectioned-picker` with `SelectionMode` and collapse
-behavior.
+behavior. This phase is **fully independent of Phase 1** — it only touches
+the `sectioned-picker` crate.
 
 ### 3.1 Write tests
 
@@ -156,7 +189,7 @@ behavior.
 | `into_results_includes_collapsed_sections` | Collapsed sections still in results |
 | `radio_pre_selected_multiple_renders_honestly` | Radio section starts with 2 checked → both shown (no auto-deselection on load) |
 | `radio_pre_selected_multiple_toggle_clears_others` | Radio section with 2 checked, user toggles a third → only the third is checked |
-| `radio_confirm_blocked_when_multiple_selected` | Enter pressed with >1 radio selection → returns error/blocked state, does not confirm |
+| `radio_confirm_blocked_when_multiple_selected` | `try_confirm()` with >1 radio selection → returns `Err` with category name |
 
 **File**: `src/sectioned-picker/src/tests/render.rs`
 
@@ -165,18 +198,34 @@ behavior.
 | `render_radio_items_use_bullet_symbols` | `●`/`○` instead of `[x]`/`[ ]` |
 | `render_collapsed_section_shows_chevron` | `▶` prefix on collapsed header |
 | `render_radio_multiple_selected_shows_all_filled` | When 2 items are pre-checked in radio mode, both render as `●` |
+| `render_radio_section_header_shows_constraint` | Header includes `(pick at most one)` text |
 
 ### 3.2 Implement
 
 **File**: `src/sectioned-picker/src/lib.rs`
 
-Add to `Section`:
-```rust
-pub selection_mode: SelectionMode,  // default: Checkbox
-pub collapsed: bool,                // default: false
-```
+The `Section` struct currently has no derives and callers construct it with
+struct literal syntax. To avoid breaking all existing call sites, add defaults:
 
 ```rust
+pub struct Section {
+    pub title: String,
+    pub items: Vec<SectionItem>,
+    pub selection_mode: SelectionMode,
+    pub collapsed: bool,
+}
+
+impl Section {
+    pub fn new(title: impl Into<String>, items: Vec<SectionItem>) -> Self {
+        Self {
+            title: title.into(),
+            items,
+            selection_mode: SelectionMode::Checkbox,
+            collapsed: false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SelectionMode {
     #[default]
@@ -185,29 +234,56 @@ pub enum SelectionMode {
 }
 ```
 
+Existing callers migrate from `Section { title, items }` to
+`Section::new(title, items)`. New callers can set `selection_mode` and
+`collapsed` after construction.
+
 **File**: `src/sectioned-picker/src/state.rs`
 
-- `toggle()`: check `SelectionMode` — radio deselects siblings first.
-- `toggle_current_section()`: in radio mode, deselects all.
-- `move_up()`/`move_down()`: skip items in collapsed sections.
-- New: `toggle_collapse()` — flips `collapsed` on current section header.
+Key insight: `PickerState` already stores a `coordinates: Vec<(usize, usize)>`
+mapping each selectable index to `(section_idx, item_idx)`. For radio
+behavior, `toggle()` can look up the current section via
+`self.coordinates[self.cursor].0` and iterate `coordinates` for all entries
+with matching `section_idx` to deselect siblings.
+
+Add to `PickerState`:
+```rust
+section_modes: Vec<SelectionMode>,  // one per section, set during new()
+visible: Vec<bool>,                 // per-entry visibility; toggled by collapse
+```
+
+Changes:
+- `new()`: store `section_modes` from input sections. Initialize `visible`
+  all-true (collapsed sections start with items hidden).
+- `toggle()`: check `section_modes[section_idx]` — for Radio, deselect all
+  siblings in same section before checking the toggled item.
+- `toggle_current_section()`: in Radio mode, deselects all (can't "check all").
+- `move_up()`/`move_down()`: skip entries where `visible[idx] == false`.
+- New `toggle_collapse(section_idx)`: flips visibility for all items in that section.
+- New `try_confirm() -> Result<Vec<Vec<bool>>, String>`: checks radio sections
+  for >1 selection before returning results. On violation, returns the section
+  title in the error.
 
 **File**: `src/sectioned-picker/src/lib.rs` (event loop)
 
-- `KeyCode::Left` → collapse current section
-- `KeyCode::Right` → expand current section
+- `KeyCode::Left` on a section header → collapse
+- `KeyCode::Right` on a section header → expand
+- `KeyCode::Enter`: call `try_confirm()`. If `Err(msg)`, render inline error
+  and stay in the loop (no new `PickerOutcome` variant needed).
 
 **File**: `src/sectioned-picker/src/render.rs`
 
-- Radio items: `●`/`○`
-- Collapsed header: `▶` prefix, expanded: `▼` prefix
+- Radio items: `●`/`○` instead of `[x]`/`[ ]`
+- Collapsed header: `▶` prefix; expanded: `▼` prefix
 - Radio section header appends `(pick at most one)`
+- Inline error line rendered below the section when confirm is blocked
 
 ---
 
 ## Phase 4: Wire Categories into CLI Picker
 
-**Goal**: `cargo bp add` builds picker sections from category metadata.
+**Goal**: `cargo bp add` builds picker sections from category metadata and
+handles deselection (removal of previously-installed exclusive crates).
 
 ### 4.1 Write tests
 
@@ -222,20 +298,38 @@ pub enum SelectionMode {
 | `picker_result_maps_radio_to_active_features` | Single radio selection → correct `active_features` |
 | `picker_pre_existing_exclusive_crates_shown` | Project Cargo.toml already has both `jemalloc` and `mimalloc` deps; picker opens with both radio items checked |
 | `picker_deselection_removes_from_cargo_toml` | Project has `jemalloc` + `mimalloc`; user selects `jemalloc` (deselecting `mimalloc`); after confirm, `mimalloc` is removed from Cargo.toml |
+| `picker_all_features_bypasses_exclusive` | `--all-features` adds all exclusive features without error |
 
 ### 4.2 Implement
 
 **File**: `src/battery-pack/bphelper-cli/src/commands.rs`
 
-Refactor `pick_crates_interactive()`:
+The existing `all_crates_with_grouping()` (lib.rs:586) already groups crates
+by feature. Extend it (or wrap it) to also return category info from
+`spec.feature_meta`. This avoids rebuilding grouping from scratch.
+
+Refactor `pick_crates_interactive()` (~line 1414):
 
 1. Group features by `feature_meta[name].category`.
 2. For each category (in definition order):
-   - Create `Section` with `title` from category, `selection_mode` from `pick`.
-   - Nested categories become sub-sections.
+   - Create `Section::new(title, items)` with `selection_mode` from `pick`.
+   - Nested categories become collapsed sub-sections.
 3. Uncategorized features go into a "Features:" section (unchanged).
 4. Templates with categories go into their category section.
 5. Dependencies section remains at bottom.
+
+**Deselection / removal path:**
+
+The picker result currently only records positive selections via
+`PickerResult` (~line 1354). To support removal:
+
+1. Before showing the picker, record which crates from `at-most-one`
+   categories are already in the project's `Cargo.toml` (the "before" set).
+2. After picker confirm, compute the "after" set (selected items).
+3. Diff: `removed = before - after`.
+4. For removed crates, call the existing `remove_deps_by_kind()` from
+   manifest.rs (currently only used by `cargo bp rm`). Factor it out if needed
+   so both `rm` and `add` can use it.
 
 ---
 
@@ -271,13 +365,15 @@ fn validate_exclusive_constraints(
 }
 ```
 
-Call from the non-interactive path in `resolve_add_args()`.
+Call from the non-interactive path in `resolve_add_crates()` (~line 512) —
+NOT `resolve_add_args()` which does not exist.
 
 ---
 
 ## Phase 6: Category-Linked Template Placeholders
 
-**Goal**: `type = "category"` placeholder derives options from a category.
+**Goal**: `type = "category"` placeholder derives options from a category
+definition — single source of truth.
 
 ### 6.1 Write tests
 
@@ -285,11 +381,13 @@ Call from the non-interactive path in `resolve_add_args()`.
 
 | Test | Scenario |
 |------|----------|
-| `category_placeholder_derives_options` | `type = "category"`, `category = "allocator"` → options from features in that category |
+| `category_placeholder_derives_options` | `type = "category"`, `category = "allocator"` → options list equals features in that category |
 | `category_placeholder_uses_default` | Non-interactive: uses `default` value |
-| `category_placeholder_prefilled_from_picker` | User selected `jemalloc` in picker → placeholder auto-filled |
+| `category_placeholder_prefilled_from_picker` | User selected `jemalloc` in picker → placeholder auto-filled, not prompted |
 | `category_placeholder_error_on_unknown_category` | `category = "nonexistent"` → clear error |
 | `category_placeholder_renders_as_select` | Interactive UX identical to `select` type |
+| `category_placeholder_no_options_field_needed` | `options` key absent in bp-template.toml → options derived from category |
+| `category_placeholder_options_update_when_feature_added` | Add a feature to category → placeholder options include it without template edit |
 
 ### 6.2 Implement
 
@@ -310,14 +408,35 @@ Extend `PlaceholderDef`:
 category: Option<String>,  // for type = "category"
 ```
 
-In `resolve_placeholders()` for `Category`:
-1. Look up category in spec.
-2. Collect feature names assigned to it → use as options.
-3. If `active_features` (from picker) already includes one, pre-fill.
-4. Otherwise prompt as `Select`.
+Implementation approach — **pre-compute options before calling
+`resolve_placeholders()`**:
+
+Rather than threading `&BatteryPackSpec` into the template engine (which would
+couple it to `bphelper-manifest`), the CLI layer pre-computes the options list
+from the spec and injects it into the `PlaceholderDef` before resolution:
+
+```rust
+// In commands.rs, before calling template generation:
+for placeholder in &mut template_defs {
+    if placeholder.type_ == PlaceholderType::Category {
+        let cat_name = placeholder.category.as_ref().expect("validated");
+        placeholder.options = spec.features_in_category(cat_name);
+        // Pre-fill from picker selection if available:
+        if let Some(selected) = active_features.iter().find(|f| {
+            spec.feature_meta.get(*f).and_then(|m| m.category.as_deref()) == Some(cat_name)
+        }) {
+            placeholder.resolved_value = Some(selected.clone());
+        }
+    }
+}
+```
+
+Then `resolve_placeholders()` treats `Category` identically to `Select`
+(options are already populated). No changes to `resolve_placeholders()`
+signature needed.
 
 Thread `active_features: BTreeSet<String>` from picker result through
-`GenerateOpts` to template generation.
+`GenerateOpts` to the pre-computation site.
 
 ---
 
@@ -339,8 +458,8 @@ Thread `active_features: BTreeSet<String>` from picker result through
 
 ### 7.2 Implement
 
-Validation is mostly wired from Phase 2. Ensure error messages are clear
-and rule IDs match the spec.
+Validation is already wired from Phase 2 (checks are in `validate_spec()`).
+Just ensure the error messages surface clearly through `cargo bp validate`.
 
 **File**: `src/battery-pack/bphelper-cli/src/commands.rs` (`build_show_report()`)
 
@@ -349,7 +468,10 @@ grouped hierarchically.
 
 **File**: `src/cargo-bp-script/src/show.rs`
 
-Add `CategoryInfo` to the JSON schema.
+Add `CategoryInfo` to the JSON schema. This is a translation type — it
+mirrors `CategorySpec`/`PickMode` from `bphelper-manifest` in
+`cargo-bp-script`'s own serializable format. The conversion happens in
+`build_show_report()`.
 
 ---
 
@@ -361,12 +483,15 @@ Add `CategoryInfo` to the JSON schema.
 
 Create `tests/fixtures/category-battery-pack/` with a minimal pack exercising
 categories, nested categories, exclusive features, and template categories.
+Add workspace membership in `tests/fixtures/Cargo.toml`.
 
 ### 8.2 Migrate `backend-service-battery-pack`
 
 - Add `allocator` category (`at-most-one`) with `jemalloc` and `mimalloc-alloc`
 - Add `http-layers` category (`any`) with the tower-http features
-- Update `templates/service/bp-template.toml` to use `type = "category"` for allocator
+- Update `templates/service/bp-template.toml`: change allocator placeholder
+  from `type = "select"` with hardcoded options to `type = "category"` with
+  `category = "allocator"`
 
 ### 8.3 Migrate `ci-battery-pack`
 
@@ -381,6 +506,38 @@ categories, nested categories, exclusive features, and template categories.
 
 ---
 
+## Known implementation challenges
+
+These are non-obvious issues identified during code review. Each is addressed
+in the relevant phase above, but collected here for visibility:
+
+1. **Two-struct metadata split** (Phase 1.3): Categories and feature metadata
+   live under `[package.metadata.battery-pack]` (`RawBatteryPackMetadata`),
+   but template `category` lives under `[package.metadata.battery.templates]`
+   (`RawTemplateSpec`). Both structs need changes.
+
+2. **`Section` struct breaking change** (Phase 3.2): Adding fields breaks
+   struct-literal callers. Mitigated with `Section::new()` constructor +
+   field setters.
+
+3. **`PickerState` discards section metadata** (Phase 3.2): After
+   construction, the state has no reference to `SelectionMode`. Fixed by
+   storing `section_modes: Vec<SelectionMode>` during `new()`.
+
+4. **`selectable` vec is static** (Phase 3.2): Collapse/expand needs dynamic
+   visibility. Fixed with a `visible: Vec<bool>` that `move_up/move_down`
+   consults, avoiding index invalidation.
+
+5. **No removal path in the add flow** (Phase 4.2): `PickerResult` only
+   records positive selections. Deselection requires diffing before/after
+   state and calling `remove_deps_by_kind()`.
+
+6. **Template engine doesn't have access to spec** (Phase 6.2): Solved by
+   pre-computing category options in the CLI layer and injecting them into
+   `PlaceholderDef.options` before calling `resolve_placeholders()`.
+
+---
+
 ## Critical source files
 
 | File | Role |
@@ -388,7 +545,7 @@ categories, nested categories, exclusive features, and template categories.
 | `src/battery-pack/bphelper-manifest/src/lib.rs` | Metadata parsing and validation |
 | `src/sectioned-picker/src/state.rs` | Picker state machine |
 | `src/sectioned-picker/src/render.rs` | Picker rendering |
-| `src/sectioned-picker/src/lib.rs` | Picker event loop |
+| `src/sectioned-picker/src/lib.rs` | Picker event loop and public types |
 | `src/battery-pack/bphelper-cli/src/commands.rs` | CLI command logic |
 | `src/battery-pack/bphelper-cli/src/template_engine.rs` | Template placeholder resolution |
 | `src/battery-pack/bphelper-cli/src/validate.rs` | Validate subcommand |
