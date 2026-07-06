@@ -6,3 +6,5 @@ src = "md"
 
 [output.html]
 git-repository-url = "https://github.com/battery-pack-rs/battery-pack"
+fold.enable = true
+fold.level = 1

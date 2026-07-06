@@ -13,15 +13,15 @@
 - [Documentation and Examples](./docs-and-examples.md)
 - [Publishing](./publishing.md)
 
-# Specification
+# Appendices
 
-- [Battery Pack Format](./spec/format.md)
-- [CLI Behavior](./spec/cli.md)
-- [TUI Behavior](./spec/tui.md)
-- [Manifest Manipulation](./spec/manifest.md)
-- [Feature References](./spec/feature-refs.md)
-- [Documentation Generation](./spec/docgen.md)
-
-# Agent guide
-
+- [RFDs](./rfds/README.md)
+  - [Categories and Exclusive Picks](./rfds/categories-and-alternatives.md)
+- [Spec](./spec/README.md) 
+  - [Battery Pack Format](./spec/format.md)
+  - [CLI Behavior](./spec/cli.md)
+  - [TUI Behavior](./spec/tui.md)
+  - [Manifest Manipulation](./spec/manifest.md)
+  - [Feature References](./spec/feature-refs.md)
+  - [Documentation Generation](./spec/docgen.md)
 - [Ratatui testing guide](./ratatui-testing-guide.md)
