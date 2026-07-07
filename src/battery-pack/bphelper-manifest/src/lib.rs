@@ -2446,7 +2446,7 @@ mod tests {
 
         let packs = discover_battery_packs(&fixtures_dir).unwrap();
 
-        assert_eq!(packs.len(), 8);
+        assert_eq!(packs.len(), 9);
 
         let names: Vec<&str> = packs.iter().map(|p| p.name.as_str()).collect();
         assert!(names.contains(&"basic-battery-pack"));
@@ -2457,6 +2457,7 @@ mod tests {
         assert!(names.contains(&"optional-feature-battery-pack"));
         assert!(names.contains(&"mixed-kinds-battery-pack"));
         assert!(names.contains(&"implicit-feature-battery-pack"));
+        assert!(names.contains(&"category-battery-pack"));
 
         // Verify basic-battery-pack
         let basic = packs
@@ -2527,7 +2528,7 @@ mod tests {
         let member = workspace_root.join("tests/fixtures/basic-battery-pack");
 
         let packs = discover_battery_packs(&member).unwrap();
-        assert_eq!(packs.len(), 8);
+        assert_eq!(packs.len(), 9);
         let names: Vec<&str> = packs.iter().map(|p| p.name.as_str()).collect();
         assert!(names.contains(&"basic-battery-pack"));
         assert!(names.contains(&"fancy-battery-pack"));
