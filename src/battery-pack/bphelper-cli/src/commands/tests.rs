@@ -2422,6 +2422,45 @@ fn category_template_metadata_is_parsed() {
     assert_eq!(spec.templates["blinky"].categories, vec!["hal"]);
 }
 
+// [verify cli.picker-deselection-removes-dep]
+#[test]
+fn re_add_switches_exclusive_hal_feature() {
+    // Adding stm32f4 then re-adding nrf52840 should switch HALs: the new pick
+    // replaces the old one rather than installing both exclusive members.
+    let tmp = make_temp_project();
+    add(
+        "category",
+        "category-battery-pack",
+        &["stm32f4"],
+        FeatureMode::Default,
+        &[],
+        tmp.path(),
+    );
+    let after_first = read_cargo_toml(&tmp);
+    assert!(
+        after_first.contains("stm32f4xx-hal"),
+        "first add should install stm32f4xx-hal:\n{after_first}"
+    );
+
+    add(
+        "category",
+        "category-battery-pack",
+        &["nrf52840"],
+        FeatureMode::Default,
+        &[],
+        tmp.path(),
+    );
+    let deps = extract_section(&read_cargo_toml(&tmp), "[dependencies]");
+    assert!(
+        deps.contains("nrf52840-hal"),
+        "re-add should install nrf52840-hal:\n{deps}"
+    );
+    assert!(
+        !deps.contains("stm32f4xx-hal"),
+        "re-add must remove the previously-picked exclusive HAL:\n{deps}"
+    );
+}
+
 // ============================================================================
 // `cargo bp show` category rendering (Phase 7)
 // ============================================================================

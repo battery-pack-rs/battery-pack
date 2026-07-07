@@ -1,0 +1,5 @@
+[placeholders.util]
+type = "select"
+prompt = "Utility"
+options.category = "utils"
+default = "logging"

@@ -45,15 +45,18 @@ blinky = { path = "templates/blinky", description = "Minimal blinky example", ca
 # --- Dependencies ---
 
 [dependencies]
-# HAL crates (exclusive within the `hal` category)
-stm32f4 = { version = "0.15", optional = true }
-nrf52840 = { version = "0.1", optional = true }
+# HAL crates (each gated behind an exclusive `hal` feature)
+stm32f4xx-hal = { version = "0.22", optional = true }
+nrf52840-hal = { version = "0.18", optional = true }
 # Portable utilities
 heapless = { version = "0.8", optional = true }
 log = { version = "0.4", optional = true }
 
 [features]
-default = ["stm32f4", "heapless"]
-stm32f4 = ["dep:stm32f4"]
-nrf52840 = ["dep:nrf52840"]
-logging = ["dep:log"]
+# Features reference distinct crate names so they stay first-class (not
+# filtered as Cargo's auto-generated `dep:`-mirror features). `default` avoids
+# hard-coding an exclusive HAL so switching HALs on re-add works cleanly.
+default = ["heapless"]
+stm32f4 = ["stm32f4xx-hal"]
+nrf52840 = ["nrf52840-hal"]
+logging = ["log"]
