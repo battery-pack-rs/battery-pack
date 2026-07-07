@@ -4,8 +4,9 @@
 //! text content. This catches regressions in layout, styling, and scroll behavior
 //! that pure state tests cannot detect.
 
+use crate::SectionItem;
 use crate::render::render_picker;
-use crate::state::{PickerState, section};
+use crate::state::{PickerState, radio_section, section};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use snapbox::{assert_data_eq, str};
@@ -106,7 +107,7 @@ fn footer_includes_custom_action_labels() {
         },
     ];
 
-    let backend = TestBackend::new(80, 8);
+    let backend = TestBackend::new(160, 8);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| render_picker(frame, "test", &mut state, &actions))
@@ -136,7 +137,7 @@ fn snapshot_single_section() {
         output,
         str![[r#"
 "────────────────────────────────────────────────────────────"
-" Dependencies:                                              "
+" ▼ Dependencies:                                            "
 " > [x] tokio (1.38)                                         "
 "   [x] serde (1.0)                                          "
 "   [ ] anyhow (1)                                           "
@@ -144,9 +145,134 @@ fn snapshot_single_section() {
 "                                                            "
 "                                                            "
 "                                                            "
-" cli-pack v2.0  ↑↓/jk Navigate | Space Toggle | a Toggle sec"
+" cli-pack v2.0  ↑↓/jk Navigate | Space Toggle | ←/→ Collapse"
 
 "#]]
+    );
+}
+
+// ============================================================================
+// Radio, collapse, descriptions, and warning banner
+// ============================================================================
+
+#[test]
+fn render_radio_items_use_bullet_symbols() {
+    // A radio section renders checked/unchecked as ●/○ rather than [x]/[ ].
+    let mut state = PickerState::new(vec![radio_section(
+        "HAL:",
+        &[("stm32f4", true), ("nrf52840", false)],
+    )]);
+    let output = render_to_string(60, 10, "embedded v0.1", &mut state);
+    assert!(
+        output.contains("● stm32f4"),
+        "checked bullet missing:\n{output}"
+    );
+    assert!(
+        output.contains("○ nrf52840"),
+        "unchecked bullet missing:\n{output}"
+    );
+    assert!(
+        !output.contains("[x]"),
+        "radio must not use checkbox glyphs"
+    );
+}
+
+#[test]
+fn render_checkbox_items_use_squares() {
+    // Regression: checkbox sections keep [x]/[ ] glyphs.
+    let mut state = PickerState::new(vec![section("Utils:", &[("a", true), ("b", false)])]);
+    let output = render_to_string(60, 10, "pack v1", &mut state);
+    assert!(
+        output.contains("[x] a"),
+        "checked square missing:\n{output}"
+    );
+    assert!(
+        output.contains("[ ] b"),
+        "unchecked square missing:\n{output}"
+    );
+    assert!(!output.contains('●'), "checkbox must not use radio glyphs");
+}
+
+#[test]
+fn render_collapsed_section_shows_chevron() {
+    // A collapsed section header shows ▶; expanded shows ▼.
+    let mut state = PickerState::new(vec![section("Utils:", &[("a", false)]).collapsed()]);
+    let output = render_to_string(60, 10, "pack v1", &mut state);
+    assert!(
+        output.contains("▶ Utils:"),
+        "collapsed chevron missing:\n{output}"
+    );
+    assert!(
+        !output.contains("  [ ] a"),
+        "collapsed items must be hidden"
+    );
+
+    let mut expanded = PickerState::new(vec![section("Utils:", &[("a", false)])]);
+    let output = render_to_string(60, 10, "pack v1", &mut expanded);
+    assert!(
+        output.contains("▼ Utils:"),
+        "expanded chevron missing:\n{output}"
+    );
+}
+
+#[test]
+fn render_radio_section_header_shows_constraint() {
+    // Radio section headers include the "(pick at most one)" hint.
+    let mut state = PickerState::new(vec![radio_section("HAL:", &[("a", false)])]);
+    let output = render_to_string(70, 10, "embedded v0.1", &mut state);
+    assert!(
+        output.contains("(pick at most one)"),
+        "constraint hint missing:\n{output}"
+    );
+}
+
+#[test]
+fn render_radio_multiple_selected_shows_all_filled() {
+    // A pre-existing multi-selection renders both items as filled bullets.
+    let mut state = PickerState::new(vec![radio_section(
+        "Allocator:",
+        &[("jemalloc", true), ("mimalloc", true)],
+    )]);
+    let output = render_to_string(60, 12, "svc v1", &mut state);
+    assert!(
+        output.contains("● jemalloc"),
+        "first fill missing:\n{output}"
+    );
+    assert!(
+        output.contains("● mimalloc"),
+        "second fill missing:\n{output}"
+    );
+}
+
+#[test]
+fn render_warning_banner_for_pre_existing_conflict() {
+    // With >1 radio item checked on open, a ⚠ warning banner is shown.
+    let mut state = PickerState::new(vec![radio_section(
+        "Allocator:",
+        &[("jemalloc", true), ("mimalloc", true)],
+    )]);
+    let output = render_to_string(70, 12, "svc v1", &mut state);
+    assert!(output.contains('⚠'), "warning glyph missing:\n{output}");
+    assert!(
+        output.contains("Multiple selections"),
+        "warning text missing:\n{output}"
+    );
+}
+
+#[test]
+fn render_item_with_description() {
+    // Item descriptions are shown inline after the label.
+    let mut state = PickerState::new(vec![
+        crate::Section::new(
+            "HAL:",
+            vec![SectionItem::new("stm32f4", false).with_description("STM32F4xx family")],
+        )
+        .radio(),
+    ]);
+    let output = render_to_string(70, 10, "embedded v0.1", &mut state);
+    assert!(
+        output.contains("STM32F4xx family"),
+        "description missing:\n{output}"
     );
 }
 
@@ -165,19 +291,19 @@ fn snapshot_multiple_sections() {
         output,
         str![[r#"
 "────────────────────────────────────────────────────────────"
-" Features:                                                  "
+" ▼ Features:                                                "
 " > [x] observability                                        "
 "   [ ] resilience                                           "
 "                                                            "
-" Dependencies:                                              "
+" ▼ Dependencies:                                            "
 "   [x] tokio                                                "
 "                                                            "
-" Actions:                                                   "
+" ▼ Actions:                                                 "
 "   [ ] Add `ci` template                                    "
 "                                                            "
 "                                                            "
 "                                                            "
-" fancy v1.0  ↑↓/jk Navigate | Space Toggle | a Toggle sectio"
+" fancy v1.0  ↑↓/jk Navigate | Space Toggle | ←/→ Collapse/ex"
 
 "#]]
     );
