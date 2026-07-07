@@ -14,7 +14,7 @@
 //!   the distant header; only snaps when cursor is near the section top.
 //! - Blank lines between sections are accounted for in line calculations.
 
-use crate::state::{Entry, PickerState, section};
+use crate::state::{Entry, PickerState, radio_section, section};
 
 fn make_state(sections: Vec<crate::Section>, visible_height: usize) -> PickerState {
     let mut state = PickerState::new(sections);
@@ -442,4 +442,182 @@ fn cursor_line_matches_expected_positions() {
     assert_eq!(state.cursor_line(), 2);
     state.move_down();
     assert_eq!(state.cursor_line(), 5);
+}
+
+// ============================================================================
+// Radio mode — at-most-one selection semantics
+// ============================================================================
+
+#[test]
+fn radio_mode_toggle_deselects_others() {
+    // A(checked), B, C. Toggling B checks B and unchecks A; C stays off.
+    let mut state = make_state(
+        vec![radio_section(
+            "HAL:",
+            &[("a", true), ("b", false), ("c", false)],
+        )],
+        10,
+    );
+    state.move_down(); // cursor on B
+    state.toggle();
+    let results = state.into_results();
+    assert_eq!(results, vec![vec![false, true, false]]);
+}
+
+#[test]
+fn radio_mode_allows_deselect_all() {
+    // Toggling the only checked item unchecks it — zero selections is allowed.
+    let mut state = make_state(vec![radio_section("HAL:", &[("a", true)])], 10);
+    state.toggle();
+    let results = state.into_results();
+    assert_eq!(results, vec![vec![false]]);
+}
+
+#[test]
+fn radio_mode_backspace_clears() {
+    // Backspace in a radio section clears the current selection.
+    let mut state = make_state(
+        vec![radio_section("HAL:", &[("a", true), ("b", false)])],
+        10,
+    );
+    state.backspace();
+    let results = state.into_results();
+    assert_eq!(results, vec![vec![false, false]]);
+}
+
+#[test]
+fn checkbox_mode_toggle_is_independent() {
+    // Toggling B in a checkbox section leaves A checked.
+    let mut state = make_state(vec![section("Utils:", &[("a", true), ("b", false)])], 10);
+    state.move_down(); // cursor on B
+    state.toggle();
+    let results = state.into_results();
+    assert_eq!(results, vec![vec![true, true]]);
+}
+
+#[test]
+fn radio_mode_section_toggle_is_noop() {
+    // `a` (toggle_current_section) does nothing in a radio section.
+    let mut state = make_state(
+        vec![radio_section("HAL:", &[("a", true), ("b", false)])],
+        10,
+    );
+    state.toggle_current_section();
+    let results = state.into_results();
+    assert_eq!(results, vec![vec![true, false]]);
+}
+
+#[test]
+fn checkbox_mode_section_toggle_selects_all() {
+    // `a` in a checkbox section checks all items (existing behavior preserved).
+    let mut state = make_state(
+        vec![section(
+            "Utils:",
+            &[("a", true), ("b", false), ("c", false)],
+        )],
+        10,
+    );
+    state.toggle_current_section();
+    let results = state.into_results();
+    assert_eq!(results, vec![vec![true, true, true]]);
+}
+
+#[test]
+fn radio_pre_selected_multiple_renders_honestly() {
+    // A radio section constructed with two items checked keeps both on load.
+    let mut state = make_state(vec![radio_section("HAL:", &[("a", true), ("b", true)])], 10);
+    let results = state.into_results();
+    assert_eq!(results, vec![vec![true, true]]);
+}
+
+#[test]
+fn radio_pre_selected_multiple_toggle_clears_others() {
+    // With A and B both checked, toggling C leaves only C checked.
+    let mut state = make_state(
+        vec![radio_section(
+            "HAL:",
+            &[("a", true), ("b", true), ("c", false)],
+        )],
+        10,
+    );
+    state.move_down(); // B
+    state.move_down(); // C
+    state.toggle();
+    let results = state.into_results();
+    assert_eq!(results, vec![vec![false, false, true]]);
+}
+
+#[test]
+fn radio_confirm_blocked_when_multiple_selected() {
+    // try_confirm rejects a radio section with more than one item checked.
+    let mut state = make_state(vec![radio_section("HAL:", &[("a", true), ("b", true)])], 10);
+    let outcome = state.try_confirm();
+    assert!(outcome.is_err());
+    assert!(outcome.unwrap_err().contains("HAL:"));
+}
+
+#[test]
+fn radio_confirm_succeeds_valid_state() {
+    // try_confirm succeeds with zero or one radio selection.
+    let mut zero = make_state(
+        vec![radio_section("HAL:", &[("a", false), ("b", false)])],
+        10,
+    );
+    assert!(zero.try_confirm().is_ok());
+
+    let mut one = make_state(
+        vec![radio_section("HAL:", &[("a", true), ("b", false)])],
+        10,
+    );
+    let ok = one.try_confirm();
+    assert!(ok.is_ok());
+    assert_eq!(ok.unwrap(), vec![vec![true, false]]);
+}
+
+// ============================================================================
+// Collapsing — navigation and results
+// ============================================================================
+
+#[test]
+fn collapse_section_hides_items_from_navigation() {
+    // Collapse the first section; the cursor rests on its header, and moving
+    // down skips the hidden items to reach the second section.
+    let mut state = make_state(
+        vec![
+            section("A:", &[("a1", false), ("a2", false)]),
+            section("B:", &[("b1", false)]),
+        ],
+        20,
+    );
+    state.collapse_current(); // cursor starts in section A → focuses A's header
+    assert_eq!(state.current_coordinates(), (0, 0)); // A's header
+    state.move_down();
+    assert_eq!(state.current_coordinates(), (1, 0)); // B's item (A's items skipped)
+}
+
+#[test]
+fn expand_section_restores_navigation() {
+    // After collapsing, the cursor rests on the header; expanding restores
+    // traversal through the section's items.
+    let mut state = make_state(
+        vec![
+            section("A:", &[("a1", false), ("a2", false)]),
+            section("B:", &[("b1", false)]),
+        ],
+        20,
+    );
+    state.collapse_current(); // focuses A's collapsed header
+    state.expand_current(); // re-expands A, focusing its first item
+    assert_eq!(state.current_coordinates(), (0, 0));
+    state.move_down();
+    assert_eq!(state.current_coordinates(), (0, 1));
+}
+
+#[test]
+fn into_results_includes_collapsed_sections() {
+    // Checking an item then collapsing its section preserves the checked state.
+    let mut state = make_state(vec![section("A:", &[("a1", true), ("a2", false)])], 20);
+    state.collapse_current();
+    let results = state.into_results();
+    assert_eq!(results, vec![vec![true, false]]);
 }

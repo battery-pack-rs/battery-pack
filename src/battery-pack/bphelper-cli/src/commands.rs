@@ -1437,16 +1437,10 @@ fn pick_crates_interactive(
                         .filter(|c| !bp_spec.is_hidden(c))
                         .all(|c| pre_selected.contains(c))
                 };
-                SectionItem {
-                    label: format!("✦ {} [{}]", feat_name, member_list),
-                    checked,
-                }
+                SectionItem::new(format!("✦ {} [{}]", feat_name, member_list), checked)
             })
             .collect();
-        sections.push(Section {
-            title: "Features:".to_string(),
-            items,
-        });
+        sections.push(Section::new("Features:", items));
     }
 
     // -- Dependencies section --
@@ -1471,16 +1465,10 @@ fn pick_crates_interactive(
             } else {
                 pre_selected.contains(crate_name.as_str())
             };
-            SectionItem {
-                label: format!("{} {}", crate_name, version_info),
-                checked,
-            }
+            SectionItem::new(format!("{} {}", crate_name, version_info), checked)
         })
         .collect();
-    sections.push(Section {
-        title: "Dependencies:".to_string(),
-        items: dep_items,
-    });
+    sections.push(Section::new("Dependencies:", dep_items));
 
     // -- Actions section --
     if !bp_spec.templates.is_empty() {
@@ -1492,16 +1480,10 @@ fn pick_crates_interactive(
                     Some(desc) => format!("Add `{}` template — {}", tmpl_name, desc),
                     None => format!("Add `{}` template", tmpl_name),
                 };
-                SectionItem {
-                    label,
-                    checked: false,
-                }
+                SectionItem::new(label, false)
             })
             .collect();
-        sections.push(Section {
-            title: "Actions:".to_string(),
-            items,
-        });
+        sections.push(Section::new("Actions:", items));
     }
 
     // Build preview action: press 'p' to preview templates.

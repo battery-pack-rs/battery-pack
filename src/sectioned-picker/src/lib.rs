@@ -7,9 +7,12 @@
 //! # Features
 //!
 //! - **Sectioned layout** — items grouped under bold, non-selectable headers
-//! - **Checkboxes** — `[x]`/`[ ]` with `>` cursor indicator
+//! - **Selection modes** — checkbox sections (`[x]`/`[ ]`, any number selected)
+//!   or radio sections (`●`/`○`, at most one selected)
 //! - **Keyboard navigation** — arrow keys, j/k, Space to toggle, Enter to confirm
-//! - **Section toggle** — `a` checks/unchecks all items in the current section
+//! - **Section toggle** — `a` checks/unchecks all items in a checkbox section
+//! - **Collapsing** — Left/Right arrows collapse/expand a section
+//! - **Item descriptions** — optional per-item explanatory text shown inline
 //! - **Smart scrolling** — keeps cursor visible; snaps to section header when near top
 //! - **Custom actions** — bind arbitrary keys to caller-defined handlers that can
 //!   take over the terminal (e.g., for previews)
@@ -17,22 +20,20 @@
 //! # Example
 //!
 //! ```no_run
-//! use sectioned_picker::{Section, SectionItem, PickerAction, PickerOutcome, run_picker};
+//! use sectioned_picker::{Section, SectionItem, PickerOutcome, run_picker};
 //!
 //! let sections = vec![
-//!     Section {
-//!         title: "Features:".to_string(),
-//!         items: vec![
-//!             SectionItem { label: "logging".to_string(), checked: true },
-//!             SectionItem { label: "metrics".to_string(), checked: false },
+//!     Section::new(
+//!         "Features:",
+//!         vec![
+//!             SectionItem::new("logging", true),
+//!             SectionItem::new("metrics", false),
 //!         ],
-//!     },
-//!     Section {
-//!         title: "Dependencies:".to_string(),
-//!         items: vec![
-//!             SectionItem { label: "tokio (1.38)".to_string(), checked: true },
-//!         ],
-//!     },
+//!     ),
+//!     Section::new(
+//!         "Dependencies:",
+//!         vec![SectionItem::new("tokio (1.38)", true)],
+//!     ),
 //! ];
 //!
 //! match run_picker("my-app v1.0", sections, Vec::new()).unwrap() {
@@ -58,7 +59,11 @@
 //!
 //! If no items are checked when the user presses Enter, the item under the
 //! cursor is checked before submitting. This makes single-item selection a
-//! one-key operation (navigate + Enter).
+//! one-key operation (navigate + Enter). The convenience is skipped when the
+//! cursor is in a radio section, where an empty selection is a valid choice.
+//!
+//! Confirming is rejected when any radio section has more than one item
+//! checked; an inline error is shown and the picker stays open.
 
 mod render;
 mod state;
@@ -79,16 +84,75 @@ use std::time::Duration;
 pub use render::render_picker;
 pub use state::PickerState;
 
+/// How many items a section allows to be selected at once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SelectionMode {
+    /// Any number of items may be checked (rendered as `[x]`/`[ ]`).
+    #[default]
+    Checkbox,
+    /// At most one item should be checked (rendered as `●`/`○`). Selecting one
+    /// item deselects the others; confirming with more than one selected is
+    /// rejected.
+    Radio,
+}
+
 /// A section of items in the picker.
 pub struct Section {
     pub title: String,
     pub items: Vec<SectionItem>,
+    /// Whether this section is checkbox (default) or radio.
+    pub selection_mode: SelectionMode,
+    /// Whether this section starts collapsed (items hidden until expanded).
+    pub collapsed: bool,
+}
+
+impl Section {
+    /// Create a checkbox section that starts expanded.
+    pub fn new(title: impl Into<String>, items: Vec<SectionItem>) -> Self {
+        Self {
+            title: title.into(),
+            items,
+            selection_mode: SelectionMode::Checkbox,
+            collapsed: false,
+        }
+    }
+
+    /// Mark this section as radio (at most one selection).
+    pub fn radio(mut self) -> Self {
+        self.selection_mode = SelectionMode::Radio;
+        self
+    }
+
+    /// Mark this section as starting collapsed.
+    pub fn collapsed(mut self) -> Self {
+        self.collapsed = true;
+        self
+    }
 }
 
 /// A selectable item within a section.
 pub struct SectionItem {
     pub label: String,
     pub checked: bool,
+    /// Optional explanatory text shown inline after the label.
+    pub description: Option<String>,
+}
+
+impl SectionItem {
+    /// Create an item with no description.
+    pub fn new(label: impl Into<String>, checked: bool) -> Self {
+        Self {
+            label: label.into(),
+            checked,
+            description: None,
+        }
+    }
+
+    /// Attach an inline description to this item.
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
 }
 
 /// Context passed to action handlers when a custom key is pressed.
@@ -206,15 +270,29 @@ fn run_picker_loop(
                 return Ok(PickerOutcome::Cancelled);
             }
 
+            // Any keypress clears a stale confirm error before it is handled.
+            state.clear_confirm_error();
+
             match key.code {
                 KeyCode::Up | KeyCode::Char('k') => state.move_up(),
                 KeyCode::Down | KeyCode::Char('j') => state.move_down(),
                 KeyCode::Char(' ') => state.toggle(),
+                KeyCode::Left => state.collapse_current(),
+                KeyCode::Right => state.expand_current(),
+                KeyCode::Backspace => state.backspace(),
                 KeyCode::Enter => {
-                    if !state.has_any_checked() {
+                    // A one-key selection convenience: if nothing is checked,
+                    // check the cursor item first. Skipped for radio sections,
+                    // where a deliberate empty selection is valid.
+                    if !state.has_any_checked()
+                        && state.current_section_mode() != SelectionMode::Radio
+                    {
                         state.toggle();
                     }
-                    return Ok(PickerOutcome::Confirmed(state.into_results()));
+                    match state.try_confirm() {
+                        Ok(results) => return Ok(PickerOutcome::Confirmed(results)),
+                        Err(msg) => state.set_confirm_error(msg),
+                    }
                 }
                 KeyCode::Esc | KeyCode::Char('q') => {
                     return Ok(PickerOutcome::Cancelled);
