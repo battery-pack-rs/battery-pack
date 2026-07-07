@@ -2,6 +2,25 @@
 
 TDD-driven implementation plan for the [Categories and Exclusive Picks RFD](./README.md).
 
+## Status
+
+Phases 1–8 are implemented. Two items are deliberately deferred:
+
+- **Live shared state for multi-category items** (`r[cli.picker-item-in-multiple-categories]`):
+  an item in several categories is rendered as an independent row per section.
+  The confirmed *result* is correct (an item checked in any section is
+  selected), but the running picker does not live-propagate a toggle across an
+  item's other section copies, and edit-mode pre-checks can desync. Full
+  propagation needs a shared-item-identity mechanism in `sectioned-picker`
+  (its rows are currently independent) — tracked as follow-up work.
+- **`backend-service` service template `options.category`**: the pack now
+  declares the `allocator` category, but the service template still uses a
+  literal `options` list. Switching it to `options.category = "allocator"`
+  changes the option values from `[jemalloc, mimalloc, system]` to the feature
+  names `[jemalloc, mimalloc-alloc]`, which requires rewriting the template's
+  allocator conditionals and regenerating `file!` snapshots — deferred to a
+  change that can regenerate those snapshots.
+
 ## Phase dependency graph
 
 ```
