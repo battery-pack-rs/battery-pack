@@ -84,6 +84,88 @@ uses Cargo's native `dep/feature` syntax in `[features]`
 required. When augmenting, the specified Cargo features are
 unioned with the existing set.
 
+## Categories
+
+Categories group related items (features, dependencies, or templates) so that
+`cargo bp add` can present them together, optionally as a set of mutually
+exclusive alternatives.
+
+r[format.categories.definition]
+A `[package.metadata.battery-pack.categories.<name>]` table declares a category.
+It MAY contain a `title` (display name in the picker header), a `description`
+(explanatory text), and a `pick` field (the selection mode):
+
+```toml
+[package.metadata.battery-pack.categories.hal]
+title = "Hardware Abstraction Layer"
+description = "Pick the HAL for your target chip family"
+pick = "at-most-one"
+```
+
+r[format.categories.pick]
+The `pick` field MUST be either `"at-most-one"` or `"any"`. It defaults to
+`"any"` when omitted. An `at-most-one` category allows selecting no more than
+one of its members; an `any` category places no constraint on how many members
+are selected.
+
+r[format.categories.defined]
+Every category name referenced in an item's `categories` list MUST have a
+matching `[package.metadata.battery-pack.categories.<name>]` entry. A reference
+to an undefined category is an error (`format.categories.defined`).
+
+r[format.categories.empty]
+A category that is declared but that no item references SHOULD be removed.
+`cargo bp validate` MUST warn about an empty category
+(`format.categories.empty`).
+
+r[format.categories.pick-missing-title]
+A category with `pick = "at-most-one"` SHOULD define a `title` for use as the
+picker section header. `cargo bp validate` MUST warn when an `at-most-one`
+category has no `title` (`format.categories.pick-missing-title`).
+
+## Feature metadata
+
+r[format.features.metadata]
+A `[package.metadata.battery-pack.features.<name>]` table annotates a Cargo
+feature. It MAY contain a `description` (shown next to the item in the picker)
+and a `categories` list (the categories the feature belongs to, default `[]`).
+Both fields are optional, and a feature with no metadata entry behaves exactly
+as it does without this feature:
+
+```toml
+[package.metadata.battery-pack.features.stm32f4]
+description = "STM32F4xx family"
+categories = ["hal"]
+```
+
+r[format.features.unknown-feature]
+A `[package.metadata.battery-pack.features.<name>]` entry whose `<name>` is not
+a key in `[features]` is an error (`format.features.unknown-feature`).
+
+r[format.features.exclusive-conflict]
+Two or more features that belong to the same `at-most-one` category MUST NOT
+both appear in the `[features]` `default` array. Doing so is an error
+(`format.features.exclusive-conflict`), because it would install a conflicting
+default set.
+
+## Dependency metadata
+
+r[format.deps.metadata]
+A `[package.metadata.battery-pack.dependencies.<name>]` table annotates a
+dependency. It MAY contain a `description` and a `categories` list, with the
+same meaning as feature metadata:
+
+```toml
+[package.metadata.battery-pack.dependencies.embedded-hal]
+description = "Trait abstractions for embedded I/O"
+categories = ["portable"]
+```
+
+r[format.dependencies.unknown-dep]
+A `[package.metadata.battery-pack.dependencies.<name>]` entry whose `<name>`
+does not appear in any dependency section is an error
+(`format.dependencies.unknown-dep`).
+
 ## Hidden dependencies
 
 r[format.hidden.metadata]
@@ -111,11 +193,14 @@ battery pack crate.
 
 r[format.templates.metadata]
 Templates MUST be registered in `[package.metadata.battery.templates]`
-with a `path` and `description`:
+with a `path` and `description`. An entry MAY also carry an optional
+`categories` list, naming the categories the template belongs to (default
+`[]`):
 
 ```toml
 [package.metadata.battery.templates]
 default = { path = "templates/default", description = "A basic starting point" }
+fuzzing = { path = "templates/fuzzing", description = "cargo-fuzz scaffold", categories = ["quality"] }
 ```
 
 r[format.templates.engine]
