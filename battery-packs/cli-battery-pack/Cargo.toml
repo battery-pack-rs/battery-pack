@@ -14,6 +14,26 @@ subcmds = { path = "templates/subcmds", description = "CLI with subcommands" }
 [package.metadata.battery-pack]
 hidden = ["battery-pack"]
 
+# --- Categories (purely organizational; both `any`) ---
+
+[package.metadata.battery-pack.categories.output]
+title = "Terminal Output"
+description = "Color, hyperlinks, and progress display"
+
+[package.metadata.battery-pack.categories.input]
+title = "User Input"
+description = "Argument parsing and interactive prompts"
+
+# --- Feature metadata ---
+
+[package.metadata.battery-pack.features.indicators]
+description = "Progress bars and spinners (indicatif + console)"
+categories = ["output"]
+
+[package.metadata.battery-pack.features.config]
+description = "XDG/platform config directories (etcetera)"
+categories = ["input"]
+
 [dependencies]
 anstream = { version = "1.0.0", optional = true }
 anstyle = { version = "1.0.14", optional = true }

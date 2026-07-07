@@ -13,6 +13,47 @@ hidden = ["battery-pack", "snapbox"]
 [package.metadata.battery.templates]
 service = { path = "templates/service", description = "Resilient request-response service (axum or hyper) with observability, graceful shutdown, and a Redis or HTTP downstream" }
 
+# --- Categories ---
+
+[package.metadata.battery-pack.categories.allocator]
+title = "Global Allocator"
+description = "Pick a high-performance allocator (or use the system default)"
+pick = "at-most-one"
+
+[package.metadata.battery-pack.categories.http-layers]
+title = "HTTP Middleware Layers"
+description = "Tower-HTTP middleware for your service"
+
+# --- Feature metadata ---
+
+[package.metadata.battery-pack.features.jemalloc]
+description = "jemalloc (not available on MSVC)"
+categories = ["allocator"]
+
+[package.metadata.battery-pack.features.mimalloc-alloc]
+description = "mimalloc (works everywhere including MSVC)"
+categories = ["allocator"]
+
+[package.metadata.battery-pack.features.http-trace]
+description = "Request/response tracing spans"
+categories = ["http-layers"]
+
+[package.metadata.battery-pack.features.http-request-id]
+description = "X-Request-Id propagation"
+categories = ["http-layers"]
+
+[package.metadata.battery-pack.features.http-timeout]
+description = "Request timeout enforcement"
+categories = ["http-layers"]
+
+[package.metadata.battery-pack.features.http-catch-panic]
+description = "Convert panics to 500 responses"
+categories = ["http-layers"]
+
+[package.metadata.battery-pack.features.http-on-early-drop]
+description = "Handle early client disconnects"
+categories = ["http-layers"]
+
 [dependencies]
 # Core observability; always on.
 metrique = { version = "0.1", features = ["json"] }

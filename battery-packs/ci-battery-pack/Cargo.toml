@@ -9,21 +9,30 @@ keywords = ["battery-pack", "ci", "github-actions", "testing"]
 
 [package.metadata.battery.templates]
 full = { path = "templates/full", description = "Full CI setup with dependency policy and optional benchmarks, fuzzing, mdbook, spellcheck, and xtask" }
-benchmarks = { path = "templates/benchmarks", description = "Criterion bench scaffold + Bencher CI" }
-fuzzing = { path = "templates/fuzzing", description = "cargo-fuzz scaffold + CI workflows" }
-dependency-policy = { path = "templates/dependency-policy", description = "cargo-deny license, ban, and source checks" }
-security-scanning = { path = "templates/security-scanning", description = "RustSec audit workflow" }
-stress-test = { path = "templates/stress-test", description = "nextest stress test workflow" }
-mdbook = { path = "templates/mdbook", description = "mdBook scaffold + GitHub Pages deployment" }
-spellcheck = { path = "templates/spellcheck", description = "crate-ci/typos config + CI workflow" }
+benchmarks = { path = "templates/benchmarks", description = "Criterion bench scaffold + Bencher CI", categories = ["quality"] }
+fuzzing = { path = "templates/fuzzing", description = "cargo-fuzz scaffold + CI workflows", categories = ["quality"] }
+dependency-policy = { path = "templates/dependency-policy", description = "cargo-deny license, ban, and source checks", categories = ["quality"] }
+security-scanning = { path = "templates/security-scanning", description = "RustSec audit workflow", categories = ["quality"] }
+stress-test = { path = "templates/stress-test", description = "nextest stress test workflow", categories = ["quality"] }
+mdbook = { path = "templates/mdbook", description = "mdBook scaffold + GitHub Pages deployment", categories = ["docs"] }
+spellcheck = { path = "templates/spellcheck", description = "crate-ci/typos config + CI workflow", categories = ["quality"] }
 xtask = { path = "templates/xtask", description = "cargo-xtask scaffold with codegen --check" }
 trusted-publishing = { path = "templates/trusted-publishing", description = "release-plz with OIDC trusted publishing" }
 binary-release = { path = "templates/binary-release", description = "Cross-platform binary builds for GitHub Releases + cargo-binstall" }
-mutation-testing = { path = "templates/mutation-testing", description = "Mutation testing with cargo-mutants" }
-clippy-sarif = { path = "templates/clippy-sarif", description = "Clippy with GitHub PR annotations via SARIF" }
+mutation-testing = { path = "templates/mutation-testing", description = "Mutation testing with cargo-mutants", categories = ["quality"] }
+clippy-sarif = { path = "templates/clippy-sarif", description = "Clippy with GitHub PR annotations via SARIF", categories = ["quality"] }
 
 [package.metadata.battery-pack]
 hidden = ["battery-pack", "snapbox"]
+
+# --- Categories (purely organizational; both `any`) ---
+
+[package.metadata.battery-pack.categories.quality]
+title = "Code Quality"
+description = "Static analysis and testing tools"
+
+[package.metadata.battery-pack.categories.docs]
+title = "Documentation"
 
 [dependencies]
 # Benchmarking
