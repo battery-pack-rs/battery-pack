@@ -499,10 +499,15 @@ impl BatteryPackSpec {
             }
         }
 
-        // Feature metadata must name a real feature.
+        // Feature metadata must name a real feature. An optional dependency
+        // implicitly defines a same-named feature (Cargo's `dep:`/implicit
+        // feature), so those count as valid even though the parser filters the
+        // auto-generated `foo = ["dep:foo"]` mirror out of `self.features`.
         // [impl format.features.unknown-feature]
         for feature in self.feature_meta.keys() {
-            if !self.features.contains_key(feature) {
+            let is_named_feature = self.features.contains_key(feature);
+            let is_optional_dep = self.crates.get(feature).is_some_and(|spec| spec.optional);
+            if !is_named_feature && !is_optional_dep {
                 report.error(
                     "format.features.unknown-feature",
                     format!("feature metadata '{feature}' does not match any entry in [features]"),
@@ -3896,6 +3901,37 @@ foo-battery-pack 0.1.0
                 .iter()
                 .any(|d| d.rule == "format.features.unknown-feature"
                     && d.message.contains("ghost"))
+        );
+    }
+
+    #[test]
+    // [verify format.features.unknown-feature] optional-dep-backed features are known
+    fn validate_feature_metadata_for_optional_dep_feature() {
+        // Cargo strips the auto-generated `serde = ["dep:serde"]` mirror feature
+        // from the parsed feature map, but metadata for the same name is still
+        // valid because the optional dependency implicitly defines that feature.
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [dependencies]
+            serde = { version = "1", optional = true }
+
+            [package.metadata.battery-pack.features.serde]
+            description = "Serde support"
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let report = spec.validate_spec();
+        assert!(
+            !report
+                .diagnostics
+                .iter()
+                .any(|d| d.rule == "format.features.unknown-feature"),
+            "optional-dep feature must not be flagged unknown: {:?}",
+            report.diagnostics
         );
     }
 

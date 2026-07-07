@@ -485,6 +485,29 @@ fn new_from_battery_pack(opts: NewFromBpOpts<'_>) -> Result<()> {
     )
 }
 
+/// True if `a` and `b` are two distinct items sharing an `at-most-one`
+/// category — i.e. picking one should replace the other.
+fn exclusive_siblings(spec: &bphelper_manifest::BatteryPackSpec, a: &str, b: &str) -> bool {
+    if a == b {
+        return false;
+    }
+    let cats = |item: &str| -> Vec<String> {
+        spec.feature_meta
+            .get(item)
+            .or_else(|| spec.dep_meta.get(item))
+            .map(|m| m.categories.clone())
+            .unwrap_or_default()
+    };
+    let a_cats = cats(a);
+    cats(b).iter().any(|c| {
+        a_cats.contains(c)
+            && spec
+                .categories
+                .get(c)
+                .is_some_and(|cat| cat.pick == bphelper_manifest::PickMode::AtMostOne)
+    })
+}
+
 /// Reject requesting more than one item from the same `at-most-one` category.
 ///
 /// Groups the requested items by any `at-most-one` category they belong to and
@@ -861,7 +884,17 @@ pub(crate) fn add_battery_pack(
                 // Previously had --all-features: keep that (adding more features is a no-op).
                 bphelper_manifest::ActiveFeatures::All => (vec![], true),
                 bphelper_manifest::ActiveFeatures::Subset(set) => {
-                    let mut merged: Vec<String> = set.into_iter().collect();
+                    // A newly-requested feature in an at-most-one category
+                    // switches away from any previously-stored sibling, rather
+                    // than stacking two exclusive picks (radio semantics).
+                    let mut merged: Vec<String> = set
+                        .into_iter()
+                        .filter(|stored| {
+                            !with_features
+                                .iter()
+                                .any(|req| exclusive_siblings(&bp_spec, req, stored))
+                        })
+                        .collect();
                     for f in with_features {
                         if !merged.contains(f) {
                             merged.push(f.clone());
@@ -1048,7 +1081,11 @@ pub(crate) fn add_battery_pack(
     }
 
     // Step 4: Apply any selected templates, pre-filling category-linked
-    // placeholders from the features chosen in this same add.
+    // placeholders from what was chosen in this same add. Category members can
+    // be feature names OR dependency names, so the prefill set is the union of
+    // active features and installed crate names.
+    let mut selected_items = active_features.clone();
+    selected_items.extend(crates_to_sync.keys().cloned());
     for tmpl_name in &selected_templates {
         add_template(AddTemplateOpts {
             battery_pack: name,
@@ -1057,7 +1094,7 @@ pub(crate) fn add_battery_pack(
             source,
             project_dir,
             defines: BTreeMap::new(),
-            active_features: active_features.clone(),
+            active_features: selected_items.clone(),
             overwrite: false,
             interactive: std::io::stdout().is_terminal(),
         })?;

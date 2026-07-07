@@ -1005,6 +1005,37 @@ fn options_category_prefills_from_active_features() {
     assert_eq!(vars["util"], "logging");
 }
 
+// [verify template.options-category-prefill-from-picker]
+#[test]
+fn preview_applies_category_prefill_over_fallback() {
+    // preview() synthesizes a `<name>` fallback for undefaulted placeholders;
+    // that must not shadow the picker-derived prefill. Renders the real blinky
+    // template (which references `{{ util }}`) with `logging` active.
+    let opts = RenderOpts {
+        crate_root: category_fixture(),
+        template_path: "templates/blinky".to_string(),
+        project_name: "p".to_string(),
+        defines: BTreeMap::new(),
+        active_features: BTreeSet::from(["logging".to_string()]),
+        interactive_override: Some(false),
+    };
+    let files = preview(opts).unwrap();
+    let main_rs = files
+        .iter()
+        .find(|f| f.path == "src/main.rs")
+        .expect("blinky renders src/main.rs");
+    assert!(
+        main_rs.content.contains("utility: logging"),
+        "prefill should win over the <util> fallback:\n{}",
+        main_rs.content
+    );
+    assert!(
+        !main_rs.content.contains("<util>"),
+        "the synthesized fallback must not appear:\n{}",
+        main_rs.content
+    );
+}
+
 // [verify template.options-category-unknown-error]
 #[test]
 fn options_category_unknown_errors() {

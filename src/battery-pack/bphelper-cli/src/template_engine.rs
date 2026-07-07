@@ -120,9 +120,19 @@ pub(crate) struct RenderedFile {
 /// Render a template and return the files in memory without writing to disk.
 pub(crate) fn preview(mut opts: RenderOpts) -> Result<Vec<RenderedFile>> {
     let (template_dir, config) = load_config(&opts)?;
+
+    // A category-linked placeholder that the picker already resolved must not
+    // be shadowed by the synthesized fallback below, so skip those here; the
+    // prefill is applied inside `resolve_placeholders`.
+    let resolved = resolve_option_sources(&opts, &config)?;
+    let has_prefill = |name: &str| resolved.get(name).is_some_and(|r| r.prefill.is_some());
+
     // For preview, fall back to "<name>" for placeholders without a default
     // so the preview always renders.
     for (name, def) in &config.placeholders {
+        if has_prefill(name) {
+            continue;
+        }
         opts.defines
             .entry(name.clone())
             .or_insert_with(|| def.default.clone().unwrap_or_else(|| format!("<{name}>")));
