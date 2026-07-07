@@ -168,11 +168,51 @@ pub struct CrateSpec {
     pub optional: bool,
 }
 
+/// How many items a user may pick from a category.
+// [impl format.categories.pick]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum PickMode {
+    /// Any number of items may be selected (checkboxes).
+    #[default]
+    Any,
+    /// At most one item may be selected (radio buttons).
+    AtMostOne,
+}
+
+/// A category grouping related selectable items in the picker.
+// [impl format.categories.definition]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CategorySpec {
+    /// Display name in the picker header.
+    pub title: Option<String>,
+    /// Explanatory text shown under the header.
+    pub description: Option<String>,
+    /// Selection constraint for this category.
+    #[serde(default)]
+    pub pick: PickMode,
+}
+
+/// Per-item metadata (features and dependencies share the same shape).
+// [impl format.features.metadata]
+// [impl format.deps.metadata]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ItemMeta {
+    /// Category names this item belongs to.
+    #[serde(default)]
+    pub categories: Vec<String>,
+    /// Description shown next to the item in the picker.
+    pub description: Option<String>,
+}
+
 /// Template metadata for project scaffolding.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TemplateSpec {
     pub path: String,
     pub description: Option<String>,
+    /// Category names this template belongs to.
+    #[serde(default)]
+    pub categories: Vec<String>,
 }
 
 /// Active feature selection at the resolver boundary.
@@ -224,6 +264,18 @@ pub struct BatteryPackSpec {
     pub hidden: BTreeSet<String>,
     /// Templates registered in metadata.
     pub templates: BTreeMap<String, TemplateSpec>,
+    /// Category definitions, keyed by category name.
+    // [impl format.categories.definition]
+    #[serde(default)]
+    pub categories: BTreeMap<String, CategorySpec>,
+    /// Per-feature metadata, keyed by feature name.
+    // [impl format.features.metadata]
+    #[serde(default)]
+    pub feature_meta: BTreeMap<String, ItemMeta>,
+    /// Per-dependency metadata, keyed by dependency name.
+    // [impl format.deps.metadata]
+    #[serde(default)]
+    pub dep_meta: BTreeMap<String, ItemMeta>,
 }
 
 impl BatteryPackSpec {
@@ -358,7 +410,149 @@ impl BatteryPackSpec {
             }
         }
 
+        self.validate_categories(&mut report);
+
         report
+    }
+
+    /// Category and item-metadata validation rules.
+    ///
+    /// Appended to [`BatteryPackSpec::validate_spec`]: verifies category
+    /// references resolve, exclusive picks are not both defaulted, item metadata
+    /// matches real items, and warns on unused or under-specified categories.
+    fn validate_categories(&self, report: &mut ValidationReport) {
+        // Every referenced category must be declared. Report once per missing
+        // (item, category) pair, tagging the item kind for a clear message.
+        // [impl format.categories.defined]
+        for (feature, meta) in &self.feature_meta {
+            for category in &meta.categories {
+                if !self.categories.contains_key(category) {
+                    report.error(
+                        "format.categories.defined",
+                        format!("feature '{feature}' references undefined category '{category}'"),
+                    );
+                }
+            }
+        }
+        for (dep, meta) in &self.dep_meta {
+            for category in &meta.categories {
+                if !self.categories.contains_key(category) {
+                    report.error(
+                        "format.categories.defined",
+                        format!("dependency '{dep}' references undefined category '{category}'"),
+                    );
+                }
+            }
+        }
+        for (template, spec) in &self.templates {
+            for category in &spec.categories {
+                if !self.categories.contains_key(category) {
+                    report.error(
+                        "format.categories.defined",
+                        format!("template '{template}' references undefined category '{category}'"),
+                    );
+                }
+            }
+        }
+
+        // Two or more features in the same at-most-one category cannot both be in
+        // `default` — that would enable conflicting picks out of the box.
+        // [impl format.features.exclusive-conflict]
+        let default_features: BTreeSet<&str> = self
+            .features
+            .get("default")
+            .map(|refs| {
+                refs.iter()
+                    .filter_map(|fref| match fref {
+                        FeatureRef::Feature(name) => Some(name.as_str()),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        for (category, spec) in &self.categories {
+            if spec.pick != PickMode::AtMostOne {
+                continue;
+            }
+            let mut in_default: Vec<&str> = self
+                .feature_meta
+                .iter()
+                .filter(|(feature, meta)| {
+                    meta.categories.iter().any(|c| c == category)
+                        && default_features.contains(feature.as_str())
+                })
+                .map(|(feature, _)| feature.as_str())
+                .collect();
+            in_default.sort_unstable();
+            if in_default.len() > 1 {
+                let names = in_default
+                    .iter()
+                    .map(|f| format!("'{f}'"))
+                    .collect::<Vec<_>>()
+                    .join(" and ");
+                report.error(
+                    "format.features.exclusive-conflict",
+                    format!(
+                        "features {names} are both in default but belong to at-most-one category '{category}'"
+                    ),
+                );
+            }
+        }
+
+        // Feature metadata must name a real feature.
+        // [impl format.features.unknown-feature]
+        for feature in self.feature_meta.keys() {
+            if !self.features.contains_key(feature) {
+                report.error(
+                    "format.features.unknown-feature",
+                    format!("feature metadata '{feature}' does not match any entry in [features]"),
+                );
+            }
+        }
+
+        // Dependency metadata must name a real dependency.
+        // [impl format.dependencies.unknown-dep]
+        for dep in self.dep_meta.keys() {
+            if !self.crates.contains_key(dep) {
+                report.error(
+                    "format.dependencies.unknown-dep",
+                    format!("dependency metadata '{dep}' does not match any dependency"),
+                );
+            }
+        }
+
+        // Warn about categories nothing references.
+        // [impl format.categories.empty]
+        for category in self.categories.keys() {
+            let referenced = self
+                .feature_meta
+                .values()
+                .chain(self.dep_meta.values())
+                .any(|meta| meta.categories.iter().any(|c| c == category))
+                || self
+                    .templates
+                    .values()
+                    .any(|spec| spec.categories.iter().any(|c| c == category));
+            if !referenced {
+                report.warning(
+                    "format.categories.empty",
+                    format!("category '{category}' is declared but has no members"),
+                );
+            }
+        }
+
+        // Warn when an at-most-one category lacks a title for the picker header.
+        // [impl format.categories.pick-missing-title]
+        for (category, spec) in &self.categories {
+            if spec.pick == PickMode::AtMostOne && spec.title.is_none() {
+                report.warning(
+                    "format.categories.pick-missing-title",
+                    format!(
+                        "at-most-one category '{category}' should have a title for the picker UI"
+                    ),
+                );
+            }
+        }
     }
 
     /// Resolve which crates should be installed for the given active features.
@@ -628,6 +822,21 @@ impl BatteryPackSpec {
             .count();
         non_default_features > 0 || self.crates.len() > 3
     }
+
+    /// Item names (features + deps) that belong to the named category, sorted.
+    ///
+    /// Scans both feature and dependency metadata for entries whose `categories`
+    /// list contains `category`, then returns their sorted, deduped names.
+    // [impl format.categories.definition]
+    pub fn items_in_category(&self, category: &str) -> Vec<String> {
+        let mut items: BTreeSet<String> = BTreeSet::new();
+        for (name, meta) in self.feature_meta.iter().chain(self.dep_meta.iter()) {
+            if meta.categories.iter().any(|c| c == category) {
+                items.insert(name.clone());
+            }
+        }
+        items.into_iter().collect()
+    }
 }
 
 // ============================================================================
@@ -814,6 +1023,12 @@ struct RawMetadata {
 struct RawBatteryPackMetadata {
     #[serde(default)]
     hidden: Vec<String>,
+    #[serde(default)]
+    categories: BTreeMap<String, CategorySpec>,
+    #[serde(default)]
+    features: BTreeMap<String, ItemMeta>,
+    #[serde(default)]
+    dependencies: BTreeMap<String, ItemMeta>,
 }
 
 #[derive(Deserialize)]
@@ -827,6 +1042,8 @@ struct RawTemplateSpec {
     path: String,
     #[serde(default)]
     description: Option<String>,
+    #[serde(default)]
+    categories: Vec<String>,
 }
 
 // ============================================================================
@@ -941,11 +1158,31 @@ fn package_to_spec(pkg: &Package) -> Result<BatteryPackSpec, Error> {
                         TemplateSpec {
                             path: raw.path.clone(),
                             description: raw.description.clone(),
+                            categories: raw.categories.clone(),
                         },
                     )
                 })
                 .collect()
         })
+        .unwrap_or_default();
+
+    // -- read category definitions and per-item metadata --
+    let categories = raw_meta
+        .as_ref()
+        .and_then(|meta| meta.battery_pack.as_ref())
+        .map(|raw| raw.categories.clone())
+        .unwrap_or_default();
+
+    let feature_meta = raw_meta
+        .as_ref()
+        .and_then(|meta| meta.battery_pack.as_ref())
+        .map(|raw| raw.features.clone())
+        .unwrap_or_default();
+
+    let dep_meta = raw_meta
+        .as_ref()
+        .and_then(|meta| meta.battery_pack.as_ref())
+        .map(|raw| raw.dependencies.clone())
         .unwrap_or_default();
 
     Ok(BatteryPackSpec {
@@ -958,6 +1195,9 @@ fn package_to_spec(pkg: &Package) -> Result<BatteryPackSpec, Error> {
         features,
         hidden,
         templates,
+        categories,
+        feature_meta,
+        dep_meta,
     })
 }
 
@@ -1623,6 +1863,9 @@ mod tests {
             )]),
             hidden: BTreeSet::new(),
             templates: BTreeMap::new(),
+            categories: BTreeMap::new(),
+            feature_meta: BTreeMap::new(),
+            dep_meta: BTreeMap::new(),
         };
         let err = bad.validate().unwrap_err();
         assert!(matches!(err, Error::UnknownCrateInFeature { .. }));
@@ -1893,6 +2136,9 @@ mod tests {
             ]),
             hidden: BTreeSet::new(),
             templates: BTreeMap::new(),
+            categories: BTreeMap::new(),
+            feature_meta: BTreeMap::new(),
+            dep_meta: BTreeMap::new(),
         };
 
         let err = bad.validate().unwrap_err();
@@ -2579,6 +2825,9 @@ foo-battery-pack 0.1.0
             )]),
             hidden: BTreeSet::new(),
             templates: BTreeMap::new(),
+            categories: BTreeMap::new(),
+            feature_meta: BTreeMap::new(),
+            dep_meta: BTreeMap::new(),
         };
         let report = bad.validate_spec();
         assert!(report.has_errors());
@@ -3217,6 +3466,498 @@ foo-battery-pack 0.1.0
         assert!(
             resolved.contains_key("anyhow"),
             "non-optional dep is present regardless of active features"
+        );
+    }
+
+    // -- Category and item-metadata parsing tests --
+
+    #[test]
+    // [verify parse.category-definition]
+    fn parse_category_definition() {
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [package.metadata.battery-pack.categories.hal]
+            title = "Hardware Abstraction Layer"
+            description = "Pick the HAL for your target chip family"
+            pick = "at-most-one"
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let hal = &spec.categories["hal"];
+        assert_eq!(hal.pick, PickMode::AtMostOne);
+        assert_eq!(hal.title.as_deref(), Some("Hardware Abstraction Layer"));
+        assert_eq!(
+            hal.description.as_deref(),
+            Some("Pick the HAL for your target chip family")
+        );
+    }
+
+    #[test]
+    // [verify parse.category-pick-default]
+    fn parse_category_default_pick_is_any() {
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [package.metadata.battery-pack.categories.portable]
+            title = "Portable Utilities"
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        assert_eq!(spec.categories["portable"].pick, PickMode::Any);
+    }
+
+    #[test]
+    // [verify parse.feature-metadata]
+    fn parse_feature_metadata() {
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [package.metadata.battery-pack.features.stm32f4]
+            description = "STM32F4xx"
+            categories = ["hal"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let meta = &spec.feature_meta["stm32f4"];
+        assert_eq!(meta.categories, vec!["hal".to_string()]);
+        assert_eq!(meta.description.as_deref(), Some("STM32F4xx"));
+    }
+
+    #[test]
+    // [verify parse.dependency-metadata]
+    fn parse_dependency_metadata() {
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [package.metadata.battery-pack.dependencies.embedded-hal]
+            description = "Trait abstractions for embedded I/O"
+            categories = ["portable"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let meta = &spec.dep_meta["embedded-hal"];
+        assert_eq!(meta.categories, vec!["portable".to_string()]);
+        assert_eq!(
+            meta.description.as_deref(),
+            Some("Trait abstractions for embedded I/O")
+        );
+    }
+
+    #[test]
+    // [verify parse.template-categories]
+    fn parse_template_categories() {
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [package.metadata.battery.templates]
+            fuzzing = { path = "templates/fuzzing", categories = ["quality"] }
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        assert_eq!(
+            spec.templates["fuzzing"].categories,
+            vec!["quality".to_string()]
+        );
+    }
+
+    #[test]
+    // [verify parse.multiple-categories]
+    fn parse_item_with_multiple_categories() {
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [package.metadata.battery-pack.features.spellcheck]
+            categories = ["quality", "ci"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        assert_eq!(
+            spec.feature_meta["spellcheck"].categories,
+            vec!["quality".to_string(), "ci".to_string()]
+        );
+    }
+
+    #[test]
+    // [verify parse.no-metadata-backward-compat]
+    fn parse_item_without_metadata() {
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [dependencies]
+            clap = { version = "4", optional = true }
+
+            [features]
+            default = ["clap"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        assert!(spec.categories.is_empty());
+        assert!(spec.feature_meta.is_empty());
+        assert!(spec.dep_meta.is_empty());
+        // Existing behavior is unchanged.
+        assert_eq!(spec.features.len(), 1);
+        assert!(spec.crates.contains_key("clap"));
+    }
+
+    // -- Category validation tests --
+
+    #[test]
+    // [verify format.features.exclusive-conflict]
+    fn validate_exclusive_conflict_in_default() {
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [dependencies]
+            tikv-jemallocator = { version = "0.5", optional = true }
+            mimalloc = { version = "0.1", optional = true }
+
+            [features]
+            default = ["jemalloc", "mimalloc-alloc"]
+            jemalloc = ["tikv-jemallocator"]
+            mimalloc-alloc = ["mimalloc"]
+
+            [package.metadata.battery-pack.categories.allocator]
+            title = "Global Allocator"
+            pick = "at-most-one"
+
+            [package.metadata.battery-pack.features.jemalloc]
+            categories = ["allocator"]
+
+            [package.metadata.battery-pack.features.mimalloc-alloc]
+            categories = ["allocator"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let report = spec.validate_spec();
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|d| d.rule == "format.features.exclusive-conflict"
+                    && d.message.contains("jemalloc")
+                    && d.message.contains("mimalloc-alloc")
+                    && d.message.contains("allocator"))
+        );
+    }
+
+    #[test]
+    // [verify format.features.exclusive-conflict]
+    fn validate_exclusive_conflict_not_triggered_for_any() {
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [dependencies]
+            tower-http = { version = "0.5", optional = true }
+
+            [features]
+            default = ["http-trace", "http-timeout"]
+            http-trace = ["tower-http"]
+            http-timeout = ["tower-http"]
+
+            [package.metadata.battery-pack.categories.http-layers]
+            title = "HTTP Middleware Layers"
+
+            [package.metadata.battery-pack.features.http-trace]
+            categories = ["http-layers"]
+
+            [package.metadata.battery-pack.features.http-timeout]
+            categories = ["http-layers"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let report = spec.validate_spec();
+        assert!(
+            !report
+                .diagnostics
+                .iter()
+                .any(|d| d.rule == "format.features.exclusive-conflict")
+        );
+    }
+
+    #[test]
+    // [verify format.categories.defined]
+    fn validate_category_reference_exists() {
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [dependencies]
+            stm32f4xx-hal = { version = "0.22", optional = true }
+
+            [features]
+            stm32f4 = ["stm32f4xx-hal"]
+
+            [package.metadata.battery-pack.features.stm32f4]
+            categories = ["nonexistent"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let report = spec.validate_spec();
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|d| d.rule == "format.categories.defined"
+                    && d.message.contains("nonexistent"))
+        );
+    }
+
+    #[test]
+    // [verify format.features.exclusive-conflict]
+    fn validate_clean_when_exclusive_not_in_default() {
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [dependencies]
+            tikv-jemallocator = { version = "0.5", optional = true }
+            mimalloc = { version = "0.1", optional = true }
+
+            [features]
+            default = ["jemalloc"]
+            jemalloc = ["tikv-jemallocator"]
+            mimalloc-alloc = ["mimalloc"]
+
+            [package.metadata.battery-pack.categories.allocator]
+            title = "Global Allocator"
+            pick = "at-most-one"
+
+            [package.metadata.battery-pack.features.jemalloc]
+            categories = ["allocator"]
+
+            [package.metadata.battery-pack.features.mimalloc-alloc]
+            categories = ["allocator"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let report = spec.validate_spec();
+        assert!(
+            !report
+                .diagnostics
+                .iter()
+                .any(|d| d.rule == "format.features.exclusive-conflict")
+        );
+    }
+
+    #[test]
+    // [verify format.categories.defined]
+    fn validate_template_category_reference_exists() {
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [package.metadata.battery.templates]
+            fuzzing = { path = "templates/fuzzing", categories = ["bogus"] }
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let report = spec.validate_spec();
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|d| d.rule == "format.categories.defined"
+                    && d.message.contains("template")
+                    && d.message.contains("bogus"))
+        );
+    }
+
+    #[test]
+    // [verify format.categories.defined]
+    fn validate_dep_category_reference_exists() {
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [dependencies]
+            embedded-hal = { version = "1", optional = true }
+
+            [package.metadata.battery-pack.dependencies.embedded-hal]
+            categories = ["bogus"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let report = spec.validate_spec();
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|d| d.rule == "format.categories.defined"
+                    && d.message.contains("dependency")
+                    && d.message.contains("bogus"))
+        );
+    }
+
+    #[test]
+    // [verify format.categories.empty]
+    fn validate_empty_category_warns() {
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [package.metadata.battery-pack.categories.foo]
+            title = "Foo"
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let report = spec.validate_spec();
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|d| d.rule == "format.categories.empty"
+                    && d.severity == Severity::Warning
+                    && d.message.contains("foo"))
+        );
+    }
+
+    #[test]
+    // [verify format.categories.pick-missing-title]
+    fn validate_at_most_one_missing_title_warns() {
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [package.metadata.battery-pack.categories.hal]
+            pick = "at-most-one"
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let report = spec.validate_spec();
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|d| d.rule == "format.categories.pick-missing-title"
+                    && d.severity == Severity::Warning
+                    && d.message.contains("hal"))
+        );
+    }
+
+    #[test]
+    // [verify format.features.unknown-feature]
+    fn validate_feature_metadata_for_unknown_feature() {
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [package.metadata.battery-pack.features.ghost]
+            description = "not a real feature"
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let report = spec.validate_spec();
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|d| d.rule == "format.features.unknown-feature"
+                    && d.message.contains("ghost"))
+        );
+    }
+
+    #[test]
+    // [verify format.dependencies.unknown-dep]
+    fn validate_dep_metadata_for_unknown_dep() {
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [package.metadata.battery-pack.dependencies.ghost]
+            description = "not a real dependency"
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let report = spec.validate_spec();
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|d| d.rule == "format.dependencies.unknown-dep"
+                    && d.message.contains("ghost"))
+        );
+    }
+
+    #[test]
+    // [verify format.categories.defined]
+    fn validate_multiple_categories_all_checked() {
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [dependencies]
+            stm32f4xx-hal = { version = "0.22", optional = true }
+
+            [features]
+            stm32f4 = ["stm32f4xx-hal"]
+
+            [package.metadata.battery-pack.categories.hal]
+            title = "Hardware Abstraction Layer"
+
+            [package.metadata.battery-pack.features.stm32f4]
+            categories = ["hal", "bogus"]
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let report = spec.validate_spec();
+        // Error for the undefined category only.
+        assert!(
+            report
+                .diagnostics
+                .iter()
+                .any(|d| d.rule == "format.categories.defined" && d.message.contains("bogus"))
+        );
+        assert!(
+            !report
+                .diagnostics
+                .iter()
+                .any(|d| d.rule == "format.categories.defined" && d.message.contains("'hal'"))
         );
     }
 }
