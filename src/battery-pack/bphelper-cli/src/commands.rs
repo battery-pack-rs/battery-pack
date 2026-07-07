@@ -1571,6 +1571,7 @@ fn pick_crates_interactive(
     // Build sections and a parallel `section_rows` that records what each row
     // maps back to. Category sections come first (in definition order), then
     // generic sections for anything uncategorized.
+    // [impl cli.add.category-picker]
     let mut sections: Vec<Section> = Vec::new();
     let mut section_rows: Vec<Vec<PickRow>> = Vec::new();
 

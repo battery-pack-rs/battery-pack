@@ -85,6 +85,8 @@ pub use render::render_picker;
 pub use state::PickerState;
 
 /// How many items a section allows to be selected at once.
+// [impl tui.picker.checkbox]
+// [impl tui.picker.radio]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SelectionMode {
     /// Any number of items may be checked (rendered as `[x]`/`[ ]`).
@@ -277,9 +279,11 @@ fn run_picker_loop(
                 KeyCode::Up | KeyCode::Char('k') => state.move_up(),
                 KeyCode::Down | KeyCode::Char('j') => state.move_down(),
                 KeyCode::Char(' ') => state.toggle(),
+                // [impl tui.picker.collapse]
                 KeyCode::Left => state.collapse_current(),
                 KeyCode::Right => state.expand_current(),
                 KeyCode::Backspace => state.backspace(),
+                // [impl tui.picker.confirm-validation]
                 KeyCode::Enter => {
                     // A one-key selection convenience: if nothing is checked,
                     // check the cursor item first. Skipped for radio sections,

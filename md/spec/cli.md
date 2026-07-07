@@ -211,6 +211,22 @@ result in `$VISUAL`, `$EDITOR`, or `vi` (in that order). After
 editing, the updated diff MUST be shown and the user MUST be
 returned to the accept/skip/edit prompt.
 
+### Categories and exclusive picks
+
+r[cli.add.exclusive-validation]
+In non-interactive mode, when `-F`/`--features` requests two or more features
+that belong to the same `at-most-one` category, `cargo bp add` MUST exit with
+an error naming both features and the category
+(e.g., `features 'stm32f4' and 'nrf52840' are exclusive (category: hal)`).
+The same check applies to templates requested with `-t`/`--template`.
+`--all-features` bypasses this validation.
+
+r[cli.add.category-picker]
+In interactive mode, the selection picker MUST group items into one section per
+category, using the category `title` as the section header. Items not in any
+category appear in generic "Features" / "Dependencies" / "Templates" sections.
+See [Picker categories](./tui.md#picker-categories) for the section behavior.
+
 ## `cargo bp new`
 
 r[cli.new.template]
@@ -419,3 +435,12 @@ r[cli.show.define-flag]
 `cargo bp show <pack> -t <name> --define <key>=<value>` (or `-d`)
 MUST set the named placeholder to the given value in the rendered
 preview. Multiple `-d` flags MAY be provided.
+
+r[cli.show.categories]
+When a battery pack defines categories, `cargo bp show` MUST display a
+"Categories:" section listing each category with its member items grouped
+under the category title.
+
+r[cli.show.pick-mode]
+In `cargo bp show` output, an `at-most-one` category MUST be annotated with
+"(pick at most one)".
