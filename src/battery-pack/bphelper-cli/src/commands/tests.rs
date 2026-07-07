@@ -120,6 +120,7 @@ fn resolve_template_single_template_uses_it() {
         crate::registry::TemplateConfig {
             path: "templates/simple".to_string(),
             description: Some("A simple template".to_string()),
+            categories: Vec::new(),
         },
     );
 
@@ -138,6 +139,7 @@ fn resolve_template_picks_default_when_present() {
         crate::registry::TemplateConfig {
             path: "templates/default".to_string(),
             description: Some("The default template".to_string()),
+            categories: Vec::new(),
         },
     );
     templates.insert(
@@ -145,6 +147,7 @@ fn resolve_template_picks_default_when_present() {
         crate::registry::TemplateConfig {
             path: "templates/advanced".to_string(),
             description: Some("An advanced template".to_string()),
+            categories: Vec::new(),
         },
     );
 
@@ -164,6 +167,7 @@ fn resolve_template_unknown_name_errors() {
         crate::registry::TemplateConfig {
             path: "templates/simple".to_string(),
             description: None,
+            categories: Vec::new(),
         },
     );
     templates.insert(
@@ -171,6 +175,7 @@ fn resolve_template_unknown_name_errors() {
         crate::registry::TemplateConfig {
             path: "templates/advanced".to_string(),
             description: None,
+            categories: Vec::new(),
         },
     );
 
@@ -193,6 +198,7 @@ fn resolve_template_explicit_flag_overrides() {
         crate::registry::TemplateConfig {
             path: "templates/simple".to_string(),
             description: None,
+            categories: Vec::new(),
         },
     );
     templates.insert(
@@ -200,6 +206,7 @@ fn resolve_template_explicit_flag_overrides() {
         crate::registry::TemplateConfig {
             path: "templates/advanced".to_string(),
             description: None,
+            categories: Vec::new(),
         },
     );
 
@@ -545,6 +552,11 @@ fn load_feature_syntax_spec() -> bphelper_manifest::BatteryPackSpec {
 
 fn load_implicit_feature_spec() -> bphelper_manifest::BatteryPackSpec {
     let fixture = fixtures_dir().join("implicit-feature-battery-pack/Cargo.toml");
+    parse_battery_pack_from_path(&fixture).unwrap()
+}
+
+fn load_category_spec() -> bphelper_manifest::BatteryPackSpec {
+    let fixture = fixtures_dir().join("category-battery-pack/Cargo.toml");
     parse_battery_pack_from_path(&fixture).unwrap()
 }
 
@@ -2313,4 +2325,99 @@ fn add_no_default_features_does_not_merge_existing() {
         !features.contains(&"default"),
         "--no-default-features should not merge in previously stored default"
     );
+}
+
+// ============================================================================
+// Non-interactive exclusive-pick validation (Phase 5)
+// ============================================================================
+
+// [verify cli.noninteractive-exclusive-conflict-error]
+#[test]
+fn non_interactive_rejects_exclusive_conflict() {
+    let spec = load_category_spec();
+    let requested = vec!["stm32f4".to_string(), "nrf52840".to_string()];
+    let err = super::validate_exclusive_constraints(&spec, &requested).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("exclusive"), "message: {msg}");
+    assert!(
+        msg.contains("hal"),
+        "message should name the category: {msg}"
+    );
+    assert!(
+        msg.contains("stm32f4") && msg.contains("nrf52840"),
+        "message: {msg}"
+    );
+}
+
+// [verify cli.noninteractive-any-category-ok]
+#[test]
+fn non_interactive_allows_same_any_category() {
+    // `logging` (feature) and `heapless` (dep) are both in the `any` category
+    // `utils`, so requesting both is fine.
+    let spec = load_category_spec();
+    let requested = vec!["logging".to_string(), "heapless".to_string()];
+    assert!(super::validate_exclusive_constraints(&spec, &requested).is_ok());
+}
+
+// [verify cli.noninteractive-different-categories-ok]
+#[test]
+fn non_interactive_allows_different_categories() {
+    // One HAL feature plus one utility is allowed (different categories).
+    let spec = load_category_spec();
+    let requested = vec!["stm32f4".to_string(), "logging".to_string()];
+    assert!(super::validate_exclusive_constraints(&spec, &requested).is_ok());
+}
+
+// [verify cli.noninteractive-exclusive-conflict-error] single pick is fine
+#[test]
+fn non_interactive_single_exclusive_pick_ok() {
+    let spec = load_category_spec();
+    let requested = vec!["nrf52840".to_string()];
+    assert!(super::validate_exclusive_constraints(&spec, &requested).is_ok());
+}
+
+// [verify invariant.noninteractive-dep-exclusive-conflict]
+#[test]
+fn non_interactive_uncategorized_items_ignored() {
+    // Items with no category metadata never conflict.
+    let spec = load_category_spec();
+    let requested = vec!["log".to_string(), "stm32f4".to_string()];
+    assert!(super::validate_exclusive_constraints(&spec, &requested).is_ok());
+}
+
+// ============================================================================
+// Category metadata wiring (Phase 4 data)
+// ============================================================================
+
+// [verify cli.picker-radio-for-at-most-one]
+#[test]
+fn category_spec_marks_hal_at_most_one() {
+    let spec = load_category_spec();
+    assert_eq!(
+        spec.categories["hal"].pick,
+        bphelper_manifest::PickMode::AtMostOne
+    );
+    assert_eq!(
+        spec.categories["utils"].pick,
+        bphelper_manifest::PickMode::Any
+    );
+}
+
+// [verify cli.picker-categories-become-sections]
+#[test]
+fn category_feature_metadata_is_parsed() {
+    let spec = load_category_spec();
+    assert_eq!(spec.feature_meta["stm32f4"].categories, vec!["hal"]);
+    assert_eq!(
+        spec.feature_meta["stm32f4"].description.as_deref(),
+        Some("STM32F4xx family")
+    );
+    assert_eq!(spec.dep_meta["heapless"].categories, vec!["utils"]);
+}
+
+// [verify cli.show-templates-in-categories]
+#[test]
+fn category_template_metadata_is_parsed() {
+    let spec = load_category_spec();
+    assert_eq!(spec.templates["blinky"].categories, vec!["hal"]);
 }

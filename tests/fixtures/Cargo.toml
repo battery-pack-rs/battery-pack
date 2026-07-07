@@ -8,6 +8,7 @@ members = [
     "optional-feature-battery-pack",
     "mixed-kinds-battery-pack",
     "implicit-feature-battery-pack",
+    "category-battery-pack",
     "_stubs/fake-serde",
     "_stubs/fake-anyhow",
     "_stubs/fake-insta",

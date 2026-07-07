@@ -484,6 +484,53 @@ fn new_from_battery_pack(opts: NewFromBpOpts<'_>) -> Result<()> {
     )
 }
 
+/// Reject requesting more than one item from the same `at-most-one` category.
+///
+/// Groups the requested items by any `at-most-one` category they belong to and
+/// fails if a category ends up with two or more. Items are matched against
+/// feature metadata first, then dependency metadata, so both `-F` features and
+/// bare dependency names are covered.
+// [impl cli.add.exclusive-validation]
+// [impl invariant.noninteractive-dep-exclusive-conflict]
+pub(crate) fn validate_exclusive_constraints(
+    spec: &bphelper_manifest::BatteryPackSpec,
+    requested: &[String],
+) -> Result<()> {
+    // Map each at-most-one category to the requested items that belong to it.
+    let mut by_category: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for item in requested {
+        let meta = spec
+            .feature_meta
+            .get(item)
+            .or_else(|| spec.dep_meta.get(item));
+        let Some(meta) = meta else { continue };
+        for category in &meta.categories {
+            let is_exclusive = spec
+                .categories
+                .get(category)
+                .is_some_and(|c| c.pick == bphelper_manifest::PickMode::AtMostOne);
+            if is_exclusive {
+                by_category.entry(category).or_default().push(item);
+            }
+        }
+    }
+
+    // Report the first category that has more than one requested member.
+    for (category, mut members) in by_category {
+        if members.len() > 1 {
+            members.sort_unstable();
+            let names = members
+                .iter()
+                .map(|m| format!("'{m}'"))
+                .collect::<Vec<_>>()
+                .join(" and ");
+            bail!("items {names} are exclusive (category: {category})");
+        }
+    }
+
+    Ok(())
+}
+
 /// Result of resolving which crates to add from a battery pack.
 pub(crate) enum ResolvedAdd {
     /// Resolved to a concrete set of crates (no interactive picker needed).
@@ -776,6 +823,19 @@ pub(crate) fn add_battery_pack(
     } else {
         fetch_bp_spec(source, name)?
     };
+
+    // Reject conflicting exclusive picks on the command line before any work.
+    // `--all-features` intentionally bypasses this (the user asked for everything).
+    // Both `-F` features and bare crate names are checked.
+    // [impl cli.add.exclusive-validation]
+    if !all_features {
+        let requested: Vec<String> = with_features
+            .iter()
+            .chain(specific_crates.iter())
+            .cloned()
+            .collect();
+        validate_exclusive_constraints(&bp_spec, &requested)?;
+    }
 
     // Step 2: Determine which crates to install — interactive picker, explicit flags, or defaults.
     // No manifest changes have been made yet, so cancellation is free.
@@ -1350,6 +1410,17 @@ fn compute_pre_selection(
         .collect()
 }
 
+/// What a single picker row maps back to when decoding the confirmed results.
+///
+/// The picker returns per-section checkbox states positionally; each row's
+/// `PickRow` records what that position means so results can be collected by
+/// name (an item may appear in several category sections).
+enum PickRow {
+    Feature(String),
+    Crate(String),
+    Template(String),
+}
+
 /// Represents the result of an interactive crate selection.
 pub(crate) struct PickerResult {
     /// The resolved crates to install (name -> dep spec with merged features).
@@ -1367,11 +1438,47 @@ struct PickerPreviewContext {
     source: CrateSource,
 }
 
+/// Whether a feature's metadata lists `category`.
+fn feature_meta_has_category(
+    spec: &bphelper_manifest::BatteryPackSpec,
+    feature: &str,
+    category: &str,
+) -> bool {
+    spec.feature_meta
+        .get(feature)
+        .is_some_and(|m| m.categories.iter().any(|c| c == category))
+}
+
+/// Whether a dependency's metadata lists `category`.
+fn dep_meta_has_category(
+    spec: &bphelper_manifest::BatteryPackSpec,
+    dep: &str,
+    category: &str,
+) -> bool {
+    spec.dep_meta
+        .get(dep)
+        .is_some_and(|m| m.categories.iter().any(|c| c == category))
+}
+
+/// A feature's metadata description, if any.
+fn feature_description(spec: &bphelper_manifest::BatteryPackSpec, feature: &str) -> Option<String> {
+    spec.feature_meta
+        .get(feature)
+        .and_then(|m| m.description.clone())
+}
+
+/// A dependency's metadata description, if any.
+fn dep_description(spec: &bphelper_manifest::BatteryPackSpec, dep: &str) -> Option<String> {
+    spec.dep_meta.get(dep).and_then(|m| m.description.clone())
+}
+
 /// Show an interactive multi-select picker for choosing which crates to install.
 ///
-/// Features are listed first, then individual crates, then actions (templates).
-/// `pre_selected` contains crate names already present in the project (for edit
-/// mode); when empty, the pack's default feature set is used for initial selection.
+/// Items are grouped into one section per category (radio for `at-most-one`,
+/// checkbox for `any`), followed by generic "Features:", "Dependencies:", and
+/// "Actions:" sections for anything uncategorized. `pre_selected` contains
+/// crate names already present in the project (for edit mode); when empty, the
+/// pack's default feature set is used for initial selection.
 ///
 /// Returns `None` if the user cancels.
 fn pick_crates_interactive(
@@ -1410,87 +1517,219 @@ fn pick_crates_interactive(
         BTreeSet::new()
     };
 
-    // Build sections for the picker.
-    let mut sections: Vec<Section> = Vec::new();
-
-    // -- Features section --
-    if !features.is_empty() {
-        let items = features
+    // Helper: is a feature "on" initially (all its visible members present)?
+    let feature_checked = |feat_crates: &BTreeSet<bphelper_manifest::FeatureRef>| -> bool {
+        let mut members = feat_crates
             .iter()
-            .map(|(feat_name, feat_crates)| {
-                let member_list = feat_crates
+            .map(|fref| fref.dep_name())
+            .filter(|c| !bp_spec.is_hidden(c))
+            .peekable();
+        // A feature with no visible members is never auto-checked.
+        if members.peek().is_none() {
+            return false;
+        }
+        if use_defaults {
+            members.all(|c| default_crates.contains(c))
+        } else {
+            members.all(|c| pre_selected.contains(c))
+        }
+    };
+
+    // Label builders that include the item's description when one is set.
+    let feature_label = |feat_name: &str, feat_crates: &BTreeSet<bphelper_manifest::FeatureRef>| {
+        let member_list = feat_crates
+            .iter()
+            .map(|fref| fref.dep_name())
+            .filter(|c| !bp_spec.is_hidden(c))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("✦ {feat_name} [{member_list}]")
+    };
+    let crate_label = |crate_name: &str, spec: &bphelper_manifest::CrateSpec| {
+        if spec.features.is_empty() {
+            format!("{crate_name} ({})", spec.version)
+        } else {
+            format!(
+                "{crate_name} ({}, features: {})",
+                spec.version,
+                spec.features
                     .iter()
-                    .map(|fref| fref.dep_name())
-                    .filter(|c| !bp_spec.is_hidden(c))
+                    .map(|s| s.as_str())
                     .collect::<Vec<_>>()
-                    .join(", ");
+                    .join(", ")
+            )
+        }
+    };
+
+    // Build sections and a parallel `section_rows` that records what each row
+    // maps back to. Category sections come first (in definition order), then
+    // generic sections for anything uncategorized.
+    let mut sections: Vec<Section> = Vec::new();
+    let mut section_rows: Vec<Vec<PickRow>> = Vec::new();
+
+    // Track which features/crates/templates a category consumed so they don't
+    // also appear in the generic sections.
+    let mut categorized_features: BTreeSet<&str> = BTreeSet::new();
+    let mut categorized_crates: BTreeSet<&str> = BTreeSet::new();
+    let mut categorized_templates: BTreeSet<&str> = BTreeSet::new();
+
+    // -- One section per category (radio for at-most-one, checkbox for any) --
+    for (cat_name, cat_spec) in &bp_spec.categories {
+        let mut items: Vec<SectionItem> = Vec::new();
+        let mut rows: Vec<PickRow> = Vec::new();
+
+        // Features belonging to this category.
+        for (feat_name, feat_crates) in &features {
+            if feature_meta_has_category(bp_spec, feat_name, cat_name) {
+                categorized_features.insert(feat_name.as_str());
+                let mut item = SectionItem::new(
+                    feature_label(feat_name, feat_crates),
+                    feature_checked(feat_crates),
+                );
+                if let Some(desc) = feature_description(bp_spec, feat_name) {
+                    item = item.with_description(desc);
+                }
+                items.push(item);
+                rows.push(PickRow::Feature((*feat_name).clone()));
+            }
+        }
+
+        // Dependencies belonging to this category.
+        for (crate_name, spec) in &visible_crates {
+            if dep_meta_has_category(bp_spec, crate_name, cat_name) {
+                categorized_crates.insert(crate_name.as_str());
                 let checked = if use_defaults {
-                    feat_crates
-                        .iter()
-                        .map(|fref| fref.dep_name())
-                        .filter(|c| !bp_spec.is_hidden(c))
-                        .all(|c| default_crates.contains(c))
+                    default_crates.contains(crate_name.as_str())
                 } else {
-                    feat_crates
-                        .iter()
-                        .map(|fref| fref.dep_name())
-                        .filter(|c| !bp_spec.is_hidden(c))
-                        .all(|c| pre_selected.contains(c))
+                    pre_selected.contains(crate_name.as_str())
                 };
-                SectionItem::new(format!("✦ {} [{}]", feat_name, member_list), checked)
-            })
-            .collect();
-        sections.push(Section::new("Features:", items));
+                let mut item = SectionItem::new(crate_label(crate_name, spec), checked);
+                if let Some(desc) = dep_description(bp_spec, crate_name) {
+                    item = item.with_description(desc);
+                }
+                items.push(item);
+                rows.push(PickRow::Crate((*crate_name).clone()));
+            }
+        }
+
+        // Templates belonging to this category.
+        for (tmpl_name, tmpl_spec) in &bp_spec.templates {
+            if tmpl_spec.categories.iter().any(|c| c == cat_name) {
+                categorized_templates.insert(tmpl_name.as_str());
+                let label = match &tmpl_spec.description {
+                    Some(desc) => format!("Add `{tmpl_name}` template — {desc}"),
+                    None => format!("Add `{tmpl_name}` template"),
+                };
+                items.push(SectionItem::new(label, false));
+                rows.push(PickRow::Template(tmpl_name.clone()));
+            }
+        }
+
+        // Skip categories that ended up with no members.
+        if items.is_empty() {
+            continue;
+        }
+
+        let title = cat_spec.title.clone().unwrap_or_else(|| cat_name.clone());
+        let mut section = Section::new(title, items);
+        if cat_spec.pick == bphelper_manifest::PickMode::AtMostOne {
+            section = section.radio();
+        }
+        sections.push(section);
+        section_rows.push(rows);
     }
 
-    // -- Dependencies section --
-    let dep_items = visible_crates
+    // -- Generic "Features:" section for uncategorized features --
+    let uncategorized_features: Vec<_> = features
         .iter()
-        .map(|(crate_name, spec)| {
-            let version_info = if spec.features.is_empty() {
-                format!("({})", spec.version)
-            } else {
-                format!(
-                    "({}, features: {})",
-                    spec.version,
-                    spec.features
-                        .iter()
-                        .map(|s| s.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            };
+        .filter(|(name, _)| !categorized_features.contains(name.as_str()))
+        .collect();
+    if !uncategorized_features.is_empty() {
+        let mut items = Vec::new();
+        let mut rows = Vec::new();
+        for (feat_name, feat_crates) in &uncategorized_features {
+            let mut item = SectionItem::new(
+                feature_label(feat_name, feat_crates),
+                feature_checked(feat_crates),
+            );
+            if let Some(desc) = feature_description(bp_spec, feat_name) {
+                item = item.with_description(desc);
+            }
+            items.push(item);
+            rows.push(PickRow::Feature((*feat_name).clone()));
+        }
+        sections.push(Section::new("Features:", items));
+        section_rows.push(rows);
+    }
+
+    // -- Generic "Dependencies:" section for uncategorized crates --
+    let uncategorized_crates: Vec<_> = visible_crates
+        .iter()
+        .filter(|(name, _)| !categorized_crates.contains(name.as_str()))
+        .collect();
+    if !uncategorized_crates.is_empty() {
+        let mut items = Vec::new();
+        let mut rows = Vec::new();
+        for (crate_name, spec) in &uncategorized_crates {
             let checked = if use_defaults {
                 default_crates.contains(crate_name.as_str())
             } else {
                 pre_selected.contains(crate_name.as_str())
             };
-            SectionItem::new(format!("{} {}", crate_name, version_info), checked)
-        })
-        .collect();
-    sections.push(Section::new("Dependencies:", dep_items));
-
-    // -- Actions section --
-    if !bp_spec.templates.is_empty() {
-        let items = bp_spec
-            .templates
-            .iter()
-            .map(|(tmpl_name, tmpl_spec)| {
-                let label = match &tmpl_spec.description {
-                    Some(desc) => format!("Add `{}` template — {}", tmpl_name, desc),
-                    None => format!("Add `{}` template", tmpl_name),
-                };
-                SectionItem::new(label, false)
-            })
-            .collect();
-        sections.push(Section::new("Actions:", items));
+            let mut item = SectionItem::new(crate_label(crate_name, spec), checked);
+            if let Some(desc) = dep_description(bp_spec, crate_name) {
+                item = item.with_description(desc);
+            }
+            items.push(item);
+            rows.push(PickRow::Crate((*crate_name).clone()));
+        }
+        sections.push(Section::new("Dependencies:", items));
+        section_rows.push(rows);
     }
 
-    // Build preview action: press 'p' to preview templates.
-    let has_features = !features.is_empty();
+    // -- Generic "Actions:" section for uncategorized templates --
+    let uncategorized_templates: Vec<_> = bp_spec
+        .templates
+        .iter()
+        .filter(|(name, _)| !categorized_templates.contains(name.as_str()))
+        .collect();
+    if !uncategorized_templates.is_empty() {
+        let mut items = Vec::new();
+        let mut rows = Vec::new();
+        for (tmpl_name, tmpl_spec) in &uncategorized_templates {
+            let label = match &tmpl_spec.description {
+                Some(desc) => format!("Add `{tmpl_name}` template — {desc}"),
+                None => format!("Add `{tmpl_name}` template"),
+            };
+            items.push(SectionItem::new(label, false));
+            rows.push(PickRow::Template((*tmpl_name).clone()));
+        }
+        sections.push(Section::new("Actions:", items));
+        section_rows.push(rows);
+    }
+
+    // Build preview action: press 'p' previews the template under the cursor.
+    // The row's PickRow tells us whether the cursor is on a template and which one.
     let has_templates = !bp_spec.templates.is_empty();
-    let template_names: Vec<String> = bp_spec.templates.keys().cloned().collect();
-    let template_paths: Vec<String> = bp_spec.templates.values().map(|t| t.path.clone()).collect();
+    let template_paths: BTreeMap<String, String> = bp_spec
+        .templates
+        .iter()
+        .map(|(name, spec)| (name.clone(), spec.path.clone()))
+        .collect();
+
+    // A flat (section_idx, item_idx) -> template name map for the preview handler.
+    let preview_targets: BTreeMap<(usize, usize), String> = section_rows
+        .iter()
+        .enumerate()
+        .flat_map(|(s, rows)| {
+            rows.iter()
+                .enumerate()
+                .filter_map(move |(i, row)| match row {
+                    PickRow::Template(name) => Some(((s, i), name.clone())),
+                    _ => None,
+                })
+        })
+        .collect();
 
     let mut actions: Vec<PickerAction<'_>> = Vec::new();
     if let Some(ref ctx) = preview_ctx
@@ -1499,28 +1738,18 @@ fn pick_crates_interactive(
         let battery_pack = ctx.battery_pack.clone();
         let path = ctx.path.clone();
         let source = ctx.source.clone();
-        let tmpl_paths = template_paths.clone();
-        let tmpl_names = template_names.clone();
-
-        // Determine the section index for Actions (depends on whether features exist).
-        let actions_section_idx = if has_features { 2 } else { 1 };
 
         actions.push(PickerAction {
             key: 'p',
             label: "Preview",
             handler: Box::new(move |ctx: &mut sectioned_picker::ActionContext<'_>| {
-                // Only handle preview for the Actions section.
-                if ctx.section() != actions_section_idx {
-                    return;
-                }
-
-                let Some(template_path) = tmpl_paths.get(ctx.item()) else {
+                // Only preview when the cursor is on a template row.
+                let Some(template_name) = preview_targets.get(&(ctx.section(), ctx.item())) else {
                     return;
                 };
-                let template_name = tmpl_names
-                    .get(ctx.item())
-                    .map(|s| s.as_str())
-                    .unwrap_or("template");
+                let Some(template_path) = template_paths.get(template_name) else {
+                    return;
+                };
 
                 // Resolve crate directory and render the template preview.
                 let content = match crate::registry::resolve_crate_dir(
@@ -1544,7 +1773,7 @@ fn pick_crates_interactive(
                     Err(e) => ratatui::text::Text::from(format!("Preview unavailable: {e:#}")),
                 };
 
-                let title = format!("Preview: {}", template_name);
+                let title = format!("Preview: {template_name}");
                 crate::tui::show_preview(ctx.terminal(), &title, content);
             }),
         });
@@ -1559,39 +1788,29 @@ fn pick_crates_interactive(
         PickerOutcome::Cancelled => return Ok(None),
     };
 
-    // Interpret the results by section.
-    let mut section_iter = section_results.into_iter();
-    let mut picked_features: Vec<String> = Vec::new();
+    // Decode results by name via `section_rows`. An item that appears in several
+    // sections (multiple categories) is simply collected into a set.
+    let mut picked_features: BTreeSet<String> = BTreeSet::new();
     let mut picked_crates: BTreeSet<String> = BTreeSet::new();
     let mut selected_templates: Vec<String> = Vec::new();
 
-    // Features section (if present).
-    if !features.is_empty()
-        && let Some(feature_checks) = section_iter.next()
-    {
-        for (checked, (feat_name, _)) in feature_checks.iter().zip(features.iter()) {
-            if *checked {
-                picked_features.push(feat_name.to_string());
+    for (checks, rows) in section_results.iter().zip(section_rows.iter()) {
+        for (checked, row) in checks.iter().zip(rows.iter()) {
+            if !*checked {
+                continue;
             }
-        }
-    }
-
-    // Dependencies section.
-    if let Some(dep_checks) = section_iter.next() {
-        for (checked, (crate_name, _)) in dep_checks.iter().zip(visible_crates.iter()) {
-            if *checked {
-                picked_crates.insert(crate_name.to_string());
-            }
-        }
-    }
-
-    // Actions section (if present).
-    if !bp_spec.templates.is_empty()
-        && let Some(action_checks) = section_iter.next()
-    {
-        for (checked, tmpl_name) in action_checks.iter().zip(bp_spec.templates.keys()) {
-            if *checked {
-                selected_templates.push(tmpl_name.clone());
+            match row {
+                PickRow::Feature(name) => {
+                    picked_features.insert(name.clone());
+                }
+                PickRow::Crate(name) => {
+                    picked_crates.insert(name.clone());
+                }
+                PickRow::Template(name) => {
+                    if !selected_templates.contains(name) {
+                        selected_templates.push(name.clone());
+                    }
+                }
             }
         }
     }
