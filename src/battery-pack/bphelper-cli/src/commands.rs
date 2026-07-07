@@ -2272,6 +2272,24 @@ fn build_show_report(
         cargo_bp_script::FeatureInfo::new(feat_name).with_crates(members.iter().map(|s| s.as_str()))
     }));
 
+    // Categories
+    report = report.with_categories(detail.categories.iter().map(|c| {
+        let pick = match c.pick {
+            bphelper_manifest::PickMode::AtMostOne => cargo_bp_script::PickModeInfo::AtMostOne,
+            bphelper_manifest::PickMode::Any => cargo_bp_script::PickModeInfo::Any,
+        };
+        let mut info = cargo_bp_script::CategoryInfo::new(&c.name)
+            .with_pick(pick)
+            .with_members(c.members.iter().map(|s| s.as_str()));
+        if let Some(t) = &c.title {
+            info = info.with_title(t);
+        }
+        if let Some(d) = &c.description {
+            info = info.with_description(d);
+        }
+        info
+    }));
+
     // Templates
     report = report.with_templates(detail.templates.iter().map(|t| {
         let mut info = cargo_bp_script::TemplateInfo::new(&t.name);
@@ -2404,6 +2422,25 @@ fn render_show_text(
                 feat.crates.join(", "),
                 marker
             )?;
+        }
+    }
+
+    // Categories
+    // [impl cli.show.categories]
+    // [impl cli.show.pick-mode]
+    if !report.categories.is_empty() {
+        writeln!(w)?;
+        writeln!(w, "{}", style("Categories:").bold())?;
+        for cat in &report.categories {
+            let title = cat.title.as_deref().unwrap_or(&cat.name);
+            let hint = match cat.pick {
+                cargo_bp_script::PickModeInfo::AtMostOne => " (pick at most one)",
+                cargo_bp_script::PickModeInfo::Any => "",
+            };
+            writeln!(w, "  {} — {}{}", style(&cat.name).cyan(), title, hint)?;
+            if !cat.members.is_empty() {
+                writeln!(w, "    {}", cat.members.join(", "))?;
+            }
         }
     }
 

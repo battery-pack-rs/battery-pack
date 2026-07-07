@@ -49,7 +49,9 @@ pub use list::{ListReport, PackSummary};
 pub use runner::{
     Error, ListCommand, ShowCommand, StatusCommand, parse_list, parse_show, parse_status,
 };
-pub use show::{ExampleInfo, FeatureInfo, OwnerInfo, ShowReport, TemplateInfo};
+pub use show::{
+    CategoryInfo, ExampleInfo, FeatureInfo, OwnerInfo, PickModeInfo, ShowReport, TemplateInfo,
+};
 pub use status::{
     DependencyWarning, InstalledPackStatus, ProjectInfo, SCHEMA_VERSION, StatusReport,
 };

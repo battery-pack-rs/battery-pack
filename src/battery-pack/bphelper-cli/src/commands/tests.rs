@@ -2421,3 +2421,82 @@ fn category_template_metadata_is_parsed() {
     let spec = load_category_spec();
     assert_eq!(spec.templates["blinky"].categories, vec!["hal"]);
 }
+
+// ============================================================================
+// `cargo bp show` category rendering (Phase 7)
+// ============================================================================
+
+// [verify cli.show-categories]
+// [verify cli.show-pick-mode-hint]
+#[test]
+fn render_show_text_includes_categories_with_pick_hint() {
+    console::set_colors_enabled(false);
+
+    let report = cargo_bp_script::ShowReport::new("embedded", "embedded-battery-pack", "0.1.0")
+        .with_category(
+            cargo_bp_script::CategoryInfo::new("hal")
+                .with_title("Hardware Abstraction Layer")
+                .with_pick(cargo_bp_script::PickModeInfo::AtMostOne)
+                .with_members(["stm32f4", "nrf52840"]),
+        )
+        .with_category(
+            cargo_bp_script::CategoryInfo::new("utils")
+                .with_title("Portable Utilities")
+                .with_members(["heapless"]),
+        );
+
+    let mut buf = Vec::new();
+    super::render_show_text(&report, &mut buf).unwrap();
+    let text = String::from_utf8(buf).unwrap();
+
+    assert!(text.contains("Categories:"), "missing header in:\n{text}");
+    assert!(
+        text.contains("hal — Hardware Abstraction Layer (pick at most one)"),
+        "missing at-most-one category line in:\n{text}"
+    );
+    assert!(
+        text.contains("stm32f4, nrf52840"),
+        "missing members in:\n{text}"
+    );
+    assert!(
+        text.contains("utils — Portable Utilities"),
+        "missing any category in:\n{text}"
+    );
+    assert!(
+        !text.contains("utils — Portable Utilities (pick at most one)"),
+        "any category must not show the pick hint in:\n{text}"
+    );
+}
+
+// [verify cli.show-categories]
+#[test]
+fn build_show_report_populates_categories_from_fixture() {
+    let fixture = fixtures_dir().join("category-battery-pack");
+    let report = super::build_show_report(
+        "category-battery-pack",
+        Some(fixture.to_str().unwrap()),
+        &super::CrateSource::Registry,
+        &fixture,
+    )
+    .unwrap();
+
+    let hal = report
+        .categories
+        .iter()
+        .find(|c| c.name == "hal")
+        .expect("hal category present");
+    assert_eq!(hal.pick, cargo_bp_script::PickModeInfo::AtMostOne);
+    // Members include the HAL features and the categorized template, sorted.
+    assert!(hal.members.contains(&"stm32f4".to_string()));
+    assert!(hal.members.contains(&"nrf52840".to_string()));
+    assert!(hal.members.contains(&"blinky".to_string()));
+
+    let utils = report
+        .categories
+        .iter()
+        .find(|c| c.name == "utils")
+        .expect("utils category present");
+    assert_eq!(utils.pick, cargo_bp_script::PickModeInfo::Any);
+    assert!(utils.members.contains(&"heapless".to_string()));
+    assert!(utils.members.contains(&"logging".to_string()));
+}
