@@ -17,6 +17,7 @@ fn make_detail(crates: &[&str], templates: &[&str], examples: &[&str]) -> Batter
         crates: crates.iter().map(|s| s.to_string()).collect(),
         extends: Vec::new(),
         features: std::collections::BTreeMap::new(),
+        categories: Vec::new(),
         templates: templates
             .iter()
             .map(|name| crate::registry::TemplateInfo {

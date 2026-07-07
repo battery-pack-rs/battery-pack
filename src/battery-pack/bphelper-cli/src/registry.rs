@@ -124,8 +124,19 @@ pub(crate) struct BatteryPackDetail {
     pub crates: Vec<String>,
     pub extends: Vec<String>,
     pub features: BTreeMap<String, Vec<String>>,
+    pub categories: Vec<CategoryDetail>,
     pub templates: Vec<TemplateInfo>,
     pub examples: Vec<ExampleInfo>,
+}
+
+/// A category and its member items, resolved from the spec for display.
+#[derive(Clone)]
+pub(crate) struct CategoryDetail {
+    pub name: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub pick: bphelper_manifest::PickMode,
+    pub members: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -864,6 +875,40 @@ pub(crate) fn build_battery_pack_detail(
         .filter(|(_, members)| !members.is_empty())
         .collect();
 
+    // Resolve each category's members: features, dependencies, and templates
+    // whose metadata lists the category. Members are sorted for stable output.
+    let categories: Vec<CategoryDetail> = spec
+        .categories
+        .iter()
+        .map(|(name, cat)| {
+            let mut members: Vec<String> = Vec::new();
+            for (feat_name, meta) in &spec.feature_meta {
+                if meta.categories.iter().any(|c| c == name) {
+                    members.push(feat_name.clone());
+                }
+            }
+            for (dep_name, meta) in &spec.dep_meta {
+                if meta.categories.iter().any(|c| c == name) {
+                    members.push(dep_name.clone());
+                }
+            }
+            for (tmpl_name, tmpl) in &spec.templates {
+                if tmpl.categories.iter().any(|c| c == name) {
+                    members.push(tmpl_name.clone());
+                }
+            }
+            members.sort_unstable();
+            members.dedup();
+            CategoryDetail {
+                name: name.clone(),
+                title: cat.title.clone(),
+                description: cat.description.clone(),
+                pick: cat.pick,
+                members,
+            }
+        })
+        .collect();
+
     Ok(BatteryPackDetail {
         short_name: short_name(&spec.name).to_string(),
         name: spec.name.clone(),
@@ -874,6 +919,7 @@ pub(crate) fn build_battery_pack_detail(
         crates,
         extends,
         features,
+        categories,
         templates,
         examples,
     })
