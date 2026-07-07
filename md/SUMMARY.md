@@ -16,7 +16,8 @@
 # Appendices
 
 - [RFDs](./rfds/README.md)
-  - [Categories and Exclusive Picks](./rfds/categories-and-alternatives.md)
+  - [Categories and Exclusive Picks](./rfds/categories-and-alternatives/README.md)
+    - [Requirements](./rfds/categories-and-alternatives/requirements.md)
 - [Spec](./spec/README.md) 
   - [Battery Pack Format](./spec/format.md)
   - [CLI Behavior](./spec/cli.md)
