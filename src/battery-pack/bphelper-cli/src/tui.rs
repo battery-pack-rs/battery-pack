@@ -1026,6 +1026,7 @@ impl App {
                             template_path,
                             project_name: "my-project".to_string(),
                             defines: BTreeMap::new(),
+                            active_features: std::collections::BTreeSet::new(),
                             interactive_override: None,
                         };
                         match crate::template_engine::preview(opts) {

@@ -280,6 +280,7 @@ pub fn main() -> Result<()> {
                         source: &source,
                         project_dir: &project_dir,
                         defines: define.into_iter().collect(),
+                        active_features: BTreeSet::new(),
                         overwrite,
                         interactive,
                     }),
@@ -639,6 +640,9 @@ struct AddTemplateOpts<'a> {
     source: &'a CrateSource,
     project_dir: &'a Path,
     defines: BTreeMap<String, String>,
+    /// Feature names just selected in the picker, used to pre-fill
+    /// category-linked template placeholders.
+    active_features: BTreeSet<String>,
     overwrite: bool,
     interactive: bool,
 }
@@ -735,6 +739,7 @@ fn add_template(opts: AddTemplateOpts<'_>) -> Result<()> {
         template_path: resolved_tmpl.path,
         project_name,
         defines: opts.defines,
+        active_features: opts.active_features,
         interactive_override,
     };
     let files = crate::template_engine::preview(render_opts)?;
@@ -1042,7 +1047,8 @@ pub(crate) fn add_battery_pack(
         }
     }
 
-    // Step 4: Apply any selected templates.
+    // Step 4: Apply any selected templates, pre-filling category-linked
+    // placeholders from the features chosen in this same add.
     for tmpl_name in &selected_templates {
         add_template(AddTemplateOpts {
             battery_pack: name,
@@ -1051,6 +1057,7 @@ pub(crate) fn add_battery_pack(
             source,
             project_dir,
             defines: BTreeMap::new(),
+            active_features: active_features.clone(),
             overwrite: false,
             interactive: std::io::stdout().is_terminal(),
         })?;
@@ -1763,6 +1770,7 @@ fn pick_crates_interactive(
                             template_path: template_path.clone(),
                             project_name: "my-project".to_string(),
                             defines: std::collections::BTreeMap::new(),
+                            active_features: std::collections::BTreeSet::new(),
                             interactive_override: Some(false),
                         };
                         match crate::template_engine::preview(opts) {
@@ -1950,6 +1958,7 @@ fn generate_from_path(
             template_path: template_path.to_string(),
             project_name,
             defines: opts.defines,
+            active_features: std::collections::BTreeSet::new(),
             interactive_override,
         },
         destination: None,

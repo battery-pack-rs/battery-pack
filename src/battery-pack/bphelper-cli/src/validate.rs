@@ -271,6 +271,7 @@ fn build_and_test_template(
             template_path: template_path.to_string(),
             project_name: format!("bp-validate-{label}"),
             defines,
+            active_features: std::collections::BTreeSet::new(),
             interactive_override: Some(false),
         },
         destination: Some(tmp.path().to_path_buf()),
@@ -383,6 +384,7 @@ fn try_render(
         template_path: template_path.to_string(),
         project_name: "bp-validate-probe".to_string(),
         defines: std::collections::BTreeMap::new(),
+        active_features: std::collections::BTreeSet::new(),
         interactive_override: Some(false),
     };
     crate::template_engine::preview(opts)
