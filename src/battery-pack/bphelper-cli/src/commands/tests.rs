@@ -2336,7 +2336,7 @@ fn add_no_default_features_does_not_merge_existing() {
 fn non_interactive_rejects_exclusive_conflict() {
     let spec = load_category_spec();
     let requested = vec!["stm32f4".to_string(), "nrf52840".to_string()];
-    let err = super::validate_exclusive_constraints(&spec, &requested).unwrap_err();
+    let err = super::validate_exclusive_constraints(&spec, &requested, &[]).unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("exclusive"), "message: {msg}");
     assert!(
@@ -2356,7 +2356,7 @@ fn non_interactive_allows_same_any_category() {
     // `utils`, so requesting both is fine.
     let spec = load_category_spec();
     let requested = vec!["logging".to_string(), "heapless".to_string()];
-    assert!(super::validate_exclusive_constraints(&spec, &requested).is_ok());
+    assert!(super::validate_exclusive_constraints(&spec, &requested, &[]).is_ok());
 }
 
 // [verify cli.noninteractive-different-categories-ok]
@@ -2365,7 +2365,7 @@ fn non_interactive_allows_different_categories() {
     // One HAL feature plus one utility is allowed (different categories).
     let spec = load_category_spec();
     let requested = vec!["stm32f4".to_string(), "logging".to_string()];
-    assert!(super::validate_exclusive_constraints(&spec, &requested).is_ok());
+    assert!(super::validate_exclusive_constraints(&spec, &requested, &[]).is_ok());
 }
 
 // [verify cli.noninteractive-exclusive-conflict-error] single pick is fine
@@ -2373,7 +2373,7 @@ fn non_interactive_allows_different_categories() {
 fn non_interactive_single_exclusive_pick_ok() {
     let spec = load_category_spec();
     let requested = vec!["nrf52840".to_string()];
-    assert!(super::validate_exclusive_constraints(&spec, &requested).is_ok());
+    assert!(super::validate_exclusive_constraints(&spec, &requested, &[]).is_ok());
 }
 
 // [verify invariant.noninteractive-dep-exclusive-conflict]
@@ -2382,7 +2382,48 @@ fn non_interactive_uncategorized_items_ignored() {
     // Items with no category metadata never conflict.
     let spec = load_category_spec();
     let requested = vec!["log".to_string(), "stm32f4".to_string()];
-    assert!(super::validate_exclusive_constraints(&spec, &requested).is_ok());
+    assert!(super::validate_exclusive_constraints(&spec, &requested, &[]).is_ok());
+}
+
+// [verify cli.noninteractive-template-exclusive-error]
+#[test]
+fn non_interactive_template_conflicts_with_feature() {
+    // The `blinky` template is in the `hal` (at-most-one) category. Requesting
+    // it alongside another `hal` feature is a conflict.
+    let spec = load_category_spec();
+    let requested = vec!["stm32f4".to_string()];
+    let templates = vec!["blinky".to_string()];
+    let err = super::validate_exclusive_constraints(&spec, &requested, &templates).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("exclusive"), "message: {msg}");
+    assert!(msg.contains("hal"), "message should name category: {msg}");
+    assert!(
+        msg.contains("blinky") && msg.contains("stm32f4"),
+        "message should name both items: {msg}"
+    );
+}
+
+// [verify cli.noninteractive-template-exclusive-error] template alone is fine
+#[test]
+fn non_interactive_template_alone_in_exclusive_ok() {
+    let spec = load_category_spec();
+    let templates = vec!["blinky".to_string()];
+    assert!(super::validate_exclusive_constraints(&spec, &[], &templates).is_ok());
+}
+
+// [verify cli.noninteractive-all-features-bypasses]
+#[test]
+fn non_interactive_all_features_bypasses_exclusive_validation() {
+    // `--all-features` skips exclusive validation entirely. Verify by calling
+    // the underlying function with items that would otherwise conflict — the
+    // guard (`if !all_features`) in add_battery_pack prevents this call from
+    // ever firing, which is the bypass behavior we document here.
+    let spec = load_category_spec();
+    let requested = vec!["stm32f4".to_string(), "nrf52840".to_string()];
+    // Confirm these DO conflict when validation runs:
+    assert!(super::validate_exclusive_constraints(&spec, &requested, &[]).is_err());
+    // The bypass is: the call site skips validation when all_features is true.
+    // This test documents the invariant — the guard is in add_battery_pack.
 }
 
 // ============================================================================

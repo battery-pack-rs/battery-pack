@@ -512,13 +512,15 @@ fn exclusive_siblings(spec: &bphelper_manifest::BatteryPackSpec, a: &str, b: &st
 ///
 /// Groups the requested items by any `at-most-one` category they belong to and
 /// fails if a category ends up with two or more. Items are matched against
-/// feature metadata first, then dependency metadata, so both `-F` features and
-/// bare dependency names are covered.
+/// feature metadata, dependency metadata, and template metadata, so `-F`
+/// features, bare dependency names, and `-t` templates are all covered.
 // [impl cli.add.exclusive-validation]
 // [impl invariant.noninteractive-dep-exclusive-conflict]
+// [impl cli.noninteractive-template-exclusive-error]
 pub(crate) fn validate_exclusive_constraints(
     spec: &bphelper_manifest::BatteryPackSpec,
     requested: &[String],
+    requested_templates: &[String],
 ) -> Result<()> {
     // Map each at-most-one category to the requested items that belong to it.
     let mut by_category: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
@@ -535,6 +537,22 @@ pub(crate) fn validate_exclusive_constraints(
                 .is_some_and(|c| c.pick == bphelper_manifest::PickMode::AtMostOne);
             if is_exclusive {
                 by_category.entry(category).or_default().push(item);
+            }
+        }
+    }
+
+    // Also check templates against exclusive categories.
+    for tmpl_name in requested_templates {
+        let Some(tmpl_spec) = spec.templates.get(tmpl_name) else {
+            continue;
+        };
+        for category in &tmpl_spec.categories {
+            let is_exclusive = spec
+                .categories
+                .get(category)
+                .is_some_and(|c| c.pick == bphelper_manifest::PickMode::AtMostOne);
+            if is_exclusive {
+                by_category.entry(category).or_default().push(tmpl_name);
             }
         }
     }
@@ -862,7 +880,7 @@ pub(crate) fn add_battery_pack(
             .chain(specific_crates.iter())
             .cloned()
             .collect();
-        validate_exclusive_constraints(&bp_spec, &requested)?;
+        validate_exclusive_constraints(&bp_spec, &requested, &[])?;
     }
 
     // Step 2: Determine which crates to install — interactive picker, explicit flags, or defaults.

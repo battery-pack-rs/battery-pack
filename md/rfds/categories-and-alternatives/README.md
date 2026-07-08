@@ -565,6 +565,16 @@ Too small to benefit. No change needed.
   another (shared categories, feature forwarding, template inheritance).
   A single big pack works for v1; extension is a separate RFD.
 
+- **Shared item identity across categories.** When an item belongs to multiple
+  categories it appears as independent rows in the picker. Toggling it in one
+  section doesn't live-update its copy in the other. The confirmed *result* is
+  correct (decoded by name into a set), but the picker visually desyncs during
+  interaction. Fixing this means adding an `Option<String>` identity to
+  `SectionItem` and propagating state across entries sharing an id. This also
+  introduces edge cases — e.g., an item in both an `at-most-one` and an `any`
+  category could be checked in the `any` section, putting the `at-most-one`
+  section into an invalid state. Needs its own design pass.
+
 ## Prior art
 
 - **awesome-embedded-rust**: flat curated list organized by vendor, no
