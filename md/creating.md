@@ -301,10 +301,16 @@ clap = { bp-managed = true, features = ["derive", "env"] }
 
 # Managed version with optional:
 serde = { bp-managed = true, optional = true }
+
+# Renamed dep: the version is resolved by the real crate name (`tokio`):
+tokio_rt = { package = "tokio", bp-managed = true }
 ```
 
-The only key that conflicts with `bp-managed` is `version` (since
-`bp-managed` provides the version).
+Two keys conflict with `bp-managed`, since each already provides the
+version: `version` and `workspace`. The marker's value must be `true` —
+`bp-managed = false` (or any non-`true` value) is an error, so drop the
+key to opt out. Managed deps are also resolved under platform-gated
+`[target.<cfg>.*]` tables.
 
 ### Validating templates
 
