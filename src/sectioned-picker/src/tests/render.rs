@@ -137,7 +137,7 @@ fn snapshot_single_section() {
         output,
         str![[r#"
 "────────────────────────────────────────────────────────────"
-" ▼ Dependencies:                                            "
+" ▼ Dependencies: (2 items selected)                         "
 " > [x] tokio (1.38)                                         "
 "   [x] serde (1.0)                                          "
 "   [ ] anyhow (1)                                           "
@@ -157,111 +157,173 @@ fn snapshot_single_section() {
 
 #[test]
 fn render_radio_items_use_bullet_symbols() {
-    // A radio section renders checked/unchecked as ●/○ rather than [x]/[ ].
     let mut state = PickerState::new(vec![radio_section(
         "HAL:",
         &[("stm32f4", true), ("nrf52840", false)],
     )]);
     let output = render_to_string(60, 10, "embedded v0.1", &mut state);
-    assert!(
-        output.contains("● stm32f4"),
-        "checked bullet missing:\n{output}"
-    );
-    assert!(
-        output.contains("○ nrf52840"),
-        "unchecked bullet missing:\n{output}"
-    );
-    assert!(
-        !output.contains("[x]"),
-        "radio must not use checkbox glyphs"
+    assert_data_eq!(
+        output,
+        str![[r#"
+"────────────────────────────────────────────────────────────"
+" ▼ HAL: (stm32f4 selected)                                  "
+" > ● stm32f4                                                "
+"   ○ nrf52840                                               "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+" embedded v0.1  ↑↓/jk Navigate | Space Toggle | ←/→ Collapse"
+
+"#]]
     );
 }
 
 #[test]
 fn render_checkbox_items_use_squares() {
-    // Regression: checkbox sections keep [x]/[ ] glyphs.
     let mut state = PickerState::new(vec![section("Utils:", &[("a", true), ("b", false)])]);
     let output = render_to_string(60, 10, "pack v1", &mut state);
-    assert!(
-        output.contains("[x] a"),
-        "checked square missing:\n{output}"
+    assert_data_eq!(
+        output,
+        str![[r#"
+"────────────────────────────────────────────────────────────"
+" ▼ Utils: (a selected)                                      "
+" > [x] a                                                    "
+"   [ ] b                                                    "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+" pack v1  ↑↓/jk Navigate | Space Toggle | ←/→ Collapse/expan"
+
+"#]]
     );
-    assert!(
-        output.contains("[ ] b"),
-        "unchecked square missing:\n{output}"
-    );
-    assert!(!output.contains('●'), "checkbox must not use radio glyphs");
 }
 
 #[test]
 fn render_collapsed_section_shows_chevron() {
-    // A collapsed section header shows ▶; expanded shows ▼.
     let mut state = PickerState::new(vec![section("Utils:", &[("a", false)]).collapsed()]);
     let output = render_to_string(60, 10, "pack v1", &mut state);
-    assert!(
-        output.contains("▶ Utils:"),
-        "collapsed chevron missing:\n{output}"
-    );
-    assert!(
-        !output.contains("  [ ] a"),
-        "collapsed items must be hidden"
-    );
+    assert_data_eq!(
+        output,
+        str![[r#"
+"────────────────────────────────────────────────────────────"
+" ▶ Utils: (pick any number)                                 "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+" pack v1  ↑↓/jk Navigate | Space Toggle | ←/→ Collapse/expan"
 
-    let mut expanded = PickerState::new(vec![section("Utils:", &[("a", false)])]);
-    let output = render_to_string(60, 10, "pack v1", &mut expanded);
-    assert!(
-        output.contains("▼ Utils:"),
-        "expanded chevron missing:\n{output}"
+"#]]
+    );
+}
+
+#[test]
+fn render_expanded_section_shows_down_chevron() {
+    let mut state = PickerState::new(vec![section("Utils:", &[("a", false)])]);
+    let output = render_to_string(60, 10, "pack v1", &mut state);
+    assert_data_eq!(
+        output,
+        str![[r#"
+"────────────────────────────────────────────────────────────"
+" ▼ Utils: (pick any number)                                 "
+" > [ ] a                                                    "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+" pack v1  ↑↓/jk Navigate | Space Toggle | ←/→ Collapse/expan"
+
+"#]]
     );
 }
 
 #[test]
 fn render_radio_section_header_shows_constraint() {
-    // Radio section headers include the "(pick at most one)" hint.
     let mut state = PickerState::new(vec![radio_section("HAL:", &[("a", false)])]);
     let output = render_to_string(70, 10, "embedded v0.1", &mut state);
-    assert!(
-        output.contains("(pick at most one)"),
-        "constraint hint missing:\n{output}"
+    assert_data_eq!(
+        output,
+        str![[r#"
+"──────────────────────────────────────────────────────────────────────"
+" ▼ HAL: (pick at most one)                                            "
+" > ○ a                                                                "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+" embedded v0.1  ↑↓/jk Navigate | Space Toggle | ←/→ Collapse/expand | "
+
+"#]]
     );
 }
 
 #[test]
 fn render_radio_multiple_selected_shows_all_filled() {
-    // A pre-existing multi-selection renders both items as filled bullets.
     let mut state = PickerState::new(vec![radio_section(
         "Allocator:",
         &[("jemalloc", true), ("mimalloc", true)],
     )]);
     let output = render_to_string(60, 12, "svc v1", &mut state);
-    assert!(
-        output.contains("● jemalloc"),
-        "first fill missing:\n{output}"
-    );
-    assert!(
-        output.contains("● mimalloc"),
-        "second fill missing:\n{output}"
+    assert_data_eq!(
+        output,
+        str![[r#"
+" ⚠ Multiple selections in "Allocator:" — pick one to resolve"
+"────────────────────────────────────────────────────────────"
+" ▼ Allocator: (2 items selected)                            "
+" > ● jemalloc                                               "
+"   ● mimalloc                                               "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+" svc v1  ↑↓/jk Navigate | Space Toggle | ←/→ Collapse/expand"
+
+"#]]
     );
 }
 
 #[test]
 fn render_warning_banner_for_pre_existing_conflict() {
-    // With >1 radio item checked on open, a ⚠ warning banner is shown.
     let mut state = PickerState::new(vec![radio_section(
         "Allocator:",
         &[("jemalloc", true), ("mimalloc", true)],
     )]);
     let output = render_to_string(70, 12, "svc v1", &mut state);
-    assert!(output.contains('⚠'), "warning glyph missing:\n{output}");
-    assert!(
-        output.contains("Multiple selections"),
-        "warning text missing:\n{output}"
+    assert_data_eq!(
+        output,
+        str![[r#"
+" ⚠ Multiple selections in "Allocator:" — pick one to resolve          "
+"──────────────────────────────────────────────────────────────────────"
+" ▼ Allocator: (2 items selected)                                      "
+" > ● jemalloc                                                         "
+"   ● mimalloc                                                         "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+" svc v1  ↑↓/jk Navigate | Space Toggle | ←/→ Collapse/expand | a Toggl"
+
+"#]]
     );
 }
 
 #[test]
 fn render_item_with_description() {
-    // Item descriptions are shown inline after the label.
     let mut state = PickerState::new(vec![
         crate::Section::new(
             "HAL:",
@@ -270,9 +332,21 @@ fn render_item_with_description() {
         .radio(),
     ]);
     let output = render_to_string(70, 10, "embedded v0.1", &mut state);
-    assert!(
-        output.contains("STM32F4xx family"),
-        "description missing:\n{output}"
+    assert_data_eq!(
+        output,
+        str![[r#"
+"──────────────────────────────────────────────────────────────────────"
+" ▼ HAL: (pick at most one)                                            "
+" > ○ stm32f4    STM32F4xx family                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+" embedded v0.1  ↑↓/jk Navigate | Space Toggle | ←/→ Collapse/expand | "
+
+"#]]
     );
 }
 
@@ -291,14 +365,14 @@ fn snapshot_multiple_sections() {
         output,
         str![[r#"
 "────────────────────────────────────────────────────────────"
-" ▼ Features:                                                "
+" ▼ Features: (observability selected)                       "
 " > [x] observability                                        "
 "   [ ] resilience                                           "
 "                                                            "
-" ▼ Dependencies:                                            "
+" ▼ Dependencies: (tokio selected)                           "
 "   [x] tokio                                                "
 "                                                            "
-" ▼ Actions:                                                 "
+" ▼ Actions: (pick any number)                               "
 "   [ ] Add `ci` template                                    "
 "                                                            "
 "                                                            "
@@ -306,5 +380,92 @@ fn snapshot_multiple_sections() {
 " fancy v1.0  ↑↓/jk Navigate | Space Toggle | ←/→ Collapse/ex"
 
 "#]]
+    );
+}
+
+// ============================================================================
+// Header hint text (selection summary)
+// ============================================================================
+
+#[test]
+fn radio_header_shows_pick_at_most_one_when_nothing_selected() {
+    let mut state = PickerState::new(vec![radio_section("HAL:", &[("esp32", false), ("nrf52840", false)])]);
+    let output = render_to_string(60, 8, "test", &mut state);
+    assert!(
+        output.contains("HAL: (pick at most one)"),
+        "expected 'pick at most one' hint, got:\n{output}"
+    );
+}
+
+#[test]
+fn radio_header_shows_selected_item_name() {
+    let mut state = PickerState::new(vec![radio_section("HAL:", &[("esp32", false), ("nrf52840", true)])]);
+    let output = render_to_string(60, 8, "test", &mut state);
+    assert!(
+        output.contains("HAL: (nrf52840 selected)"),
+        "expected selected item name in header, got:\n{output}"
+    );
+}
+
+#[test]
+fn checkbox_header_shows_pick_any_when_nothing_selected() {
+    let mut state = PickerState::new(vec![section("Drivers:", &[("ssd1306", false), ("bme280", false)])]);
+    let output = render_to_string(60, 8, "test", &mut state);
+    assert!(
+        output.contains("Drivers: (pick any number)"),
+        "expected 'pick any number' hint, got:\n{output}"
+    );
+}
+
+#[test]
+fn checkbox_header_shows_single_selected_item_name() {
+    let mut state = PickerState::new(vec![section("Drivers:", &[("ssd1306", true), ("bme280", false)])]);
+    let output = render_to_string(60, 8, "test", &mut state);
+    assert!(
+        output.contains("Drivers: (ssd1306 selected)"),
+        "expected selected item name in header, got:\n{output}"
+    );
+}
+
+#[test]
+fn checkbox_header_shows_count_when_multiple_selected() {
+    let mut state = PickerState::new(vec![section("Drivers:", &[("ssd1306", true), ("bme280", true), ("lis3dh", false)])]);
+    let output = render_to_string(60, 8, "test", &mut state);
+    assert!(
+        output.contains("Drivers: (2 items selected)"),
+        "expected count in header, got:\n{output}"
+    );
+}
+
+// ============================================================================
+// Collapsed header highlight
+// ============================================================================
+
+#[test]
+fn collapsed_header_is_highlighted_when_focused() {
+    // After collapsing, the cursor lands on the section header and the render
+    // must apply the cursor highlight (Cyan background) to that header line.
+    use ratatui::style::Color;
+
+    let mut state = PickerState::new(vec![
+        section("Utils:", &[("a", false), ("b", false)]),
+        section("Other:", &[("c", false)]),
+    ]);
+    // Cursor starts on first item in "Utils:". Collapse moves it to the header.
+    state.collapse_current();
+
+    let backend = TestBackend::new(60, 10);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| render_picker(frame, "test", &mut state, &[]))
+        .unwrap();
+
+    // Row 1 is the header line (row 0 is the top border). The collapsed header
+    // should have the Cyan cursor highlight background.
+    let buf = terminal.backend().buffer();
+    let header_cell = &buf[(2, 1)]; // column 2 = start of "▶" after the padding
+    assert_eq!(
+        header_cell.bg, Color::Cyan,
+        "collapsed header should be highlighted with Cyan background when focused"
     );
 }

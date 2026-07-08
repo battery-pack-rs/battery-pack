@@ -548,6 +548,30 @@ fn radio_pre_selected_multiple_toggle_clears_others() {
 }
 
 #[test]
+fn radio_pre_selected_multiple_toggle_already_checked_keeps_it() {
+    // With A and B both checked (pre-existing conflict), toggling A confirms the
+    // choice of A: all others are cleared, A stays checked.
+    let mut state = make_state(vec![radio_section("HAL:", &[("a", true), ("b", true)])], 10);
+    // Cursor starts on A (first item).
+    state.toggle();
+    let results = state.into_results();
+    assert_eq!(results, vec![vec![true, false]]);
+}
+
+#[test]
+fn radio_single_selected_toggle_deselects_to_zero() {
+    // Normal case: only A is checked, toggling A deselects it (empty is OK).
+    let mut state = make_state(
+        vec![radio_section("HAL:", &[("a", true), ("b", false)])],
+        10,
+    );
+    // Cursor starts on A (first item).
+    state.toggle();
+    let results = state.into_results();
+    assert_eq!(results, vec![vec![false, false]]);
+}
+
+#[test]
 fn radio_confirm_blocked_when_multiple_selected() {
     // try_confirm rejects a radio section with more than one item checked.
     let mut state = make_state(vec![radio_section("HAL:", &[("a", true), ("b", true)])], 10);
