@@ -389,7 +389,10 @@ fn snapshot_multiple_sections() {
 
 #[test]
 fn radio_header_shows_pick_at_most_one_when_nothing_selected() {
-    let mut state = PickerState::new(vec![radio_section("HAL:", &[("esp32", false), ("nrf52840", false)])]);
+    let mut state = PickerState::new(vec![radio_section(
+        "HAL:",
+        &[("esp32", false), ("nrf52840", false)],
+    )]);
     let output = render_to_string(60, 8, "test", &mut state);
     assert!(
         output.contains("HAL: (pick at most one)"),
@@ -399,7 +402,10 @@ fn radio_header_shows_pick_at_most_one_when_nothing_selected() {
 
 #[test]
 fn radio_header_shows_selected_item_name() {
-    let mut state = PickerState::new(vec![radio_section("HAL:", &[("esp32", false), ("nrf52840", true)])]);
+    let mut state = PickerState::new(vec![radio_section(
+        "HAL:",
+        &[("esp32", false), ("nrf52840", true)],
+    )]);
     let output = render_to_string(60, 8, "test", &mut state);
     assert!(
         output.contains("HAL: (nrf52840 selected)"),
@@ -409,7 +415,10 @@ fn radio_header_shows_selected_item_name() {
 
 #[test]
 fn checkbox_header_shows_pick_any_when_nothing_selected() {
-    let mut state = PickerState::new(vec![section("Drivers:", &[("ssd1306", false), ("bme280", false)])]);
+    let mut state = PickerState::new(vec![section(
+        "Drivers:",
+        &[("ssd1306", false), ("bme280", false)],
+    )]);
     let output = render_to_string(60, 8, "test", &mut state);
     assert!(
         output.contains("Drivers: (pick any number)"),
@@ -419,7 +428,10 @@ fn checkbox_header_shows_pick_any_when_nothing_selected() {
 
 #[test]
 fn checkbox_header_shows_single_selected_item_name() {
-    let mut state = PickerState::new(vec![section("Drivers:", &[("ssd1306", true), ("bme280", false)])]);
+    let mut state = PickerState::new(vec![section(
+        "Drivers:",
+        &[("ssd1306", true), ("bme280", false)],
+    )]);
     let output = render_to_string(60, 8, "test", &mut state);
     assert!(
         output.contains("Drivers: (ssd1306 selected)"),
@@ -429,7 +441,10 @@ fn checkbox_header_shows_single_selected_item_name() {
 
 #[test]
 fn checkbox_header_shows_count_when_multiple_selected() {
-    let mut state = PickerState::new(vec![section("Drivers:", &[("ssd1306", true), ("bme280", true), ("lis3dh", false)])]);
+    let mut state = PickerState::new(vec![section(
+        "Drivers:",
+        &[("ssd1306", true), ("bme280", true), ("lis3dh", false)],
+    )]);
     let output = render_to_string(60, 8, "test", &mut state);
     assert!(
         output.contains("Drivers: (2 items selected)"),
@@ -465,7 +480,8 @@ fn collapsed_header_is_highlighted_when_focused() {
     let buf = terminal.backend().buffer();
     let header_cell = &buf[(2, 1)]; // column 2 = start of "▶" after the padding
     assert_eq!(
-        header_cell.bg, Color::Cyan,
+        header_cell.bg,
+        Color::Cyan,
         "collapsed header should be highlighted with Cyan background when focused"
     );
 }

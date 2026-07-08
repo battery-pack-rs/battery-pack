@@ -828,15 +828,21 @@ impl BatteryPackSpec {
         non_default_features > 0 || self.crates.len() > 3
     }
 
-    /// Item names (features + deps) that belong to the named category, sorted.
+    /// Item names (features + deps + templates) that belong to the named category, sorted.
     ///
-    /// Scans both feature and dependency metadata for entries whose `categories`
-    /// list contains `category`, then returns their sorted, deduped names.
+    /// Scans feature metadata, dependency metadata, and template specs for entries
+    /// whose `categories` list contains `category`, then returns their sorted,
+    /// deduped names.
     // [impl format.categories.definition]
     pub fn items_in_category(&self, category: &str) -> Vec<String> {
         let mut items: BTreeSet<String> = BTreeSet::new();
         for (name, meta) in self.feature_meta.iter().chain(self.dep_meta.iter()) {
             if meta.categories.iter().any(|c| c == category) {
+                items.insert(name.clone());
+            }
+        }
+        for (name, tmpl) in &self.templates {
+            if tmpl.categories.iter().any(|c| c == category) {
                 items.insert(name.clone());
             }
         }
@@ -3996,5 +4002,35 @@ foo-battery-pack 0.1.0
                 .iter()
                 .any(|d| d.rule == "format.categories.defined" && d.message.contains("'hal'"))
         );
+    }
+
+    #[test]
+    // [verify format.categories.items-includes-templates]
+    fn items_in_category_includes_templates() {
+        let manifest = indoc! {r#"
+            [package]
+            name = "test-battery-pack"
+            version = "0.1.0"
+            keywords = ["battery-pack"]
+
+            [package.metadata.battery-pack.categories.hal]
+            title = "HAL"
+            pick = "at-most-one"
+
+            [package.metadata.battery-pack.features.stm32f4]
+            categories = ["hal"]
+
+            [package.metadata.battery.templates]
+            blinky = { path = "templates/blinky", categories = ["hal"] }
+
+            [features]
+            stm32f4 = []
+        "#};
+
+        let spec = parse_test(manifest).unwrap();
+        let members = spec.items_in_category("hal");
+        assert!(members.contains(&"stm32f4".to_string()));
+        assert!(members.contains(&"blinky".to_string()));
+        assert_eq!(members.len(), 2);
     }
 }

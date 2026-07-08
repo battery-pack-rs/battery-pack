@@ -4,7 +4,7 @@ TDD-driven implementation plan for the [Categories and Exclusive Picks RFD](./RE
 
 ## Status
 
-Phases 1–8 are implemented. Two items are deliberately deferred:
+Phases 1–9 are implemented. Two items are deliberately deferred:
 
 - **Live shared state for multi-category items** (`r[cli.picker-item-in-multiple-categories]`):
   an item in several categories is rendered as an independent row per section.
@@ -26,19 +26,20 @@ Phases 1–8 are implemented. Two items are deliberately deferred:
 ```
 Phase 1 (parsing) ──→ Phase 2 (validation) ──→ Phase 7 (validate/show)
      │                       │
-     │                       ├──→ Phase 5 (CLI -F validation)
-     │                       │
-Phase 3 (picker) ────────────├──→ Phase 4 (CLI picker wiring)
-                             │
-                             └──→ Phase 6 (template category placeholders)
-                                       │
-                                       └──→ Phase 8 (migration)
+     │                       ├──→ Phase 5 (CLI -F validation) ──┐
+     │                       │                                  │
+Phase 3 (picker) ────────────├──→ Phase 4 (CLI picker wiring)  ├──→ Phase 9 (review fixes)
+                             │                                  │
+                             └──→ Phase 6 (template placeholders)
+                                       │                        │
+                                       └──→ Phase 8 (migration) ┘
 ```
 
 Phase 1 and Phase 3 are **fully independent** — Phase 1 adds types to
 `bphelper-manifest`, Phase 3 adds `SelectionMode` to the `sectioned-picker`
 crate. They share no types. Phase 4 is the integration point where manifest
-types meet picker types.
+types meet picker types. Phase 9 is a cross-cutting review pass that touches
+Phases 3, 5, and 6.
 
 ---
 
@@ -564,6 +565,79 @@ No existing spec rules need to be **removed**. The following need changes:
 ### `md/spec/tui.md` — existing rules to amend
 
 - `r[tui.installed.toggle-crate]` (~line 38): note radio mode deselects siblings
+
+---
+
+## Phase 9: Post-Implementation Review
+
+**Goal**: Address correctness gaps, missing test coverage, and test quality
+issues found during adversarial review of the Phases 1–8 implementation.
+
+### 9.1 Template exclusive conflicts not validated
+
+`r[cli.noninteractive-template-exclusive-error]` requires that `-t X -t Y`
+errors when both templates belong to an `at-most-one` category.
+`validate_exclusive_constraints` only checked features and deps (via
+`feature_meta`/`dep_meta`). Templates passed via `-t` were never validated
+against exclusive categories.
+
+**Fix**: Extended `validate_exclusive_constraints` to accept a
+`requested_templates: &[String]` parameter. Template categories are now checked
+against the same exclusive grouping as features and deps. Added tests:
+`non_interactive_template_conflicts_with_feature`,
+`non_interactive_template_alone_in_exclusive_ok`.
+
+### 9.2 `items_in_category()` omits templates
+
+The method in `bphelper-manifest/src/lib.rs` only scanned `feature_meta` and
+`dep_meta`. Templates belonging to a category didn't appear in the list
+returned by `items_in_category()`, meaning `options.category = "X"` in a
+template placeholder wouldn't include template members of that category.
+
+**Fix**: `items_in_category()` now also scans `self.templates` for entries
+whose `categories` list contains the target category. Added test:
+`items_in_category_includes_templates`.
+
+### 9.3 Toggle-already-checked in pre-existing multi-select conflict
+
+When a radio section starts with A and B both checked (pre-existing conflict)
+and the user toggles A (the one already checked), the old code unchecked all
+siblings then saw `was_checked = true` and did NOT re-check A — leaving both
+A and B unchecked. The user pressed Space on A and got zero selections.
+
+**Fix**: Radio toggle now counts checked siblings *before* clearing. When
+multiple items are checked (conflict state), toggling an already-checked item
+*keeps* it checked (confirming the choice). Deselect-to-zero only fires when
+a single item was checked (normal case). Added tests:
+`radio_pre_selected_multiple_toggle_already_checked_keeps_it`,
+`radio_single_selected_toggle_deselects_to_zero`.
+
+### 9.4 No `--all-features` bypass test
+
+`r[cli.noninteractive-all-features-bypasses]` requires that `--all-features`
+skips exclusive validation. The guard existed in code (`if !all_features {
+validate... }`) but no test exercised it.
+
+**Fix**: Added `non_interactive_all_features_bypasses_exclusive_validation`
+which documents the invariant that exclusive validation is skipped when
+`all_features` is true.
+
+### 9.5 Render tests use ad-hoc assertions instead of snapbox snapshots
+
+Seven tests in `src/sectioned-picker/src/tests/render.rs` used ad-hoc
+`assert!(output.contains(...))` instead of `assert_data_eq!` with
+`str![[...]]` snapshots, making regressions harder to catch.
+
+**Fix**: Converted all 7 tests to use full-frame `assert_data_eq!` snapshots.
+Split `render_collapsed_section_shows_chevron` into two focused tests
+(collapsed and expanded).
+
+### 9.6 Design note (deferred)
+
+**Redundant manifest parse in template resolution** — `resolve_option_sources`
+re-parses the battery pack from disk even though the spec was already parsed
+upstream. Not a bug but wasteful. Could be addressed later by threading the
+spec into `RenderOpts`.
 
 ---
 
