@@ -1,0 +1,402 @@
+[package]
+name = "embedded-battery-pack"
+version = "0.1.0"
+edition = "2024"
+description = "Opinionated battery pack for embedded Rust — curates HALs, drivers, RTOSes, and no_std utilities from the awesome-embedded-rust ecosystem"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/battery-pack-rs/battery-pack"
+keywords = ["battery-pack", "embedded", "no-std", "hal", "cortex-m"]
+
+[package.metadata.battery-pack]
+hidden = ["battery-pack", "snapbox"]
+
+[package.metadata.battery.templates]
+blinky = { path = "templates/blinky", description = "Minimal blinky LED example for your chosen HAL + concurrency model" }
+
+# ─── Categories ───────────────────────────────────────────────────────────────
+
+[package.metadata.battery-pack.categories.hal]
+title = "Hardware Abstraction Layer"
+description = "Pick the HAL for your target chip family (mutually exclusive)"
+pick = "at-most-one"
+
+[package.metadata.battery-pack.categories.concurrency]
+title = "Concurrency Framework"
+description = "Pick your async/RTOS model (mutually exclusive)"
+pick = "at-most-one"
+
+[package.metadata.battery-pack.categories.panic]
+title = "Panic Handler"
+description = "Choose how panics are surfaced on the device (mutually exclusive)"
+pick = "at-most-one"
+
+[package.metadata.battery-pack.categories.logging]
+title = "Logging & Debugging"
+description = "Device logging and diagnostic tools"
+
+[package.metadata.battery-pack.categories.portable]
+title = "Portable Ecosystem"
+description = "Trait abstractions and utilities that work across any HAL"
+
+[package.metadata.battery-pack.categories.drivers]
+title = "Popular Drivers"
+description = "Platform-agnostic peripheral/sensor drivers via embedded-hal"
+
+[package.metadata.battery-pack.categories.networking]
+title = "Networking"
+description = "no_std networking stacks and protocols"
+
+[package.metadata.battery-pack.categories.storage]
+title = "Storage & Memory"
+description = "Flash, EEPROM, and filesystem support"
+
+[package.metadata.battery-pack.categories.display]
+title = "Display & Graphics"
+description = "Screens, LEDs, and 2D drawing"
+
+[package.metadata.battery-pack.categories.tools]
+title = "Dev Tools"
+description = "Testing, flashing, and development utilities"
+
+# ─── Feature metadata ─────────────────────────────────────────────────────────
+
+# === HAL (at-most-one) ===
+
+[package.metadata.battery-pack.features.stm32f0]
+description = "STM32F0xx family (Cortex-M0)"
+categories = ["hal"]
+
+[package.metadata.battery-pack.features.stm32f1]
+description = "STM32F1xx family (Cortex-M3, e.g. Blue Pill)"
+categories = ["hal"]
+
+[package.metadata.battery-pack.features.stm32f3]
+description = "STM32F3xx family (Cortex-M4F)"
+categories = ["hal"]
+
+[package.metadata.battery-pack.features.stm32f4]
+description = "STM32F4xx family (Cortex-M4F, e.g. F4 Discovery)"
+categories = ["hal"]
+
+[package.metadata.battery-pack.features.stm32f7]
+description = "STM32F7xx family (Cortex-M7)"
+categories = ["hal"]
+
+[package.metadata.battery-pack.features.stm32h7]
+description = "STM32H7xx family (Cortex-M7, high-performance)"
+categories = ["hal"]
+
+[package.metadata.battery-pack.features.stm32l0]
+description = "STM32L0xx family (ultra-low-power Cortex-M0+)"
+categories = ["hal"]
+
+[package.metadata.battery-pack.features.stm32l4]
+description = "STM32L4xx family (low-power Cortex-M4F)"
+categories = ["hal"]
+
+[package.metadata.battery-pack.features.nrf52832]
+description = "Nordic nRF52832 (Cortex-M4F, BLE)"
+categories = ["hal"]
+
+[package.metadata.battery-pack.features.nrf52840]
+description = "Nordic nRF52840 (Cortex-M4F, BLE + USB)"
+categories = ["hal"]
+
+[package.metadata.battery-pack.features.nrf9160]
+description = "Nordic nRF9160 (Cortex-M33, LTE-M/NB-IoT)"
+categories = ["hal"]
+
+[package.metadata.battery-pack.features.rp2040]
+description = "RP2040 (Dual Cortex-M0+, Raspberry Pi Pico)"
+categories = ["hal"]
+
+[package.metadata.battery-pack.features.esp32]
+description = "ESP32 (Xtensa, WiFi + BT, via esp-hal no_std)"
+categories = ["hal"]
+
+[package.metadata.battery-pack.features.esp32c3]
+description = "ESP32-C3 (RISC-V, WiFi + BLE, via esp-hal no_std)"
+categories = ["hal"]
+
+[package.metadata.battery-pack.features.esp32s3]
+description = "ESP32-S3 (Xtensa, WiFi + BLE, via esp-hal no_std)"
+categories = ["hal"]
+
+[package.metadata.battery-pack.features.atsamd]
+description = "Microchip SAMD (Cortex-M0+/M4, Adafruit boards)"
+categories = ["hal"]
+
+# === Concurrency (at-most-one) ===
+
+[package.metadata.battery-pack.features.embassy]
+description = "Embassy — async/await runtime for embedded"
+categories = ["concurrency"]
+
+[package.metadata.battery-pack.features.rtic]
+description = "RTIC — interrupt-driven real-time concurrency"
+categories = ["concurrency"]
+
+# === Panic handler (at-most-one) ===
+
+[package.metadata.battery-pack.features.panic-halt]
+description = "Halt the processor on panic"
+categories = ["panic"]
+
+[package.metadata.battery-pack.features.panic-probe]
+description = "Log panic via probe-rs debugger"
+categories = ["panic"]
+
+[package.metadata.battery-pack.features.panic-rtt]
+description = "Log panic via RTT (SEGGER/probe-rs)"
+categories = ["panic"]
+
+[package.metadata.battery-pack.features.panic-semihosting]
+description = "Print panic via semihosting (Cortex-M only)"
+categories = ["panic"]
+
+# === Logging & Debugging ===
+
+[package.metadata.battery-pack.features.defmt-logging]
+description = "defmt — efficient deferred formatting for constrained devices"
+categories = ["logging"]
+
+[package.metadata.battery-pack.features.rtt-target]
+description = "RTT (Real-Time Transfer) output channel"
+categories = ["logging"]
+
+# === Portable Ecosystem ===
+
+[package.metadata.battery-pack.dependencies.embedded-hal]
+description = "Trait abstractions for embedded I/O (v1.0)"
+categories = ["portable"]
+
+[package.metadata.battery-pack.dependencies.embedded-io]
+description = "Read/Write traits for embedded byte streams"
+categories = ["portable"]
+
+[package.metadata.battery-pack.dependencies.embedded-storage]
+description = "Traits for NOR flash and other storage"
+categories = ["portable"]
+
+[package.metadata.battery-pack.features.heapless-alloc]
+description = "Static-friendly Vec, String, and data structures (no heap)"
+categories = ["portable"]
+
+[package.metadata.battery-pack.features.critical-section-impl]
+description = "critical-section — cross-platform mutex primitive"
+categories = ["portable"]
+
+# === Popular Drivers ===
+
+[package.metadata.battery-pack.features.display-ssd1306]
+description = "SSD1306 OLED display (I2C/SPI, 128x64)"
+categories = ["drivers", "display"]
+
+[package.metadata.battery-pack.features.display-st7789]
+description = "ST7789 color LCD (SPI, used in PineTime)"
+categories = ["drivers", "display"]
+
+[package.metadata.battery-pack.features.sensor-bme280]
+description = "BME280 temperature/humidity/pressure (I2C/SPI)"
+categories = ["drivers"]
+
+[package.metadata.battery-pack.features.sensor-lis3dh]
+description = "LIS3DH 3-axis accelerometer (I2C/SPI)"
+categories = ["drivers"]
+
+[package.metadata.battery-pack.features.usb-device]
+description = "USB device stack (CDC-ACM serial, HID)"
+categories = ["drivers"]
+
+# === Networking ===
+
+[package.metadata.battery-pack.features.smoltcp-stack]
+description = "smoltcp — no_std TCP/IP stack"
+categories = ["networking"]
+
+# === Storage & Memory ===
+
+[package.metadata.battery-pack.features.embedded-sdmmc]
+description = "SD/MMC card with FAT16/FAT32 filesystem"
+categories = ["storage"]
+
+[package.metadata.battery-pack.features.spi-flash]
+description = "Generic SPI NOR flash driver"
+categories = ["storage"]
+
+# === Display & Graphics ===
+
+[package.metadata.battery-pack.features.embedded-graphics]
+description = "2D drawing library for any embedded display"
+categories = ["display"]
+
+# === Dev Tools ===
+
+[package.metadata.battery-pack.features.embedded-test]
+description = "On-device test harness (unit + integration tests)"
+categories = ["tools"]
+
+[package.metadata.battery-pack.features.embedded-hal-mock]
+description = "Mock embedded-hal traits for host-side testing"
+categories = ["tools"]
+
+# ─── Dependencies ─────────────────────────────────────────────────────────────
+
+[dependencies]
+# Portable ecosystem (always available when feature-gated)
+embedded-hal = { version = "1", optional = true }
+embedded-io = { version = "0.6", optional = true }
+embedded-storage = { version = "0.3", optional = true }
+heapless = { version = "0.8", optional = true }
+critical-section = { version = "1", optional = true }
+
+# Architecture support
+cortex-m = { version = "0.7", features = ["critical-section-single-core"], optional = true }
+cortex-m-rt = { version = "0.7", optional = true }
+
+# STM32 HALs
+stm32f0xx-hal = { version = "0.18", optional = true }
+stm32f1xx-hal = { version = "0.10", optional = true }
+stm32f3xx-hal = { version = "0.10", optional = true }
+stm32f4xx-hal = { version = "0.22", optional = true }
+stm32f7xx-hal = { version = "0.8", optional = true }
+stm32h7xx-hal = { version = "0.16", optional = true }
+stm32l0xx-hal = { version = "0.10", optional = true }
+stm32l4xx-hal = { version = "0.7", optional = true }
+
+# Nordic HALs
+nrf52832-hal = { version = "0.19", optional = true }
+nrf52840-hal = { version = "0.19", optional = true }
+nrf9160-hal = { version = "0.18", optional = true }
+
+# Raspberry Pi Silicon
+rp2040-hal = { version = "0.10", optional = true }
+
+# Espressif
+esp-hal = { version = "1", optional = true }
+
+# Microchip SAMD
+atsamd-hal = { version = "0.23", optional = true }
+
+# Concurrency frameworks
+embassy-executor = { version = "0.10", optional = true }
+embassy-time = { version = "0.5", optional = true }
+embassy-sync = { version = "0.8", optional = true }
+rtic = { version = "2", optional = true }
+
+# Panic handlers
+panic-halt = { version = "1", optional = true }
+panic-probe = { version = "1", features = ["print-defmt"], optional = true }
+panic-rtt-target = { version = "0.2", optional = true }
+cortex-m-semihosting = { version = "0.5", optional = true }
+
+# Logging & debugging
+defmt = { version = "1", optional = true }
+defmt-rtt = { version = "1", optional = true }
+rtt-target = { version = "0.6", optional = true }
+
+# Drivers — displays
+ssd1306 = { version = "0.10", optional = true }
+st7789 = { version = "0.7", optional = true }
+embedded-graphics = { version = "0.8", optional = true }
+
+# Drivers — sensors
+bme280 = { version = "0.5", optional = true }
+lis3dh = { version = "0.4", optional = true }
+
+# Drivers — radio
+# NOTE: radio-sx127x omitted due to stale transitive deps that conflict with esp-hal.
+# Users should add LoRa drivers directly to their project when needed.
+
+# Drivers — USB
+usb-device = { version = "0.3", optional = true }
+usbd-serial = { version = "0.2", optional = true }
+
+# Networking
+smoltcp = { version = "0.13", default-features = false, features = ["medium-ethernet", "proto-ipv4", "socket-tcp"], optional = true }
+
+# Storage
+embedded-sdmmc = { version = "0.9", optional = true }
+spi-memory = { version = "0.2", optional = true }
+
+# Dev tools
+embedded-test = { version = "0.7", optional = true }
+embedded-hal-mock = { version = "0.11", optional = true }
+
+[build-dependencies]
+battery-pack = { workspace = true, features = ["build"] }
+
+[dev-dependencies]
+battery-pack = { workspace = true, features = ["cli"] }
+bphelper-manifest = { path = "../../src/battery-pack/bphelper-manifest" }
+snapbox = "1"
+
+# ─── Features ─────────────────────────────────────────────────────────────────
+
+[features]
+default = ["embedded-hal", "critical-section-impl"]
+
+# HAL features (exclusive within category)
+stm32f0 = ["stm32f0xx-hal", "embedded-hal", "dep:cortex-m", "cortex-m-rt", "critical-section-impl"]
+stm32f1 = ["stm32f1xx-hal", "embedded-hal", "dep:cortex-m", "cortex-m-rt", "critical-section-impl"]
+stm32f3 = ["stm32f3xx-hal", "embedded-hal", "dep:cortex-m", "cortex-m-rt", "critical-section-impl"]
+stm32f4 = ["stm32f4xx-hal", "embedded-hal", "dep:cortex-m", "cortex-m-rt", "critical-section-impl"]
+stm32f7 = ["stm32f7xx-hal", "embedded-hal", "dep:cortex-m", "cortex-m-rt", "critical-section-impl"]
+stm32h7 = ["stm32h7xx-hal", "embedded-hal", "dep:cortex-m", "cortex-m-rt", "critical-section-impl"]
+stm32l0 = ["stm32l0xx-hal", "embedded-hal", "dep:cortex-m", "cortex-m-rt", "critical-section-impl"]
+stm32l4 = ["stm32l4xx-hal", "embedded-hal", "dep:cortex-m", "cortex-m-rt", "critical-section-impl"]
+nrf52832 = ["nrf52832-hal", "embedded-hal", "dep:cortex-m", "cortex-m-rt", "critical-section-impl"]
+nrf52840 = ["nrf52840-hal", "embedded-hal", "dep:cortex-m", "cortex-m-rt", "critical-section-impl"]
+nrf9160 = ["nrf9160-hal", "embedded-hal", "dep:cortex-m", "cortex-m-rt", "critical-section-impl"]
+rp2040 = ["rp2040-hal", "embedded-hal", "dep:cortex-m", "cortex-m-rt", "critical-section-impl"]
+esp32 = ["esp-hal", "embedded-hal"]
+esp32c3 = ["esp-hal", "embedded-hal"]
+esp32s3 = ["esp-hal", "embedded-hal"]
+atsamd = ["atsamd-hal", "embedded-hal", "dep:cortex-m", "cortex-m-rt", "critical-section-impl"]
+
+# Concurrency frameworks (exclusive within category)
+embassy = ["embassy-executor", "embassy-time", "embassy-sync"]
+rtic = ["dep:rtic", "cortex-m"]
+
+# Architecture support (exclusive within category)
+cortex-m = ["dep:cortex-m", "cortex-m-rt", "critical-section-impl"]
+
+# Panic handlers (exclusive within category)
+panic-halt = ["dep:panic-halt", "dep:defmt", "dep:defmt-rtt"]
+panic-probe = ["dep:panic-probe", "dep:defmt", "dep:defmt-rtt"]
+panic-rtt = ["dep:panic-rtt-target", "dep:defmt", "dep:defmt-rtt"]
+panic-semihosting = ["dep:cortex-m-semihosting"]
+
+# Logging & debugging
+defmt-logging = ["dep:defmt", "dep:defmt-rtt"]
+rtt-target = ["dep:rtt-target"]
+
+# Portable ecosystem
+heapless-alloc = ["heapless"]
+critical-section-impl = ["critical-section"]
+
+# Drivers — displays
+display-ssd1306 = ["ssd1306", "embedded-graphics"]
+display-st7789 = ["st7789", "embedded-graphics"]
+embedded-graphics = ["dep:embedded-graphics"]
+
+# Drivers — sensors
+sensor-bme280 = ["bme280"]
+sensor-lis3dh = ["lis3dh"]
+
+# Drivers — radio (radio-sx127x removed due to dep conflicts; feature kept as placeholder)
+# radio-lora = []
+
+# USB
+usb-device = ["dep:usb-device", "usbd-serial"]
+
+# Networking
+smoltcp-stack = ["smoltcp"]
+
+# Storage
+embedded-sdmmc = ["dep:embedded-sdmmc"]
+spi-flash = ["spi-memory"]
+
+# Dev tools
+embedded-test = ["dep:embedded-test"]
+embedded-hal-mock = ["dep:embedded-hal-mock"]

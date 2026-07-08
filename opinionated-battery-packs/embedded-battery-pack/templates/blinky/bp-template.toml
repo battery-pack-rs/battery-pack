@@ -1,0 +1,22 @@
+[placeholders.description]
+type = "string"
+prompt = "What does this firmware do?"
+default = "Blinks an LED on your target board."
+
+[placeholders.hal]
+type = "select"
+prompt = "Target HAL"
+options.category = "hal"
+default = "stm32f4"
+
+[placeholders.concurrency]
+type = "select"
+prompt = "Concurrency model"
+options.category = "concurrency"
+default = "embassy"
+
+[placeholders.panic_handler]
+type = "select"
+prompt = "Panic handler"
+options = ["panic-halt", "panic-probe", "panic-rtt", "panic-semihosting"]
+default = "panic-probe"
