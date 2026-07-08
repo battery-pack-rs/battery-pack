@@ -10,7 +10,7 @@ use ratatui::{
     Frame,
     layout::{Constraint, Layout},
     style::{Color, Modifier, Style},
-    text::{Line, Span},
+    text::Line,
     widgets::{Block, Borders, Paragraph},
 };
 
@@ -73,15 +73,17 @@ pub fn render_picker(
                     lines.push(Line::from(""));
                 }
                 let chevron = if *collapsed { "▶ " } else { "▼ " };
-                let hint = if *mode == SelectionMode::Radio {
-                    " (pick at most one)"
+                let hint = state.section_hint(i);
+                let is_cursor = i == current_entry_idx;
+                let style = if is_cursor {
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
                 } else {
-                    ""
+                    Style::default().add_modifier(Modifier::BOLD)
                 };
-                lines.push(Line::from(Span::styled(
-                    format!("{chevron}{title}{hint}"),
-                    Style::default().add_modifier(Modifier::BOLD),
-                )));
+                lines.push(Line::styled(format!("{chevron}{title}{hint}"), style));
             }
             Entry::Item {
                 label,

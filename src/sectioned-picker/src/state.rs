@@ -156,8 +156,10 @@ impl PickerState {
     /// Toggle the checked state of the item under the cursor.
     ///
     /// In a radio section, checking an item first unchecks every other item in
-    /// the section; toggling an already-checked item just unchecks it (so an
-    /// empty selection is reachable). A no-op when the cursor is on a header.
+    /// the section; toggling an already-checked item unchecks it when it's the
+    /// only selection (so empty is reachable), but *keeps* it checked when
+    /// multiple items were selected (resolving a pre-existing conflict by
+    /// confirming the toggled choice). A no-op when the cursor is on a header.
     pub fn toggle(&mut self) {
         let idx = self.current_entry_idx();
         if !matches!(self.entries[idx], Entry::Item { .. }) {
@@ -167,12 +169,23 @@ impl PickerState {
         if self.current_section_mode() == SelectionMode::Radio {
             let was_checked = matches!(self.entries[idx], Entry::Item { checked: true, .. });
             let (header_idx, section_end) = self.section_bounds(idx);
+
+            // Count how many siblings are currently checked (before clearing).
+            let checked_count = (header_idx + 1..section_end)
+                .filter(|&i| matches!(self.entries[i], Entry::Item { checked: true, .. }))
+                .count();
+
+            // Clear all siblings.
             for i in header_idx + 1..section_end {
                 if let Entry::Item { checked, .. } = &mut self.entries[i] {
                     *checked = false;
                 }
             }
-            if !was_checked && let Entry::Item { checked, .. } = &mut self.entries[idx] {
+
+            // Re-check the toggled item unless it was the sole selection (allowing
+            // deselect-to-zero in the normal single-select case).
+            let keep = !was_checked || checked_count > 1;
+            if keep && let Entry::Item { checked, .. } = &mut self.entries[idx] {
                 *checked = true;
             }
             return;
@@ -292,6 +305,36 @@ impl PickerState {
         (header_idx + 1..section_end)
             .filter(|&i| matches!(self.entries[i], Entry::Item { checked: true, .. }))
             .count()
+    }
+
+    /// Build the parenthetical hint for a section header based on its mode and
+    /// current selection state.
+    pub(crate) fn section_hint(&self, header_idx: usize) -> String {
+        let Entry::Header { mode, .. } = &self.entries[header_idx] else {
+            return String::new();
+        };
+        let (_, section_end) = self.section_bounds(header_idx);
+
+        // Collect checked item labels.
+        let checked: Vec<&str> = (header_idx + 1..section_end)
+            .filter_map(|i| match &self.entries[i] {
+                Entry::Item {
+                    label,
+                    checked: true,
+                    ..
+                } => Some(label.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        match (mode, checked.len()) {
+            (SelectionMode::Radio, 0) => " (pick at most one)".to_string(),
+            (SelectionMode::Radio, 1) => format!(" ({} selected)", checked[0]),
+            (SelectionMode::Radio, n) => format!(" ({n} items selected)"),
+            (SelectionMode::Checkbox, 0) => " (pick any number)".to_string(),
+            (SelectionMode::Checkbox, 1) => format!(" ({} selected)", checked[0]),
+            (SelectionMode::Checkbox, n) => format!(" ({n} items selected)"),
+        }
     }
 
     /// The title of the first radio section with more than one item checked, if
