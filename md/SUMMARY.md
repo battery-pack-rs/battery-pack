@@ -21,6 +21,12 @@
 - [Manifest Manipulation](./spec/manifest.md)
 - [Documentation Generation](./spec/docgen.md)
 
+# RFDs
+
+- [RFDs](./rfds/README.md)
+  - [Categories and Exclusive Picks](./rfds/categories-and-alternatives/README.md)
+    - [Requirements](./rfds/categories-and-alternatives/requirements.md)
+
 # Agent guide
 
 - [Ratatui testing guide](./ratatui-testing-guide.md)
