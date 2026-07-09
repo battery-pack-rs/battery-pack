@@ -1,0 +1,5 @@
+version = 1
+
+[[battery-pack]]
+name = "embedded"
+features = ["{{ hal }}", "{{ concurrency }}", "{{ panic_handler }}", "defmt-logging", "critical-section-impl"]
