@@ -69,6 +69,7 @@ impl PreviewBuilder {
             template_path: self.template_path,
             project_name: self.project_name,
             defines: self.defines,
+            active_features: std::collections::BTreeSet::new(),
             interactive_override: Some(false),
         };
         let files = template_engine::preview(opts)?;

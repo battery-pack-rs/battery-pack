@@ -4,8 +4,9 @@
 //! text content. This catches regressions in layout, styling, and scroll behavior
 //! that pure state tests cannot detect.
 
+use crate::SectionItem;
 use crate::render::render_picker;
-use crate::state::{PickerState, section};
+use crate::state::{PickerState, radio_section, section};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use snapbox::{assert_data_eq, str};
@@ -106,7 +107,7 @@ fn footer_includes_custom_action_labels() {
         },
     ];
 
-    let backend = TestBackend::new(80, 8);
+    let backend = TestBackend::new(160, 8);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
         .draw(|frame| render_picker(frame, "test", &mut state, &actions))
@@ -136,7 +137,7 @@ fn snapshot_single_section() {
         output,
         str![[r#"
 "────────────────────────────────────────────────────────────"
-" Dependencies:                                              "
+" ▼ Dependencies: (2 items selected)                         "
 " > [x] tokio (1.38)                                         "
 "   [x] serde (1.0)                                          "
 "   [ ] anyhow (1)                                           "
@@ -144,7 +145,206 @@ fn snapshot_single_section() {
 "                                                            "
 "                                                            "
 "                                                            "
-" cli-pack v2.0  ↑↓/jk Navigate | Space Toggle | a Toggle sec"
+" cli-pack v2.0  ↑↓/jk Navigate | Space Toggle | ←/→ Collapse"
+
+"#]]
+    );
+}
+
+// ============================================================================
+// Radio, collapse, descriptions, and warning banner
+// ============================================================================
+
+#[test]
+fn render_radio_items_use_bullet_symbols() {
+    let mut state = PickerState::new(vec![radio_section(
+        "HAL:",
+        &[("stm32f4", true), ("nrf52840", false)],
+    )]);
+    let output = render_to_string(60, 10, "embedded v0.1", &mut state);
+    assert_data_eq!(
+        output,
+        str![[r#"
+"────────────────────────────────────────────────────────────"
+" ▼ HAL: (stm32f4 selected)                                  "
+" > ● stm32f4                                                "
+"   ○ nrf52840                                               "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+" embedded v0.1  ↑↓/jk Navigate | Space Toggle | ←/→ Collapse"
+
+"#]]
+    );
+}
+
+#[test]
+fn render_checkbox_items_use_squares() {
+    let mut state = PickerState::new(vec![section("Utils:", &[("a", true), ("b", false)])]);
+    let output = render_to_string(60, 10, "pack v1", &mut state);
+    assert_data_eq!(
+        output,
+        str![[r#"
+"────────────────────────────────────────────────────────────"
+" ▼ Utils: (a selected)                                      "
+" > [x] a                                                    "
+"   [ ] b                                                    "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+" pack v1  ↑↓/jk Navigate | Space Toggle | ←/→ Collapse/expan"
+
+"#]]
+    );
+}
+
+#[test]
+fn render_collapsed_section_shows_chevron() {
+    let mut state = PickerState::new(vec![section("Utils:", &[("a", false)]).collapsed()]);
+    let output = render_to_string(60, 10, "pack v1", &mut state);
+    assert_data_eq!(
+        output,
+        str![[r#"
+"────────────────────────────────────────────────────────────"
+" ▶ Utils: (pick any number)                                 "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+" pack v1  ↑↓/jk Navigate | Space Toggle | ←/→ Collapse/expan"
+
+"#]]
+    );
+}
+
+#[test]
+fn render_expanded_section_shows_down_chevron() {
+    let mut state = PickerState::new(vec![section("Utils:", &[("a", false)])]);
+    let output = render_to_string(60, 10, "pack v1", &mut state);
+    assert_data_eq!(
+        output,
+        str![[r#"
+"────────────────────────────────────────────────────────────"
+" ▼ Utils: (pick any number)                                 "
+" > [ ] a                                                    "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+" pack v1  ↑↓/jk Navigate | Space Toggle | ←/→ Collapse/expan"
+
+"#]]
+    );
+}
+
+#[test]
+fn render_radio_section_header_shows_constraint() {
+    let mut state = PickerState::new(vec![radio_section("HAL:", &[("a", false)])]);
+    let output = render_to_string(70, 10, "embedded v0.1", &mut state);
+    assert_data_eq!(
+        output,
+        str![[r#"
+"──────────────────────────────────────────────────────────────────────"
+" ▼ HAL: (pick at most one)                                            "
+" > ○ a                                                                "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+" embedded v0.1  ↑↓/jk Navigate | Space Toggle | ←/→ Collapse/expand | "
+
+"#]]
+    );
+}
+
+#[test]
+fn render_radio_multiple_selected_shows_all_filled() {
+    let mut state = PickerState::new(vec![radio_section(
+        "Allocator:",
+        &[("jemalloc", true), ("mimalloc", true)],
+    )]);
+    let output = render_to_string(60, 12, "svc v1", &mut state);
+    assert_data_eq!(
+        output,
+        str![[r#"
+" ⚠ Multiple selections in "Allocator:" — pick one to resolve"
+"────────────────────────────────────────────────────────────"
+" ▼ Allocator: (2 items selected)                            "
+" > ● jemalloc                                               "
+"   ● mimalloc                                               "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+"                                                            "
+" svc v1  ↑↓/jk Navigate | Space Toggle | ←/→ Collapse/expand"
+
+"#]]
+    );
+}
+
+#[test]
+fn render_warning_banner_for_pre_existing_conflict() {
+    let mut state = PickerState::new(vec![radio_section(
+        "Allocator:",
+        &[("jemalloc", true), ("mimalloc", true)],
+    )]);
+    let output = render_to_string(70, 12, "svc v1", &mut state);
+    assert_data_eq!(
+        output,
+        str![[r#"
+" ⚠ Multiple selections in "Allocator:" — pick one to resolve          "
+"──────────────────────────────────────────────────────────────────────"
+" ▼ Allocator: (2 items selected)                                      "
+" > ● jemalloc                                                         "
+"   ● mimalloc                                                         "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+" svc v1  ↑↓/jk Navigate | Space Toggle | ←/→ Collapse/expand | a Toggl"
+
+"#]]
+    );
+}
+
+#[test]
+fn render_item_with_description() {
+    let mut state = PickerState::new(vec![
+        crate::Section::new(
+            "HAL:",
+            vec![SectionItem::new("stm32f4", false).with_description("STM32F4xx family")],
+        )
+        .radio(),
+    ]);
+    let output = render_to_string(70, 10, "embedded v0.1", &mut state);
+    assert_data_eq!(
+        output,
+        str![[r#"
+"──────────────────────────────────────────────────────────────────────"
+" ▼ HAL: (pick at most one)                                            "
+" > ○ stm32f4    STM32F4xx family                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+"                                                                      "
+" embedded v0.1  ↑↓/jk Navigate | Space Toggle | ←/→ Collapse/expand | "
 
 "#]]
     );
@@ -165,20 +365,123 @@ fn snapshot_multiple_sections() {
         output,
         str![[r#"
 "────────────────────────────────────────────────────────────"
-" Features:                                                  "
+" ▼ Features: (observability selected)                       "
 " > [x] observability                                        "
 "   [ ] resilience                                           "
 "                                                            "
-" Dependencies:                                              "
+" ▼ Dependencies: (tokio selected)                           "
 "   [x] tokio                                                "
 "                                                            "
-" Actions:                                                   "
+" ▼ Actions: (pick any number)                               "
 "   [ ] Add `ci` template                                    "
 "                                                            "
 "                                                            "
 "                                                            "
-" fancy v1.0  ↑↓/jk Navigate | Space Toggle | a Toggle sectio"
+" fancy v1.0  ↑↓/jk Navigate | Space Toggle | ←/→ Collapse/ex"
 
 "#]]
+    );
+}
+
+// ============================================================================
+// Header hint text (selection summary)
+// ============================================================================
+
+#[test]
+fn radio_header_shows_pick_at_most_one_when_nothing_selected() {
+    let mut state = PickerState::new(vec![radio_section(
+        "HAL:",
+        &[("esp32", false), ("nrf52840", false)],
+    )]);
+    let output = render_to_string(60, 8, "test", &mut state);
+    assert!(
+        output.contains("HAL: (pick at most one)"),
+        "expected 'pick at most one' hint, got:\n{output}"
+    );
+}
+
+#[test]
+fn radio_header_shows_selected_item_name() {
+    let mut state = PickerState::new(vec![radio_section(
+        "HAL:",
+        &[("esp32", false), ("nrf52840", true)],
+    )]);
+    let output = render_to_string(60, 8, "test", &mut state);
+    assert!(
+        output.contains("HAL: (nrf52840 selected)"),
+        "expected selected item name in header, got:\n{output}"
+    );
+}
+
+#[test]
+fn checkbox_header_shows_pick_any_when_nothing_selected() {
+    let mut state = PickerState::new(vec![section(
+        "Drivers:",
+        &[("ssd1306", false), ("bme280", false)],
+    )]);
+    let output = render_to_string(60, 8, "test", &mut state);
+    assert!(
+        output.contains("Drivers: (pick any number)"),
+        "expected 'pick any number' hint, got:\n{output}"
+    );
+}
+
+#[test]
+fn checkbox_header_shows_single_selected_item_name() {
+    let mut state = PickerState::new(vec![section(
+        "Drivers:",
+        &[("ssd1306", true), ("bme280", false)],
+    )]);
+    let output = render_to_string(60, 8, "test", &mut state);
+    assert!(
+        output.contains("Drivers: (ssd1306 selected)"),
+        "expected selected item name in header, got:\n{output}"
+    );
+}
+
+#[test]
+fn checkbox_header_shows_count_when_multiple_selected() {
+    let mut state = PickerState::new(vec![section(
+        "Drivers:",
+        &[("ssd1306", true), ("bme280", true), ("lis3dh", false)],
+    )]);
+    let output = render_to_string(60, 8, "test", &mut state);
+    assert!(
+        output.contains("Drivers: (2 items selected)"),
+        "expected count in header, got:\n{output}"
+    );
+}
+
+// ============================================================================
+// Collapsed header highlight
+// ============================================================================
+
+#[test]
+fn collapsed_header_is_highlighted_when_focused() {
+    // After collapsing, the cursor lands on the section header and the render
+    // must apply the cursor highlight (Cyan background) to that header line.
+    use ratatui::style::Color;
+
+    let mut state = PickerState::new(vec![
+        section("Utils:", &[("a", false), ("b", false)]),
+        section("Other:", &[("c", false)]),
+    ]);
+    // Cursor starts on first item in "Utils:". Collapse moves it to the header.
+    state.collapse_current();
+
+    let backend = TestBackend::new(60, 10);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|frame| render_picker(frame, "test", &mut state, &[]))
+        .unwrap();
+
+    // Row 1 is the header line (row 0 is the top border). The collapsed header
+    // should have the Cyan cursor highlight background.
+    let buf = terminal.backend().buffer();
+    let header_cell = &buf[(2, 1)]; // column 2 = start of "▶" after the padding
+    assert_eq!(
+        header_cell.bg,
+        Color::Cyan,
+        "collapsed header should be highlighted with Cyan background when focused"
     );
 }

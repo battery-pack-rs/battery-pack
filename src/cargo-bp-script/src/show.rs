@@ -58,6 +58,10 @@ pub struct ShowReport {
     /// Named features and the crates they include.
     pub features: Vec<FeatureInfo>,
 
+    /// Categories declared by this battery pack, with their members.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub categories: Vec<CategoryInfo>,
+
     /// Available templates.
     pub templates: Vec<TemplateInfo>,
 
@@ -97,6 +101,37 @@ pub struct FeatureInfo {
 
     /// Crates activated by this feature.
     pub crates: Vec<String>,
+}
+
+/// How many members of a category may be selected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum PickModeInfo {
+    /// Any number of members may be selected.
+    #[default]
+    Any,
+    /// At most one member may be selected.
+    AtMostOne,
+}
+
+/// A declared category and its member items.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct CategoryInfo {
+    /// Category key (e.g. `"hal"`).
+    pub name: String,
+
+    /// Display title (falls back to the key when unset).
+    pub title: Option<String>,
+
+    /// Explanatory description.
+    pub description: Option<String>,
+
+    /// Selection constraint.
+    pub pick: PickModeInfo,
+
+    /// Member item names (features, dependencies, and templates).
+    pub members: Vec<String>,
 }
 
 /// Information about an available template.
@@ -143,6 +178,7 @@ impl ShowReport {
             crates: Vec::new(),
             extends: Vec::new(),
             features: Vec::new(),
+            categories: Vec::new(),
             templates: Vec::new(),
             examples: Vec::new(),
             installed_crates: Vec::new(),
@@ -205,6 +241,18 @@ impl ShowReport {
     /// Extend with multiple features.
     pub fn with_features(mut self, features: impl IntoIterator<Item = FeatureInfo>) -> Self {
         self.features.extend(features);
+        self
+    }
+
+    /// Append a single category.
+    pub fn with_category(mut self, category: CategoryInfo) -> Self {
+        self.categories.push(category);
+        self
+    }
+
+    /// Extend with multiple categories.
+    pub fn with_categories(mut self, categories: impl IntoIterator<Item = CategoryInfo>) -> Self {
+        self.categories.extend(categories);
         self
     }
 
@@ -293,6 +341,47 @@ impl FeatureInfo {
         S: Into<String>,
     {
         self.crates.extend(crates.into_iter().map(Into::into));
+        self
+    }
+}
+
+impl CategoryInfo {
+    /// Build a [`CategoryInfo`] from its key with the default (`Any`) pick mode.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            title: None,
+            description: None,
+            pick: PickModeInfo::Any,
+            members: Vec::new(),
+        }
+    }
+
+    /// Set the display title.
+    pub fn with_title(mut self, title: impl Into<String>) -> Self {
+        self.title = Some(title.into());
+        self
+    }
+
+    /// Set the description.
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// Set the pick mode.
+    pub fn with_pick(mut self, pick: PickModeInfo) -> Self {
+        self.pick = pick;
+        self
+    }
+
+    /// Extend with multiple member names.
+    pub fn with_members<I, S>(mut self, members: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.members.extend(members.into_iter().map(Into::into));
         self
     }
 }

@@ -3,6 +3,31 @@ use snapbox::{ToDebug, assert_data_eq, str};
 
 use super::*;
 
+/// Test wrapper: derive `resolved_options` from each placeholder's literal
+/// options, then run the real resolver. Category-linked options are resolved
+/// in `prepare_render`, so these unit tests only exercise literal lists.
+fn test_resolve(
+    defs: &BTreeMap<String, PlaceholderDef>,
+    defines: &BTreeMap<String, String>,
+    variables: &mut BTreeMap<String, String>,
+    interactive_override: Option<bool>,
+) -> Result<()> {
+    let resolved: BTreeMap<String, ResolvedOptions> = defs
+        .iter()
+        .filter_map(|(name, def)| match &def.options {
+            Some(OptionsSource::Literal(list)) => Some((
+                name.clone(),
+                ResolvedOptions {
+                    options: list.clone(),
+                    prefill: None,
+                },
+            )),
+            _ => None,
+        })
+        .collect();
+    resolve_placeholders(defs, &resolved, defines, variables, interactive_override)
+}
+
 // -- Config parsing --
 // [verify format.templates.engine]
 
@@ -53,7 +78,7 @@ PlaceholderDef {
     prompt: None,
     default: None,
     placeholder_type: String,
-    options: [],
+    options: None,
 }
 
 "#]]
@@ -104,14 +129,14 @@ fn resolve_uses_define_over_default() {
             prompt: None,
             default: Some("fallback".to_string()),
             placeholder_type: PlaceholderType::String,
-            options: vec![],
+            options: None,
         },
     );
     let mut defines = BTreeMap::new();
     defines.insert("description".to_string(), "override".to_string());
     let mut vars = BTreeMap::new();
 
-    resolve_placeholders(&defs, &defines, &mut vars, Some(false)).unwrap();
+    test_resolve(&defs, &defines, &mut vars, Some(false)).unwrap();
     assert_eq!(vars["description"], "override");
 }
 
@@ -124,14 +149,14 @@ fn resolve_uses_default_non_interactive() {
             prompt: None,
             default: Some("fallback".to_string()),
             placeholder_type: PlaceholderType::String,
-            options: vec![],
+            options: None,
         },
     );
     let defines = BTreeMap::new();
     let mut vars = BTreeMap::new();
 
     // In test/CI, stdout is not a terminal, so non-interactive path is taken
-    resolve_placeholders(&defs, &defines, &mut vars, Some(false)).unwrap();
+    test_resolve(&defs, &defines, &mut vars, Some(false)).unwrap();
     assert_eq!(vars["description"], "fallback");
 }
 
@@ -144,13 +169,13 @@ fn resolve_no_default_non_interactive_errors() {
             prompt: Some("Describe it".to_string()),
             default: None,
             placeholder_type: PlaceholderType::String,
-            options: vec![],
+            options: None,
         },
     );
     let defines = BTreeMap::new();
     let mut vars = BTreeMap::new();
 
-    let err = resolve_placeholders(&defs, &defines, &mut vars, Some(false)).unwrap_err();
+    let err = test_resolve(&defs, &defines, &mut vars, Some(false)).unwrap_err();
     assert_data_eq!(
         err.to_string(),
         str!["placeholder 'description' has no default and no value provided"]
@@ -166,11 +191,10 @@ fn resolve_rejects_kebab_case_name() {
             prompt: None,
             default: Some("val".to_string()),
             placeholder_type: PlaceholderType::String,
-            options: vec![],
+            options: None,
         },
     );
-    let err = resolve_placeholders(&defs, &BTreeMap::new(), &mut BTreeMap::new(), Some(false))
-        .unwrap_err();
+    let err = test_resolve(&defs, &BTreeMap::new(), &mut BTreeMap::new(), Some(false)).unwrap_err();
     assert_data_eq!(
         err.to_string(),
         str!["placeholder 'my-thing' contains '-'; use snake_case (MiniJinja treats '-' as minus)"]
@@ -258,7 +282,7 @@ fn parse_config_select_placeholder() {
     let config: BpTemplateConfig = toml::from_str(toml).unwrap();
     let p = &config.placeholders["platform"];
     assert_eq!(p.placeholder_type, PlaceholderType::Select);
-    assert_eq!(p.options, vec!["github", "gitlab"]);
+    assert!(matches!(&p.options, Some(OptionsSource::Literal(v)) if v == &["github", "gitlab"]));
     assert_eq!(p.default.as_deref(), Some("github"));
 }
 
@@ -293,11 +317,11 @@ fn resolve_bool_true_non_interactive() {
             prompt: None,
             default: Some("true".to_string()),
             placeholder_type: PlaceholderType::Bool,
-            options: vec![],
+            options: None,
         },
     );
     let mut vars = BTreeMap::new();
-    resolve_placeholders(&defs, &BTreeMap::new(), &mut vars, Some(false)).unwrap();
+    test_resolve(&defs, &BTreeMap::new(), &mut vars, Some(false)).unwrap();
     assert_eq!(vars["flag"], "true");
 }
 
@@ -310,11 +334,11 @@ fn resolve_bool_false_non_interactive() {
             prompt: None,
             default: Some("false".to_string()),
             placeholder_type: PlaceholderType::Bool,
-            options: vec![],
+            options: None,
         },
     );
     let mut vars = BTreeMap::new();
-    resolve_placeholders(&defs, &BTreeMap::new(), &mut vars, Some(false)).unwrap();
+    test_resolve(&defs, &BTreeMap::new(), &mut vars, Some(false)).unwrap();
     assert_eq!(vars["flag"], "false");
 }
 
@@ -327,11 +351,11 @@ fn resolve_bool_no_default_is_false() {
             prompt: None,
             default: None,
             placeholder_type: PlaceholderType::Bool,
-            options: vec![],
+            options: None,
         },
     );
     let mut vars = BTreeMap::new();
-    resolve_placeholders(&defs, &BTreeMap::new(), &mut vars, Some(false)).unwrap();
+    test_resolve(&defs, &BTreeMap::new(), &mut vars, Some(false)).unwrap();
     assert_eq!(vars["flag"], "false");
 }
 
@@ -344,13 +368,13 @@ fn resolve_bool_define_override() {
             prompt: None,
             default: Some("false".to_string()),
             placeholder_type: PlaceholderType::Bool,
-            options: vec![],
+            options: None,
         },
     );
     let mut defines = BTreeMap::new();
     defines.insert("flag".to_string(), "true".to_string());
     let mut vars = BTreeMap::new();
-    resolve_placeholders(&defs, &defines, &mut vars, Some(false)).unwrap();
+    test_resolve(&defs, &defines, &mut vars, Some(false)).unwrap();
     assert_eq!(vars["flag"], "true");
 }
 
@@ -365,11 +389,14 @@ fn resolve_select_non_interactive() {
             prompt: None,
             default: Some("github".to_string()),
             placeholder_type: PlaceholderType::Select,
-            options: vec!["github".to_string(), "gitlab".to_string()],
+            options: Some(OptionsSource::Literal(vec![
+                "github".to_string(),
+                "gitlab".to_string(),
+            ])),
         },
     );
     let mut vars = BTreeMap::new();
-    resolve_placeholders(&defs, &BTreeMap::new(), &mut vars, Some(false)).unwrap();
+    test_resolve(&defs, &BTreeMap::new(), &mut vars, Some(false)).unwrap();
     assert_eq!(vars["platform"], "github");
 }
 
@@ -382,11 +409,13 @@ fn resolve_select_invalid_default_errors() {
             prompt: None,
             default: Some("bitbucket".to_string()),
             placeholder_type: PlaceholderType::Select,
-            options: vec!["github".to_string(), "gitlab".to_string()],
+            options: Some(OptionsSource::Literal(vec![
+                "github".to_string(),
+                "gitlab".to_string(),
+            ])),
         },
     );
-    let err = resolve_placeholders(&defs, &BTreeMap::new(), &mut BTreeMap::new(), Some(false))
-        .unwrap_err();
+    let err = test_resolve(&defs, &BTreeMap::new(), &mut BTreeMap::new(), Some(false)).unwrap_err();
     assert!(err.to_string().contains("bitbucket"), "{err}");
     assert!(err.to_string().contains("not in options"), "{err}");
 }
@@ -400,11 +429,10 @@ fn resolve_select_empty_options_errors() {
             prompt: None,
             default: Some("github".to_string()),
             placeholder_type: PlaceholderType::Select,
-            options: vec![],
+            options: None,
         },
     );
-    let err = resolve_placeholders(&defs, &BTreeMap::new(), &mut BTreeMap::new(), Some(false))
-        .unwrap_err();
+    let err = test_resolve(&defs, &BTreeMap::new(), &mut BTreeMap::new(), Some(false)).unwrap_err();
     assert!(err.to_string().contains("no options"), "{err}");
 }
 
@@ -417,13 +445,16 @@ fn resolve_select_define_override() {
             prompt: None,
             default: Some("github".to_string()),
             placeholder_type: PlaceholderType::Select,
-            options: vec!["github".to_string(), "gitlab".to_string()],
+            options: Some(OptionsSource::Literal(vec![
+                "github".to_string(),
+                "gitlab".to_string(),
+            ])),
         },
     );
     let mut defines = BTreeMap::new();
     defines.insert("platform".to_string(), "gitlab".to_string());
     let mut vars = BTreeMap::new();
-    resolve_placeholders(&defs, &defines, &mut vars, Some(false)).unwrap();
+    test_resolve(&defs, &defines, &mut vars, Some(false)).unwrap();
     assert_eq!(vars["platform"], "gitlab");
 }
 
@@ -564,6 +595,7 @@ fn preview_renders_template_in_memory() {
         template_path: "templates/default".to_string(),
         project_name: "my-project".to_string(),
         defines: BTreeMap::new(),
+        active_features: std::collections::BTreeSet::new(),
         interactive_override: None,
     };
 
@@ -617,6 +649,7 @@ fn preview_maps_underscore_cargo_toml_to_cargo_toml() {
         template_path: "templates/default".to_string(),
         project_name: "my-app".to_string(),
         defines: BTreeMap::new(),
+        active_features: std::collections::BTreeSet::new(),
         interactive_override: Some(false),
     };
 
@@ -667,6 +700,7 @@ fn preview_preserves_underscore_cargo_toml_under_templates_dir() {
         template_path: "tpl".to_string(),
         project_name: "my-app".to_string(),
         defines: BTreeMap::new(),
+        active_features: std::collections::BTreeSet::new(),
         interactive_override: Some(false),
     };
 
@@ -697,6 +731,7 @@ fn preview_resolves_bp_managed_deps() {
         template_path: "templates/default".to_string(),
         project_name: "my-project".to_string(),
         defines: BTreeMap::new(),
+        active_features: std::collections::BTreeSet::new(),
         interactive_override: None,
     };
 
@@ -762,6 +797,7 @@ fn preview_warns_on_unresolvable_bp_managed_dep() {
         template_path: "templates/default".to_string(),
         project_name: "test-project".to_string(),
         defines: BTreeMap::new(),
+        active_features: std::collections::BTreeSet::new(),
         interactive_override: Some(false),
     };
 
@@ -847,6 +883,7 @@ fn preview_normalizes_backslashes_and_applies_cargo_toml_rename_correctly() {
         template_path: "tpl".to_string(),
         project_name: "my-app".to_string(),
         defines: BTreeMap::new(),
+        active_features: std::collections::BTreeSet::new(),
         interactive_override: Some(false),
     };
 
@@ -873,5 +910,147 @@ fn preview_normalizes_backslashes_and_applies_cargo_toml_rename_correctly() {
     assert!(
         paths.contains(&"templates/inner/_Cargo.toml"),
         "_Cargo.toml under templates/ should be preserved: {paths:?}"
+    );
+}
+
+// -- Category-linked select placeholders (Phase 6) --
+
+/// The category-battery-pack fixture directory.
+fn category_fixture() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("tests/fixtures/category-battery-pack")
+}
+
+/// Build a config with one `select` placeholder linked to `category`.
+fn category_placeholder_config(category: &str) -> BpTemplateConfig {
+    let toml = format!(
+        r#"
+        [placeholders.util]
+        type = "select"
+        prompt = "Utility"
+        options.category = "{category}"
+        "#
+    );
+    toml::from_str(&toml).unwrap()
+}
+
+// [verify parse.options-category-in-template]
+#[test]
+fn parse_options_category_source() {
+    let config = category_placeholder_config("utils");
+    let p = &config.placeholders["util"];
+    assert!(matches!(
+        &p.options,
+        Some(OptionsSource::Category { category }) if category == "utils"
+    ));
+}
+
+// [verify parse.options-literal-array]
+#[test]
+fn parse_options_literal_source() {
+    let toml = r#"
+        [placeholders.util]
+        type = "select"
+        options = ["a", "b", "c"]
+        "#;
+    let config: BpTemplateConfig = toml::from_str(toml).unwrap();
+    assert!(matches!(
+        &config.placeholders["util"].options,
+        Some(OptionsSource::Literal(v)) if v == &["a", "b", "c"]
+    ));
+}
+
+// [verify template.options-category-derives-list]
+// [verify template.options-category-dep-uses-dep-name]
+#[test]
+fn options_category_derives_members() {
+    let config = category_placeholder_config("utils");
+    let opts = RenderOpts {
+        crate_root: category_fixture(),
+        template_path: "templates/blinky".to_string(),
+        project_name: "p".to_string(),
+        defines: BTreeMap::new(),
+        active_features: BTreeSet::new(),
+        interactive_override: Some(false),
+    };
+    let resolved = resolve_option_sources(&opts, &config).unwrap();
+    // `utils` contains the `logging` feature and the `heapless` dependency.
+    assert_eq!(resolved["util"].options, vec!["heapless", "logging"]);
+    assert!(resolved["util"].prefill.is_none());
+}
+
+// [verify template.options-category-prefill-from-picker]
+#[test]
+fn options_category_prefills_from_active_features() {
+    let config = category_placeholder_config("utils");
+    let opts = RenderOpts {
+        crate_root: category_fixture(),
+        template_path: "templates/blinky".to_string(),
+        project_name: "p".to_string(),
+        defines: BTreeMap::new(),
+        active_features: BTreeSet::from(["logging".to_string()]),
+        interactive_override: Some(false),
+    };
+    let resolved = resolve_option_sources(&opts, &config).unwrap();
+    assert_eq!(resolved["util"].prefill.as_deref(), Some("logging"));
+
+    // End to end: prepare_render should fill the variable without a default.
+    let vars = prepare_render(&opts, &config).unwrap();
+    assert_eq!(vars["util"], "logging");
+}
+
+// [verify template.options-category-prefill-from-picker]
+#[test]
+fn preview_applies_category_prefill_over_fallback() {
+    // preview() synthesizes a `<name>` fallback for undefaulted placeholders;
+    // that must not shadow the picker-derived prefill. Renders the real blinky
+    // template (which references `{{ util }}`) with `logging` active.
+    let opts = RenderOpts {
+        crate_root: category_fixture(),
+        template_path: "templates/blinky".to_string(),
+        project_name: "p".to_string(),
+        defines: BTreeMap::new(),
+        active_features: BTreeSet::from(["logging".to_string()]),
+        interactive_override: Some(false),
+    };
+    let files = preview(opts).unwrap();
+    let main_rs = files
+        .iter()
+        .find(|f| f.path == "src/main.rs")
+        .expect("blinky renders src/main.rs");
+    assert!(
+        main_rs.content.contains("utility: logging"),
+        "prefill should win over the <util> fallback:\n{}",
+        main_rs.content
+    );
+    assert!(
+        !main_rs.content.contains("<util>"),
+        "the synthesized fallback must not appear:\n{}",
+        main_rs.content
+    );
+}
+
+// [verify template.options-category-unknown-error]
+#[test]
+fn options_category_unknown_errors() {
+    let config = category_placeholder_config("nonexistent");
+    let opts = RenderOpts {
+        crate_root: category_fixture(),
+        template_path: "templates/blinky".to_string(),
+        project_name: "p".to_string(),
+        defines: BTreeMap::new(),
+        active_features: BTreeSet::new(),
+        interactive_override: Some(false),
+    };
+    let err = resolve_option_sources(&opts, &config).unwrap_err();
+    assert!(
+        err.to_string().contains("nonexistent"),
+        "error should name the category: {err}"
     );
 }

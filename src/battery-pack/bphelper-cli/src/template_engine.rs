@@ -8,7 +8,7 @@
 use anyhow::{Context, Result, bail};
 use bphelper_manifest::parse_battery_pack_from_path;
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
@@ -40,9 +40,21 @@ struct PlaceholderDef {
     default: Option<String>,
     #[serde(default, rename = "type")]
     placeholder_type: PlaceholderType,
-    /// Valid options for `select` type placeholders.
+    /// Options for a `select` placeholder: either a literal list
+    /// (`options = ["a", "b"]`) or a category reference
+    /// (`options.category = "allocator"`).
     #[serde(default)]
-    options: Vec<String>,
+    options: Option<OptionsSource>,
+}
+
+/// Where a `select` placeholder's options come from.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum OptionsSource {
+    /// A literal list of option strings.
+    Literal(Vec<String>),
+    /// The members of a battery pack category.
+    Category { category: String },
 }
 
 #[derive(Debug, Default, Deserialize, PartialEq)]
@@ -87,6 +99,10 @@ pub(crate) struct RenderOpts {
     pub(crate) project_name: String,
     /// Pre-set placeholder values (skip prompting for these).
     pub(crate) defines: BTreeMap<String, String>,
+    /// Feature names the user selected in the picker. A category-linked
+    /// `select` placeholder whose category contains one of these is pre-filled
+    /// without prompting.
+    pub(crate) active_features: BTreeSet<String>,
     /// Force treating the context as interactive or not, used to avoid prompting for input during tests,
     /// used to make sure we don't prompt for input during tests
     pub(crate) interactive_override: Option<bool>,
@@ -104,9 +120,19 @@ pub(crate) struct RenderedFile {
 /// Render a template and return the files in memory without writing to disk.
 pub(crate) fn preview(mut opts: RenderOpts) -> Result<Vec<RenderedFile>> {
     let (template_dir, config) = load_config(&opts)?;
+
+    // A category-linked placeholder that the picker already resolved must not
+    // be shadowed by the synthesized fallback below, so skip those here; the
+    // prefill is applied inside `resolve_placeholders`.
+    let resolved = resolve_option_sources(&opts, &config)?;
+    let has_prefill = |name: &str| resolved.get(name).is_some_and(|r| r.prefill.is_some());
+
     // For preview, fall back to "<name>" for placeholders without a default
     // so the preview always renders.
     for (name, def) in &config.placeholders {
+        if has_prefill(name) {
+            continue;
+        }
         opts.defines
             .entry(name.clone())
             .or_insert_with(|| def.default.clone().unwrap_or_else(|| format!("<{name}>")));
@@ -343,13 +369,90 @@ fn prepare_render(
         "crate_name".to_string(),
         opts.project_name.replace('-', "_"),
     );
+
+    // Resolve category-linked options into concrete lists, and pre-fill any
+    // placeholder whose category the user already chose from in the picker.
+    let resolved = resolve_option_sources(opts, config)?;
+
     resolve_placeholders(
         &config.placeholders,
+        &resolved,
         &opts.defines,
         &mut variables,
         opts.interactive_override,
     )?;
     Ok(variables)
+}
+
+/// The concrete options and any picker-derived pre-fill for one placeholder.
+#[derive(Debug)]
+struct ResolvedOptions {
+    /// The option list a `select` placeholder chooses from.
+    options: Vec<String>,
+    /// A value chosen for the user in the picker (skips the prompt).
+    prefill: Option<String>,
+}
+
+/// Resolve every placeholder's `options` into a concrete list.
+///
+/// Literal options pass through unchanged. Category options derive their list
+/// from the battery pack's category members (parsed from `crate_root`); if the
+/// user already selected a member in the picker, it becomes the pre-fill value.
+fn resolve_option_sources(
+    opts: &RenderOpts,
+    config: &BpTemplateConfig,
+) -> Result<BTreeMap<String, ResolvedOptions>> {
+    // Only parse the pack spec when a category-linked placeholder needs it.
+    let needs_spec = config
+        .placeholders
+        .values()
+        .any(|def| matches!(def.options, Some(OptionsSource::Category { .. })));
+    let spec = if needs_spec {
+        Some(
+            parse_battery_pack_from_path(&opts.crate_root.join("Cargo.toml"))
+                .context("failed to parse battery pack for category-linked placeholder")?,
+        )
+    } else {
+        None
+    };
+
+    let mut resolved = BTreeMap::new();
+    for (name, def) in &config.placeholders {
+        match &def.options {
+            Some(OptionsSource::Literal(list)) => {
+                resolved.insert(
+                    name.clone(),
+                    ResolvedOptions {
+                        options: list.clone(),
+                        prefill: None,
+                    },
+                );
+            }
+            Some(OptionsSource::Category { category }) => {
+                let spec = spec
+                    .as_ref()
+                    .expect("spec parsed when a category placeholder exists");
+                if !spec.categories.contains_key(category) {
+                    bail!("placeholder '{name}' references undefined category '{category}'");
+                }
+                let members = spec.items_in_category(category);
+                // Pre-fill from the picker: the first category member the user activated.
+                let prefill = members
+                    .iter()
+                    .find(|m| opts.active_features.contains(*m))
+                    .cloned();
+                resolved.insert(
+                    name.clone(),
+                    ResolvedOptions {
+                        options: members,
+                        prefill,
+                    },
+                );
+            }
+            None => {}
+        }
+    }
+    Ok(resolved)
 }
 
 fn load_config(opts: &RenderOpts) -> Result<(PathBuf, BpTemplateConfig)> {
@@ -370,6 +473,7 @@ fn load_config(opts: &RenderOpts) -> Result<(PathBuf, BpTemplateConfig)> {
 
 fn resolve_placeholders(
     defs: &BTreeMap<String, PlaceholderDef>,
+    resolved_options: &BTreeMap<String, ResolvedOptions>,
     defines: &BTreeMap<String, String>,
     variables: &mut BTreeMap<String, String>,
     interactive_override: Option<bool>,
@@ -379,6 +483,9 @@ fn resolve_placeholders(
     } else {
         std::io::stdout().is_terminal()
     };
+
+    // Empty option list for placeholders with no `options` (non-select types).
+    let no_options: Vec<String> = Vec::new();
 
     for (name, def) in defs {
         // MiniJinja parses `-` as the minus operator, so kebab-case names
@@ -395,6 +502,19 @@ fn resolve_placeholders(
             variables.insert(name.clone(), value.clone());
             continue;
         }
+
+        // A category-linked placeholder the user already chose in the picker is
+        // filled without prompting.
+        if let Some(prefill) = resolved_options.get(name).and_then(|r| r.prefill.as_ref()) {
+            variables.insert(name.clone(), prefill.clone());
+            continue;
+        }
+
+        // The concrete option list for a `select` placeholder.
+        let options = resolved_options
+            .get(name)
+            .map(|r| &r.options)
+            .unwrap_or(&no_options);
 
         let value = match def.placeholder_type {
             PlaceholderType::String => {
@@ -432,7 +552,7 @@ fn resolve_placeholders(
                 }
             }
             PlaceholderType::Select => {
-                if def.options.is_empty() {
+                if options.is_empty() {
                     bail!("select placeholder '{name}' has no options");
                 }
                 if interactive {
@@ -440,24 +560,24 @@ fn resolve_placeholders(
                     let default_idx = def
                         .default
                         .as_ref()
-                        .and_then(|d| def.options.iter().position(|o| o == d))
+                        .and_then(|d| options.iter().position(|o| o == d))
                         .unwrap_or(0);
                     let idx = dialoguer::Select::new()
                         .with_prompt(prompt)
-                        .items(&def.options)
+                        .items(options)
                         .default(default_idx)
                         .interact()
                         .with_context(|| format!("failed to read placeholder '{name}'"))?;
-                    def.options[idx].clone()
+                    options[idx].clone()
                 } else {
                     let val = def.default.clone().ok_or_else(|| {
                         anyhow::anyhow!("placeholder '{name}' has no default and no value provided")
                     })?;
-                    if !def.options.contains(&val) {
+                    if !options.contains(&val) {
                         bail!(
                             "placeholder '{name}' default '{}' is not in options: {:?}",
                             val,
-                            def.options
+                            options
                         );
                     }
                     val
@@ -786,6 +906,7 @@ pub(crate) fn preview_template(opts: &PreviewOpts<'_>) -> Result<(String, Vec<Re
         template_path: temp_spec.path.clone(),
         project_name: "my-project".to_string(),
         defines: opts.defines.clone(),
+        active_features: std::collections::BTreeSet::new(),
         interactive_override: Some(false),
     };
     let files = preview(opts)?;

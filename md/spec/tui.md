@@ -40,6 +40,8 @@ The user MUST be able to toggle individual crates on and off.
 Toggling a crate on adds it to the user's dependencies;
 toggling it off removes it, unless the crate is required by
 another enabled feature (see `tui.installed.features`).
+In a radio (`at-most-one`) category, toggling one item on MUST deselect
+its siblings (see `tui.picker.radio`).
 
 r[tui.installed.dep-kind]
 The user MUST be able to change a crate's dependency kind
@@ -105,6 +107,35 @@ r[tui.network.error]
 Network errors MUST be displayed to the user without crashing
 the TUI. The user MUST be able to retry or continue using
 other features.
+
+## Picker categories
+
+When a battery pack defines categories, the selection picker used by
+`cargo bp add` renders one section per category. The `pick` mode of each
+category determines how its items behave.
+
+r[tui.picker.radio]
+An `at-most-one` category MUST render its items as radio buttons
+(`●` selected, `○` unselected). Selecting an item MUST deselect the others in
+the same section. Pressing Backspace MUST clear the section's selection
+entirely. A section MAY have zero items selected.
+
+r[tui.picker.checkbox]
+An `any` category MUST render its items as checkboxes (`[x]` checked,
+`[ ]` unchecked); toggling an item is independent of the others. Pressing `a`
+on the section MUST toggle all of its items (the existing section-toggle
+behavior). For `at-most-one` sections, `a` is a no-op.
+
+r[tui.picker.collapse]
+Pressing Left on a section header MUST collapse the section, hiding its items;
+pressing Right MUST expand it. A collapsed section MUST render a `▶` chevron and
+an expanded section a `▼` chevron.
+
+r[tui.picker.confirm-validation]
+When an `at-most-one` section has more than one item selected (for example,
+because conflicting crates were previously installed by hand), pressing Enter
+MUST be rejected with an inline error, and the picker MUST NOT confirm until the
+section has at most one selection.
 
 ## Navigation
 

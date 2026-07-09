@@ -1,0 +1,62 @@
+[package]
+name = "category-battery-pack"
+version = "0.1.0"
+edition = "2024"
+description = "A test battery pack exercising categories and exclusive picks"
+repository = "https://github.com/example/category"
+keywords = ["battery-pack"]
+
+# --- Category definitions ---
+
+[package.metadata.battery-pack.categories.hal]
+title = "Hardware Abstraction Layer"
+description = "Pick the HAL for your target chip family"
+pick = "at-most-one"
+
+[package.metadata.battery-pack.categories.utils]
+title = "Portable Utilities"
+description = "Works with any HAL"
+
+# --- Feature metadata ---
+
+[package.metadata.battery-pack.features.stm32f4]
+description = "STM32F4xx family"
+categories = ["hal"]
+
+[package.metadata.battery-pack.features.nrf52840]
+description = "nRF52840 SoC"
+categories = ["hal"]
+
+[package.metadata.battery-pack.features.logging]
+description = "Structured logging support"
+categories = ["utils"]
+
+# --- Dependency metadata ---
+
+[package.metadata.battery-pack.dependencies.heapless]
+description = "Static-friendly data structures"
+categories = ["utils"]
+
+# --- Templates ---
+
+[package.metadata.battery.templates]
+blinky = { path = "templates/blinky", description = "Minimal blinky example", categories = ["hal"] }
+
+# --- Dependencies ---
+
+[dependencies]
+# HAL crates (each gated behind an exclusive `hal` feature)
+stm32f4xx-hal = { version = "0.22", optional = true }
+nrf52840-hal = { version = "0.18", optional = true }
+# Portable utilities
+heapless = { version = "0.8", optional = true }
+log = { version = "0.4", optional = true }
+
+[features]
+# Features reference distinct crate names so they stay first-class (not
+# filtered as Cargo's auto-generated `dep:`-mirror features). `default` avoids
+# hard-coding an exclusive HAL so switching HALs on re-add works cleanly.
+default = ["heapless"]
+stm32f4 = ["stm32f4xx-hal"]
+nrf52840 = ["nrf52840-hal"]
+logging = ["log"]

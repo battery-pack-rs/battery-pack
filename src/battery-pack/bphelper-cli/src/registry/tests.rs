@@ -64,6 +64,7 @@ fn list_discovers_local_battery_packs() {
         str![[r#"
 basic-battery-pack 0.1.0 -- A simple test battery pack
 broken-battery-pack 0.1.0 -- A deliberately broken battery pack for testing validation
+category-battery-pack 0.1.0 -- A test battery pack exercising categories and exclusive picks
 fancy-battery-pack 0.2.0 -- A feature-rich test battery pack
 feature-syntax-battery-pack 0.1.0 -- Exercises every Cargo feature-ref form for the oracle harness
 implicit-feature-battery-pack 0.1.0 -- Regression fixture: optional dep with only an implicit feature must be included by --all-features
@@ -108,9 +109,10 @@ fn list_short_names_are_correct() {
     let source = CrateSource::Local(fixtures_dir());
     let packs = super::fetch_battery_pack_list(&source, None).unwrap();
     let short_names: Vec<&str> = packs.iter().map(|bp| bp.short_name.as_str()).collect();
-    assert_eq!(short_names.len(), 8, "Expected 8 packs");
+    assert_eq!(short_names.len(), 9, "Expected 9 packs");
     assert!(short_names.contains(&"basic"), "Expected 'basic'");
     assert!(short_names.contains(&"broken"), "Expected 'broken'");
+    assert!(short_names.contains(&"category"), "Expected 'category'");
     assert!(short_names.contains(&"fancy"), "Expected 'fancy'");
     assert!(short_names.contains(&"managed"), "Expected 'managed'");
     assert!(
