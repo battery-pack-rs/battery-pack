@@ -1,5 +1,15 @@
 # https://embarkstudios.github.io/cargo-deny/
 
+[advisories]
+unmaintained = "workspace"
+# Temporary exceptions for upstream crates with no published fix.
+# Review again after 2026-10-01.
+ignore = [
+    "RUSTSEC-2025-0141",
+    "RUSTSEC-2025-0119",
+]
+yanked = "warn"
+
 [licenses]
 allow = [
     "MIT",
