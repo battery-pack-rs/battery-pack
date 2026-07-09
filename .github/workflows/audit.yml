@@ -17,6 +17,7 @@ permissions:
 
 jobs:
   security_audit:
+    if: github.repository == 'battery-pack-rs/battery-pack'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
