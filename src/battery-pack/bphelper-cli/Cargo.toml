@@ -28,7 +28,7 @@ urlencoding = "2"
 ratatui = "0.30"
 crossterm = "0.28"
 open = "5"
-sectioned-picker = { path = "../../sectioned-picker" }
+sectioned-picker = { path = "../../sectioned-picker", version = "0.1.0" }
 dialoguer = "0.11"
 regex = "1"
 syn = { version = "2", features = ["full"] }

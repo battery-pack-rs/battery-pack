@@ -21,6 +21,7 @@ changelog_include = [
     "cli-battery-pack",
     "error-battery-pack",
     "logging-battery-pack",
+    "sectioned-picker",
 ]
 
 [[package]]

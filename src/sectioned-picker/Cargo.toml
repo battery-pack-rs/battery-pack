@@ -2,10 +2,13 @@
 name = "sectioned-picker"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.86"
 description = "Interactive terminal multi-select picker with non-selectable section headers"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/battery-pack-rs/battery-pack"
+readme = "README.md"
 keywords = ["tui", "picker", "multi-select", "ratatui"]
+categories = ["command-line-interface"]
 
 [dependencies]
 ratatui = "0.30"
