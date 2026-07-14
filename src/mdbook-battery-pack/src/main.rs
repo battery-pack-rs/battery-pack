@@ -63,10 +63,11 @@ fn main() -> Result<()> {
     let out_dirs = resolve_out_dirs(&book, &packs, &workspace_root)?;
     eprintln!("mdbook-battery-pack: resolved {} out_dirs", out_dirs.len());
 
-    // Walk the book items and expand directives.
-    // mdbook uses "items" (not "sections") as the top-level key.
+    // Walk the book items and expand directives (requires mdbook 0.5+).
     if let Some(items) = book.get_mut("items") {
         expand_sections(items, &out_dirs, &packs)?;
+    } else {
+        bail!("no 'items' key in book JSON — mdbook 0.5+ is required");
     }
 
     // Write just the book object to stdout.
@@ -247,6 +248,19 @@ fn expand_sections(
             }
         }
         Value::Object(map) => {
+            // Log chapters that contain directives.
+            let has_directive = map
+                .get("content")
+                .and_then(|c| c.as_str())
+                .is_some_and(|c| c.contains("{{#battery-pack"));
+            if has_directive {
+                let path = map
+                    .get("path")
+                    .and_then(|p| p.as_str())
+                    .unwrap_or("<unknown>");
+                eprintln!("mdbook-battery-pack: expanding directives in {path}");
+            }
+
             if let Some(Value::String(s)) = map.get_mut("content") {
                 *s = expand_content(s, out_dirs, packs)?;
             }
