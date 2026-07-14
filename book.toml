@@ -10,4 +10,4 @@ fold.enable = true
 fold.level = 0
 
 [preprocessor.battery-pack]
-command = "cargo mdbook-battery-pack"
+command = "cargo run -q -p mdbook-battery-pack --release --"
