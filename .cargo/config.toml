@@ -1,0 +1,2 @@
+[alias]
+mdbook-battery-pack = "run -q -p mdbook-battery-pack --release --"

@@ -6,6 +6,8 @@ members = [
     "src/cargo-bp",
 	# --- scripting commons + JSON schema
     "src/cargo-bp-script",
+	# --- mdbook preprocessor
+    "src/mdbook-battery-pack",
 	# --- helper crates
     "src/battery-pack/bphelper-build",
     "src/battery-pack/bphelper-cli",

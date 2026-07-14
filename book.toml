@@ -6,3 +6,8 @@ src = "md"
 
 [output.html]
 git-repository-url = "https://github.com/battery-pack-rs/battery-pack"
+fold.enable = true
+fold.level = 0
+
+[preprocessor.battery-pack]
+command = "cargo mdbook-battery-pack"

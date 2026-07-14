@@ -607,6 +607,7 @@ dependencies = [
  "cargo_metadata",
  "handlebars",
  "serde",
+ "serde_json",
  "snapbox",
  "tempfile",
  "thiserror 2.0.18",
@@ -3637,6 +3638,16 @@ dependencies = [
  "pulldown-cmark",
  "quote",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "mdbook-battery-pack"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "toml 0.8.23",
 ]
 
 [[package]]
