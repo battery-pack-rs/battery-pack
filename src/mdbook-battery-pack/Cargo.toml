@@ -1,0 +1,17 @@
+[package]
+name = "mdbook-battery-pack"
+version = "0.1.0"
+edition = "2024"
+description = "mdbook preprocessor that inlines generated battery pack documentation"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[[bin]]
+name = "mdbook-battery-pack"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
