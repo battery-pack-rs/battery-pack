@@ -5,16 +5,19 @@
 //! used by both the TUI and text output paths.
 
 use anyhow::{Context, Result, bail};
-use bphelper_manifest::{BatteryPackSpec, discover_battery_packs, parse_battery_pack_from_path};
+use bphelper_manifest::{
+    BatteryPackSpec, CrateSpec, discover_battery_packs, parse_battery_pack_from_path,
+};
 use flate2::read::GzDecoder;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tar::Archive;
+use toml_edit::{Array, DocumentMut, InlineTable, Item, TableLike, Value};
 
 use crate::completions::get_cache_dir;
-use crate::manifest::resolve_battery_pack_manifest;
+use crate::manifest::{self, resolve_battery_pack_manifest};
 
 const CRATES_IO_API: &str = "https://crates.io/api/v1/crates";
 const CRATES_IO_CDN: &str = "https://static.crates.io/crates";
@@ -331,29 +334,15 @@ pub fn resolve_bp_managed_content(
     bp_crate_root: &Path,
     bp_state: Option<&str>,
 ) -> Result<String> {
-    let mut doc: toml_edit::DocumentMut = content.parse().context("failed to parse Cargo.toml")?;
+    let mut doc: DocumentMut = content.parse().context("failed to parse Cargo.toml")?;
 
-    // Collect all bp-managed dep names across all sections.
-    let sections = ["dependencies", "dev-dependencies", "build-dependencies"];
+    // Detect bp-managed deps and reject any with conflicting keys, before doing
+    // the expensive battery-pack discovery below.
     let mut has_managed = false;
-    for section in &sections {
-        if let Some(table) = doc.get(section).and_then(|v| v.as_table()) {
-            for (name, value) in table.iter() {
-                if is_bp_managed(value) {
-                    has_managed = true;
-                    let extra = extra_keys_on_bp_managed(value);
-                    if !extra.is_empty() {
-                        bail!(
-                            "dependency '{}' in [{}] has `bp-managed = true` with conflicting keys: {}",
-                            name,
-                            section,
-                            extra.join(", ")
-                        );
-                    }
-                }
-            }
-        }
-    }
+    for_each_dep_table(&mut doc, |label, table| {
+        has_managed |= scan_section(table, label)?;
+        Ok(())
+    })?;
 
     if !has_managed {
         return Ok(content.to_string());
@@ -383,7 +372,7 @@ pub fn resolve_bp_managed_content(
                     .filter(|(_, value)| value.is_table())
                     .map(|(name, _)| {
                         let features =
-                            crate::manifest::read_features_at(&raw, &["package", "metadata"], name);
+                            manifest::read_features_at(&raw, &["package", "metadata"], name);
                         (name.clone(), features)
                     })
                     .collect()
@@ -400,11 +389,11 @@ pub fn resolve_bp_managed_content(
 
     for (bp_name, active_features) in &active {
         // State entries use the short pack name; metadata uses the full name. Match either.
-        let spec = if let Some(s) = all_specs
+        let spec = if let Some(bspec) = all_specs
             .iter()
-            .find(|s| s.name == *bp_name || short_name(&s.name) == bp_name)
+            .find(|pack_spec| pack_spec.name == *bp_name || short_name(&pack_spec.name) == bp_name)
         {
-            s.clone()
+            bspec.clone()
         } else {
             // Not local; fetch from crates.io. State entries use the short name, so restore the
             // full `*-battery-pack` crate name for the registry lookup.
@@ -413,10 +402,11 @@ pub fn resolve_bp_managed_content(
             } else {
                 format!("{bp_name}-battery-pack")
             };
-            let (_version, s) = fetch_bp_spec_from_registry(&full_name).with_context(|| {
-                format!("battery pack '{full_name}' not found locally or on crates.io")
-            })?;
-            s
+            let (_version, bpspec) =
+                fetch_bp_spec_from_registry(&full_name).with_context(|| {
+                    format!("battery pack '{full_name}' not found locally or on crates.io")
+                })?;
+            bpspec
         };
 
         bp_versions.insert(spec.name.clone(), spec.version.clone());
@@ -433,132 +423,221 @@ pub fn resolve_bp_managed_content(
             .or_insert_with(|| spec.version.clone());
     }
 
-    // Rewrite bp-managed entries with resolved versions.
-    for section in &sections {
-        let Some(table) = doc.get_mut(section).and_then(|v| v.as_table_mut()) else {
-            continue;
-        };
-
-        let managed_names: Vec<String> = table
-            .iter()
-            .filter(|(_, v)| is_bp_managed(v))
-            .map(|(k, _)| k.to_string())
-            .collect();
-
-        for name in managed_names {
-            let version = if let Some(crate_spec) = resolved.get(&name) {
-                crate_spec.version.clone()
-            } else if let Some(bp_version) = bp_versions.get(&name) {
-                bp_version.clone()
-            } else {
-                bail!(
-                    "dependency '{}' in [{}] has `bp-managed = true` but no battery pack provides it",
-                    name,
-                    section
-                );
-            };
-
-            // Resolve the spec features (used as default when none are explicit).
-            let spec_features: Vec<String> = resolved
-                .get(&name)
-                .map(|s| s.features.iter().cloned().collect())
-                .unwrap_or_default();
-
-            let entry = &table[&name];
-            let has_explicit_features = match entry {
-                toml_edit::Item::Value(toml_edit::Value::InlineTable(t)) => {
-                    t.contains_key("features")
-                }
-                toml_edit::Item::Table(t) => t.contains_key("features"),
-                _ => false,
-            };
-
-            // For simple `dep.bp-managed = true` with no extra keys and no
-            // spec features, emit a plain version string.
-            let only_bp_managed = match entry {
-                toml_edit::Item::Value(toml_edit::Value::InlineTable(t)) => t.len() == 1,
-                toml_edit::Item::Table(t) => t.len() == 1,
-                _ => false,
-            };
-            let is_simple = only_bp_managed && !has_explicit_features && spec_features.is_empty();
-
-            if is_simple {
-                table.insert(&name, toml_edit::value(&version));
-            } else {
-                // Convert to inline table, remove bp-managed, insert version,
-                // and add spec features if no explicit features were given.
-                let mut dep = toml_edit::InlineTable::new();
-                dep.insert("version", toml_edit::Value::from(version.as_str()));
-
-                // Copy all existing keys except bp-managed
-                match &table[&name] {
-                    toml_edit::Item::Value(toml_edit::Value::InlineTable(t)) => {
-                        for (k, v) in t.iter() {
-                            if k != "bp-managed" {
-                                dep.insert(k, v.clone());
-                            }
-                        }
-                    }
-                    toml_edit::Item::Table(t) => {
-                        for (k, v) in t.iter() {
-                            if k != "bp-managed"
-                                && let Some(val) = v.as_value()
-                            {
-                                dep.insert(k, val.clone());
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-
-                // If no explicit features, add spec features
-                if !has_explicit_features && !spec_features.is_empty() {
-                    let mut features = toml_edit::Array::new();
-                    for feat in &spec_features {
-                        features.push(feat.as_str());
-                    }
-                    dep.insert("features", toml_edit::Value::Array(features));
-                }
-
-                table.insert(
-                    &name,
-                    toml_edit::Item::Value(toml_edit::Value::InlineTable(dep)),
-                );
-            }
-        }
-    }
+    // Rewrite each bp-managed entry to a concrete version pin, across the same
+    // set of tables the scan visited.
+    for_each_dep_table(&mut doc, |label, table| {
+        rewrite_section(table, label, &resolved, &bp_versions)
+    })?;
 
     Ok(doc.to_string())
 }
 
-/// Check if a toml_edit Item has `bp-managed = true`.
-fn is_bp_managed(item: &toml_edit::Item) -> bool {
-    match item {
-        toml_edit::Item::Value(toml_edit::Value::InlineTable(t)) => t
-            .get("bp-managed")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false),
-        toml_edit::Item::Table(t) => t
-            .get("bp-managed")
-            .and_then(|v| v.as_value())
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false),
-        _ => false,
+/// The dependency table Cargo recognizes. Each may also appear under a `[target.<cfg>]`
+/// gate, where the sub-table mirrors this top-level structure.
+const DEP_SECTION: [&str; 3] = ["dependencies", "dev-dependencies", "build-dependencies"];
+
+/// Visit every dependency table in the manifest -- the top-level sections and every
+/// `[target.<cfg>.*]` mirror -- handing each a label that names it in diagnostics
+/// (`dependencies`, `target. 'cfg(unix)'.dependencies`, ...).
+///
+/// Both the scan and rewrite passes route through here, so the document layout is encoded
+/// in exactly one place. `visit` takes `&mut` so the rewrite pass can edit in place; the
+/// read-only scan pass simply ignores the mutability.
+///
+/// Tables are matched as `TableLike`, so block (`[deps]`) and inline (`dep = {...}`) syntax
+/// are handled the same.
+fn for_each_dep_table<V>(doc: &mut DocumentMut, mut visit: V) -> Result<()>
+where
+    V: FnMut(&str, &mut dyn TableLike) -> Result<()>,
+{
+    for section in DEP_SECTION {
+        if let Some(table) = doc
+            .get_mut(section)
+            .and_then(|item| item.as_table_like_mut())
+        {
+            visit(section, table)?;
+        }
+    }
+
+    let Some(target) = doc
+        .get_mut("target")
+        .and_then(|item| item.as_table_like_mut())
+    else {
+        return Ok(());
+    };
+
+    for (cfg, value) in target.iter_mut() {
+        let Some(cfg_table) = value.as_table_like_mut() else {
+            continue;
+        };
+
+        for section in DEP_SECTION {
+            if let Some(table) = cfg_table
+                .get_mut(section)
+                .and_then(|item| item.as_table_like_mut())
+            {
+                // Single-quote the cfg key so it round-trips verbatim -- `cfg(target_os = "linux")` keeps its inner quotes.
+                visit(&format!("target.'{}'.{section}", cfg.get()), table)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Scan one dependency table, returning whether it holds any `bp-managed = true` entry. Rejects entries that pair `bp-managed` with a conflicting key, and entries whose `bp-managed` value is not `true`. `label` names the section in those errors (`dependencies`, `target.'cfg(unix)'.dependencies`, …).
+fn scan_section(table: &dyn TableLike, label: &str) -> Result<bool> {
+    let mut found = false;
+    for (name, value) in table.iter() {
+        match bp_managed_state(value) {
+            BpManaged::Absent => {}
+            BpManaged::Enabled(entry) => {
+                found = true;
+                let extra = extra_keys_on_bp_managed(entry);
+                if !extra.is_empty() {
+                    bail!(
+                        "dependency '{}' in [{}] has `bp-managed = true` with conflicting keys: {}",
+                        name,
+                        label,
+                        extra.join(", ")
+                    );
+                }
+            }
+            // `bp-managed = false` / non-bool: a mistake that would otherwise ship verbatim.
+            BpManaged::Malformed => {
+                bail!(
+                    "dependency '{}' in [{}] has `bp-managed` set to a non-`true` value; use `bp-managed = true` or remove the key",
+                    name,
+                    label
+                );
+            }
+        }
+    }
+    Ok(found)
+}
+
+/// Rewrite every `bp-managed = true` entry in one dependency table to a concrete version pin, drawn from the resolved crate set (`resolved`) or, for a battery pack referencing itself, from `bp_version`. `label` names the section in errors.
+fn rewrite_section(
+    table: &mut dyn TableLike,
+    label: &str,
+    resolved: &BTreeMap<String, CrateSpec>,
+    bp_version: &BTreeMap<String, String>,
+) -> Result<()> {
+    // Snapshot each managed entry as an owned inline table so we can mutate `table` below.
+    let managed: Vec<(String, InlineTable)> = table
+        .iter()
+        .filter_map(|(name, item)| match bp_managed_state(item) {
+            BpManaged::Enabled(entry) => Some((name.to_string(), to_owned_inline(entry))),
+            _ => None,
+        })
+        .collect();
+
+    for (name, entry) in managed {
+        // A dependency renamed via `package = "..."` resolves against the real crate name.
+        let crate_name = entry
+            .get("package")
+            .and_then(Value::as_str)
+            .unwrap_or(name.as_str());
+        let crate_spec = resolved.get(crate_name);
+        let version = if let Some(spec) = crate_spec {
+            spec.version.clone()
+        } else if let Some(bp_version) = bp_version.get(crate_name) {
+            bp_version.clone()
+        } else {
+            bail!(
+                "dependency '{}' in [{}] has `bp-managed = true` but no battery pack provides it",
+                name,
+                label
+            );
+        };
+
+        let spec_features: Vec<String> = crate_spec
+            .map(|spec| spec.features.iter().cloned().collect())
+            .unwrap_or_default();
+
+        let has_explicit_features = entry.contains_key("features");
+
+        // A bare `dep.bp-managed = true` (only the marker, no spec features) becomes a plain
+        // version string; anything richer becomes an inline table.
+        if entry.len() == 1 && !has_explicit_features && spec_features.is_empty() {
+            table.insert(&name, toml_edit::value(&version));
+            continue;
+        }
+
+        let mut dep = InlineTable::new();
+        dep.insert("version", Value::from(version.as_str()));
+        for (key, value) in entry.iter() {
+            if key != "bp-managed" {
+                dep.insert(key, value.clone());
+            }
+        }
+
+        if !has_explicit_features && !spec_features.is_empty() {
+            let mut features = Array::new();
+            for feature in &spec_features {
+                features.push(feature.as_str());
+            }
+
+            dep.insert("features", Value::Array(features));
+        }
+
+        // Canonicalize spacing: cloned keys carry decor from their original position
+        // (e.g. no space before a following `,` or `}`), so normalize the rebuilt table.
+        dep.fmt();
+        table.insert(&name, Item::Value(Value::InlineTable(dep)));
+    }
+
+    Ok(())
+}
+
+/// The `bp-managed` marker on a dependency entry. The `Enabled` variant carries the
+/// entry's table view, so a caller acting on a managed dep never re-derives it.
+enum BpManaged<'a> {
+    /// No `bp-managed` key: an ordinary dependency, left untouched.
+    Absent,
+    /// `bp-managed = true`: resolve this entry to a concrete version pin.
+    Enabled(&'a dyn TableLike),
+    /// `bp-managed` present but not `true` (e.g. `false` or a string). The only meaningful
+    /// value is `true`, so this is a mistake -- rejected rather than shipped verbatim.
+    Malformed,
+}
+
+/// Classify a dependency entry by its `bp-managed` marker.
+fn bp_managed_state(item: &Item) -> BpManaged<'_> {
+    // The marker only lives on table-like entries (`dep = { ... }` or `[deps.dep]`).
+    let Some(table) = item.as_table_like() else {
+        return BpManaged::Absent;
+    };
+    match table.get("bp-managed").map(Item::as_bool) {
+        None => BpManaged::Absent,
+        Some(Some(true)) => BpManaged::Enabled(table),
+        Some(_) => BpManaged::Malformed,
     }
 }
 
-/// Return any keys besides `bp-managed` on a bp-managed dep entry.
-fn extra_keys_on_bp_managed(value: &toml_edit::Item) -> Vec<String> {
-    let keys: Box<dyn Iterator<Item = &str>> = match value {
-        toml_edit::Item::Value(toml_edit::Value::InlineTable(t)) => {
-            Box::new(t.iter().map(|(k, _)| k))
+/// Clone a table-like dependency entry (`dep = {...}` or `[deps.dep]`) into an owned inline
+/// table, so it can outlive a mutable borrow of the section it came from. Non-value members
+/// (which a dependency spec never has) are dropped.
+fn to_owned_inline(table: &dyn TableLike) -> InlineTable {
+    let mut inline = InlineTable::new();
+    for (key, item) in table.iter() {
+        if let Some(value) = item.as_value() {
+            inline.insert(key, value.clone());
         }
-        toml_edit::Item::Table(t) => Box::new(t.iter().map(|(k, _)| k)),
-        _ => return vec![],
-    };
-    // Only `version` conflicts with bp-managed (it provides the version).
-    // Other keys like `features` and `optional` are passed through.
-    keys.filter(|k| *k == "version").map(String::from).collect()
+    }
+    inline
+}
+
+/// Return any keys on a bp-managed dep entry that contradict the version pin.
+fn extra_keys_on_bp_managed(table: &dyn TableLike) -> Vec<String> {
+    // `version` and `workspace` each supply what bp-managed supplies, so either alongside
+    // `bp-managed` is a contradiction Cargo would reject.
+    table
+        .iter()
+        .map(|(key, _)| key)
+        .filter(|key| matches!(*key, "version" | "workspace"))
+        .map(String::from)
+        .collect()
 }
 
 pub(crate) fn fetch_battery_pack_spec(bp_name: &str) -> Result<bphelper_manifest::BatteryPackSpec> {

@@ -93,6 +93,8 @@ r[manifest.managed.marker]
 A template's Cargo.toml MAY use `bp-managed = true` on a dependency
 instead of hardcoding a version. This signals that the version should
 be resolved at template generation time from the battery pack's own spec.
+The marker is recognized in `[dependencies]`, `[dev-dependencies]`,
+`[build-dependencies]`, and their platform-gated `[target.<cfg>.*]` mirrors.
 
 ```toml
 [dependencies]
@@ -100,12 +102,18 @@ clap.bp-managed = true
 
 [build-dependencies]
 cli-battery-pack.bp-managed = true
+
+[target.'cfg(unix)'.dependencies]
+nix.bp-managed = true
 ```
 
 r[manifest.managed.conflict]
-A dependency MUST NOT have both `bp-managed = true` and `version`.
-Other keys (`features`, `optional`, `default-features`, etc.) are
-allowed alongside `bp-managed` and are preserved in the resolved output.
+The value of `bp-managed` MUST be the boolean `true`; any other value
+(e.g. `false` or a string) is an error, so drop the key to opt out.
+A dependency MUST NOT combine `bp-managed = true` with `version` or
+`workspace`, since each already supplies what `bp-managed` provides.
+Other keys (`features`, `optional`, `default-features`, `package`, etc.)
+are allowed alongside `bp-managed` and are preserved in the resolved output.
 
 r[manifest.managed.resolution]
 When generating a project from a template, `cargo bp` MUST resolve
@@ -113,7 +121,9 @@ each `bp-managed` dependency by replacing `bp-managed` with the
 version from the battery pack's spec. If the entry has no explicit
 `features`, the spec's features are used as the default. If explicit
 `features` are present, they override the spec's features entirely.
-All other keys are preserved as-is. Specs are
+All other keys are preserved as-is. A dependency renamed with
+`package = "..."` is resolved by its real crate name (the `package`
+value), not the table key. Specs are
 discovered from the crate root's workspace first. If a referenced
 battery pack is not found locally (e.g. a cross-pack reference after
 downloading from crates.io), `cargo bp` MUST fetch its spec from the
