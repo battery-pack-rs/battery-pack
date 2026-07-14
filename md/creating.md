@@ -1,55 +1,18 @@
 # Creating a Battery Pack
 
-A battery pack is a normal Rust crate published on crates.io.
-It has no real code — just a Cargo.toml that curates dependencies,
-plus documentation, examples, and optionally templates.
+A battery pack is a normal Rust crate published on crates.io. It has no real code — just a `Cargo.toml` that curates dependencies, plus documentation and optionally templates.
 
 ## Scaffolding
-
-The fastest way to start is:
 
 ```bash
 cargo bp new battery-pack --name my-battery-pack
 ```
 
-This creates a new battery pack project from the built-in template,
-complete with the right structure, a starter README, and license files.
+This creates a battery pack project from the built-in template with the right structure, a starter README, and license files.
 
-## Anatomy of a battery pack
+## Dependencies are recommendations
 
-Here's what a battery pack looks like:
-
-```
-my-battery-pack/
-├── Cargo.toml
-├── README.md
-├── docs.handlebars.md
-├── src/
-│   └── lib.rs
-├── examples/
-│   ├── basic.rs
-│   └── advanced.rs
-└── templates/
-    └── default/
-        ├── bp-template.toml
-        ├── _Cargo.toml
-        └── src/
-            └── main.rs
-```
-
-The important parts:
-
-- **Cargo.toml** — defines the curated crates as dependencies
-- **README.md** — your prose documentation
-- **docs.handlebars.md** — template for auto-generated docs on docs.rs
-- **src/lib.rs** — just a doc include (no real code)
-- **examples/** — runnable examples showing the crates in action
-- **templates/** — project templates for `cargo bp new`
-
-## Defining crates
-
-Your curated crates are just regular Cargo dependencies. The dependency
-section they live in determines the default dependency kind for users:
+The crates in your `[dependencies]` are what gets recommended to users. When someone runs `cargo bp add my-pack`, these crates are added to *their* `Cargo.toml`:
 
 ```toml
 [dependencies]
@@ -58,24 +21,16 @@ thiserror = "2"
 
 [dev-dependencies]
 expect-test = "1.5"
-
-[build-dependencies]
-cc = "1"
 ```
 
-When a user installs your battery pack:
-- `anyhow` and `thiserror` default to regular dependencies
-- `expect-test` defaults to a dev-dependency
-- `cc` defaults to a build-dependency
+The section they live in determines the default dependency kind for users — `[dev-dependencies]` become dev-deps in the user's crate, and so on.
 
-Users can override these in the TUI.
+## Features are named groups
 
-## Features for grouping
-
-Use Cargo's `[features]` to organize crates into groups:
+Use Cargo's `[features]` to organize crates into toggleable groups:
 
 ```toml
-[dev-dependencies]
+[dependencies]
 clap = { version = "4", features = ["derive"] }
 dialoguer = "0.11"
 indicatif = { version = "0.17", optional = true }
@@ -84,275 +39,51 @@ console = { version = "0.15", optional = true }
 [features]
 default = ["clap", "dialoguer"]
 indicators = ["indicatif", "console"]
-fancy = ["clap", "indicatif", "console"]
 ```
 
-### The default feature
+The `default` feature determines what a user gets with a plain `cargo bp add`. Crates marked `optional = true` are only installed when the user enables a feature that includes them (e.g., `cargo bp add cli -F indicators`).
 
-The `default` feature determines which crates a user gets with a plain
-`cargo bp add`. Crates not in `default` are available but not installed
-unless the user explicitly enables them (e.g., `cargo bp add cli -F indicators`).
+If you don't define a `default` feature, all non-optional crates are included by default.
 
-If you don't define a `default` feature, all non-optional crates
-are included by default.
-
-### Optional crates
-
-Mark crates as `optional = true` if they shouldn't be part of the default
-installation. These crates are available through named features or
-individual selection in the TUI.
-
-### Feature augmentation
-
-A feature can add Cargo features to a crate, not just toggle it on.
-This uses Cargo's native `dep/feature` syntax:
+A feature can also augment Cargo features on a crate using `dep/feature` syntax:
 
 ```toml
-[dependencies]
-tokio = { version = "1", features = ["macros", "rt"] }
-
 [features]
-default = ["tokio"]
 tokio-full = ["tokio/full"]
 ```
 
-Enabling `tokio-full` keeps `tokio` but adds the `full` feature on top
-of `macros` and `rt`. Feature merging is always additive.
+## Auto-generated documentation
 
-## Hidden dependencies
+Every battery pack has a `build.rs` that generates documentation at compile time:
 
-If your battery pack has dependencies that are internal tooling — not
-something users would want to install — mark them as hidden. Every
-battery pack should hide the `battery-pack` build dependency (used for
-doc generation), along with any other internal crates:
-
-```toml
-[package.metadata.battery-pack]
-hidden = ["battery-pack", "handlebars", "cargo-metadata"]
+```rust
+fn main() {
+    battery_pack::build::generate_docs().unwrap();
+}
 ```
 
-Hidden crates don't appear in the TUI or in `cargo bp show` output.
+This reads your `Cargo.toml`, `README.md`, and `docs.handlebars.md`, then renders them into a `docs.md` that becomes the crate's docs.rs page. The default template is:
 
-You can use globs:
+```handlebars
+\{{readme}}
 
-```toml
-[package.metadata.battery-pack]
-hidden = ["serde*"]
+\{{crate-table}}
 ```
 
-Or hide everything (useful if your battery pack is purely templates and examples):
+`{{readme}}` inlines your README. `{{crate-table}}` auto-generates a table of your curated crates grouped by category, split by dependency kind, with links to crates.io. You never need to maintain a crate list by hand — it's derived from your `Cargo.toml`.
 
-```toml
-[package.metadata.battery-pack]
-hidden = ["*"]
-```
-
-## The lib.rs
-
-A battery pack's `lib.rs` is minimal — it just includes auto-generated documentation:
+The `src/lib.rs` just includes the generated output:
 
 ```rust
 #![doc = include_str!(concat!(env!("OUT_DIR"), "/docs.md"))]
 ```
 
-This makes the battery pack's documentation visible on docs.rs,
-including an auto-generated table of all curated crates.
-See [Documentation and Examples](./docs-and-examples.md) for details
-on how the doc generation works.
+See [Documentation and Examples](./docs-and-examples.md) for more on customizing the docs template and adding runnable examples.
 
-## Templates
+## Getting fancy with metadata
 
-Templates let users bootstrap new projects with `cargo bp new`.
-They use [MiniJinja](https://github.com/mitsuhiko/minijinja) templates
-with a `bp-template.toml` configuration file.
+Battery packs support additional metadata in `[package.metadata.battery-pack.*]` for richer behavior:
 
-A template lives in a subdirectory under `templates/`:
-
-```
-templates/
-└── default/
-    ├── bp-template.toml
-    ├── _Cargo.toml
-    └── src/
-        └── main.rs
-```
-
-> **Note:** Template `Cargo.toml` files must be named `_Cargo.toml`.
-> `cargo package` treats any subdirectory containing a `Cargo.toml` as a
-> separate crate and excludes it from the published tarball. The template
-> engine automatically maps `_Cargo.toml` back to `Cargo.toml` in the
-> generated output.
-
-The `bp-template.toml` configures template variables:
-
-```toml
-ignore = ["hooks"]
-
-[placeholders.description]
-type = "string"
-prompt = "What does this project do?"
-default = "A new project"
-```
-
-Placeholders should have `default` values so that `cargo bp validate`
-can generate and check templates non-interactively. Placeholder names
-must use snake_case (`description`, not `my-description`) because
-MiniJinja treats `-` as the minus operator.
-
-The template engine also provides built-in variables (no declaration needed):
-
-- `{{ project_name }}` — the project name passed via `--name`
-- `{{ crate_name }}` — derived from `project_name` with `-` replaced by `_`
-
-### Built-in functions
-
-Templates can call these functions in MiniJinja expressions:
-
-- `{{ pin_github_action("actions/checkout", "v6") }}` — resolves a GitHub
-  Action tag to a SHA-pinned reference at generation time (e.g.
-  `actions/checkout@abc123 # v6.0.2`). Semver-aware: finds the latest
-  version under the given major tag. Supports an optional subpath:
-  `{{ pin_github_action("github/codeql-action", "v3", "upload-sarif") }}`.
-- `{{ rust_stable_version() }}` — returns the current stable Rust version
-  from `rustc --version` (e.g. `1.80.0`).
-
-### Placeholder types
-
-Placeholders support three types:
-
-```toml
-# String (default)
-[placeholders.description]
-type = "string"
-prompt = "Project description"
-default = "A new project"
-
-# Bool — interactive: yes/no prompt, non-interactive: defaults to false
-[placeholders.benchmarks]
-type = "bool"
-prompt = "Include benchmarks?"
-
-# Select — interactive: arrow-key selection, requires explicit default
-[placeholders.ci_platform]
-type = "select"
-prompt = "CI platform"
-options = ["github", "none"]
-default = "github"
-```
-
-Bool values are registered as actual booleans in MiniJinja, so
-`{% if benchmarks %}` works naturally. Bare `-d benchmarks` on the
-command line implies `=true`.
-
-To include files from outside the template directory (e.g. shared
-license files), use `[[files]]`:
-
-```toml
-[[files]]
-src = "LICENSE-MIT"       # relative to crate root
-dest = "LICENSE-MIT"      # relative to generated project
-```
-
-Register templates in your Cargo.toml metadata:
-
-```toml
-[package.metadata.battery.templates]
-default = { path = "templates/default", description = "A basic starting point" }
-subcmds = { path = "templates/subcmds", description = "Multi-command CLI" }
-```
-
-If you have multiple templates, users can choose:
-
-```bash
-cargo bp new my-pack --template subcmds
-```
-
-### Managed dependencies
-
-Use `bp-managed = true` on dependencies in your template's `_Cargo.toml`
-instead of hardcoding versions. When someone generates a project from
-your template, `cargo bp` resolves the actual versions from your
-battery pack's spec:
-
-```toml
-[dependencies]
-clap.bp-managed = true
-
-[build-dependencies]
-cli-battery-pack.bp-managed = true
-
-[package.metadata.battery-pack]
-cli-battery-pack = { features = ["default"] }
-```
-
-This way you don't need to update template files when you bump
-dependency versions. The template always picks up the current spec.
-
-`bp-managed = true` resolves the version from the spec. If no explicit
-features are given, the spec's features are used. You can override
-features or add other keys like `optional` alongside `bp-managed`:
-
-```toml
-# Managed: version and features come from the spec:
-anyhow.bp-managed = true
-
-# Managed version, explicit features (overrides spec features):
-clap = { bp-managed = true, features = ["derive", "env"] }
-
-# Managed version with optional:
-serde = { bp-managed = true, optional = true }
-```
-
-The only key that conflicts with `bp-managed` is `version` (since
-`bp-managed` provides the version).
-
-### Validating templates
-
-`cargo bp validate` automatically generates each template, runs
-`cargo check` and `cargo test` on the result, and reports failures.
-This catches broken templates before they reach users.
-
-To run template validation in your CI tests, add a test in your `src/lib.rs`:
-
-```rust
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn validate() {
-        ::battery_pack::testing::validate(env!("CARGO_MANIFEST_DIR")).unwrap();
-    }
-}
-```
-
-The built-in scaffolding template includes this test by default.
-
-### Merge-friendly templates
-
-Templates can also be applied to existing projects with `cargo bp add <pack> -t <template>`. This is especially useful for "micro" templates that add a single concern (CI workflow, fuzzing scaffold, spellcheck config, etc.).
-
-When merged into an existing project, `cargo bp` handles files by type:
-
-- **`Cargo.toml`**: dependencies are merged (versions upgraded if behind, missing features added)
-- **Other `.toml`**: new sections and keys added, existing ones left alone
-- **YAML**: top-level keys merged additively (new jobs added, existing ones preserved)
-- **Other files**: the user is prompted to skip or overwrite if they already exist
-
-Note: YAML merges don't preserve comments in existing files. For YAML, only `jobs`, `on`, and `permissions` are deep-merged; other top-level keys are atomic, so if the key already exists, the user's value wins. To avoid conflicts, use unique workflow filenames (e.g., `typos.yml` instead of `ci.yml`).
-
-To help users with steps that can't be automated (like adding `mod` declarations or installing tools), declare hints in your `bp-template.toml`:
-
-```toml
-[[hints]]
-message = "Add `mod errors;` to your lib.rs or main.rs"
-
-[[hints]]
-message = "Run `cargo install cargo-fuzz` if you haven't already"
-```
-
-Hints are printed after the merge summary. They're only shown for `cargo bp add -t`, not for `cargo bp new`.
-
-Tips for writing merge-friendly templates:
-
-- Keep template `Cargo.toml` files minimal; only include dependencies the template actually needs.
-- Use `bp-managed = true` for dependencies so versions stay current with the battery pack spec.
-- Use `[[hints]]` for anything the user needs to do manually after the merge.
+- **[Hidden Dependencies](./creating/hidden.md)** — hide internal crates (like `battery-pack` itself) from the user-facing picker and docs
+- **[Categories](./creating/categories.md)** — group items thematically and express "pick at most one" constraints (e.g., choose one HAL, one allocator)
+- **[Templates](./creating/templates.md)** — scaffold new projects or merge config files into existing ones
