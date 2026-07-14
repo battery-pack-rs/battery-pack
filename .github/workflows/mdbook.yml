@@ -9,6 +9,9 @@ on:
   push:
     branches: ["main"]
 
+  # Build (but don't deploy) on PRs to catch breakage early
+  pull_request:
+
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
@@ -49,9 +52,9 @@ jobs:
         with:
           path: ./book
 
-  # Deployment job
+  # Deployment job (only on push to main, not PRs)
   deploy:
-    if: ${{ github.repository_owner == 'battery-pack-rs' }}
+    if: ${{ github.repository_owner == 'battery-pack-rs' && github.event_name == 'push' }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

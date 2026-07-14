@@ -53,9 +53,15 @@ fn main() -> Result<()> {
 
     // Discover all battery packs in the workspace.
     let packs = discover_battery_packs(&workspace_root);
+    eprintln!(
+        "mdbook-battery-pack: root={}, discovered {} packs",
+        workspace_root.display(),
+        packs.len()
+    );
 
     // Resolve out_dir paths for battery pack crates via `cargo check`.
     let out_dirs = resolve_out_dirs(&book, &packs, &workspace_root)?;
+    eprintln!("mdbook-battery-pack: resolved {} out_dirs", out_dirs.len());
 
     // Walk the book items and expand directives.
     // mdbook uses "items" (not "sections") as the top-level key.
