@@ -30,9 +30,10 @@ fn main() -> Result<()> {
         .read_to_string(&mut input)
         .context("reading stdin")?;
 
-
     let parsed: Value = serde_json::from_str(&input).context("parsing mdbook JSON")?;
-    let arr = parsed.as_array().context("expected [context, book] array")?;
+    let arr = parsed
+        .as_array()
+        .context("expected [context, book] array")?;
     if arr.len() < 2 {
         bail!("expected [context, book] array with 2 elements");
     }
@@ -209,10 +210,7 @@ fn get_out_dir(pkg: &str, workspace_root: &Path) -> Result<PathBuf> {
             continue;
         }
 
-        let msg_pkg_id = msg
-            .get("package_id")
-            .and_then(|p| p.as_str())
-            .unwrap_or("");
+        let msg_pkg_id = msg.get("package_id").and_then(|p| p.as_str()).unwrap_or("");
         if !msg_pkg_id.contains(pkg) {
             continue;
         }
@@ -365,14 +363,10 @@ fn get_pack_docs(out_dirs: &HashMap<String, PathBuf>, pkg_name: &str) -> String 
         let docs_path = out_dir.join("docs.md");
         match std::fs::read_to_string(&docs_path) {
             Ok(content) => content,
-            Err(e) => format!(
-                "> **Error**: could not read generated docs for `{pkg_name}`: {e}\n"
-            ),
+            Err(e) => format!("> **Error**: could not read generated docs for `{pkg_name}`: {e}\n"),
         }
     } else {
-        format!(
-            "> **Error**: could not resolve `{pkg_name}` — is the package in the workspace?\n"
-        )
+        format!("> **Error**: could not resolve `{pkg_name}` — is the package in the workspace?\n")
     }
 }
 
