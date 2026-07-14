@@ -179,10 +179,7 @@ pub fn build_context(
                     }
                     items.push(CategoryItemEntry {
                         name: feat_name.clone(),
-                        description: meta
-                            .description
-                            .clone()
-                            .unwrap_or_default(),
+                        description: meta.description.clone().unwrap_or_default(),
                         kind: "feature".to_string(),
                         crates: crate_names,
                     });
@@ -194,10 +191,7 @@ pub fn build_context(
                 if meta.categories.contains(cat_name) {
                     items.push(CategoryItemEntry {
                         name: dep_name.clone(),
-                        description: meta
-                            .description
-                            .clone()
-                            .unwrap_or_default(),
+                        description: meta.description.clone().unwrap_or_default(),
                         kind: "dependency".to_string(),
                         crates: vec![dep_name.clone()],
                     });
@@ -209,10 +203,7 @@ pub fn build_context(
                 if tmpl_spec.categories.contains(cat_name) {
                     items.push(CategoryItemEntry {
                         name: tmpl_name.clone(),
-                        description: tmpl_spec
-                            .description
-                            .clone()
-                            .unwrap_or_default(),
+                        description: tmpl_spec.description.clone().unwrap_or_default(),
                         kind: "template".to_string(),
                         crates: vec![],
                     });
@@ -221,10 +212,7 @@ pub fn build_context(
 
             CategoryEntry {
                 name: cat_name.clone(),
-                title: cat_spec
-                    .title
-                    .clone()
-                    .unwrap_or_else(|| cat_name.clone()),
+                title: cat_spec.title.clone().unwrap_or_else(|| cat_name.clone()),
                 description: cat_spec.description.clone().unwrap_or_default(),
                 pick: match cat_spec.pick {
                     PickMode::AtMostOne => "at-most-one".to_string(),
@@ -407,8 +395,7 @@ impl handlebars::HelperDef for CrateTableHelper {
                         // Feature: find its crates.
                         let mut feat_crate_names: Vec<String> = Vec::new();
                         for feat in &features {
-                            let feat_name =
-                                feat.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                            let feat_name = feat.get("name").and_then(|n| n.as_str()).unwrap_or("");
                             if feat_name == name
                                 && let Some(feat_crates) =
                                     feat.get("crates").and_then(|c| c.as_array())
@@ -441,27 +428,15 @@ impl handlebars::HelperDef for CrateTableHelper {
                                     desc.trim()
                                 ))?;
                             } else {
-                                out.write(&format!(
-                                    "| `{}` | {} |\n",
-                                    name,
-                                    desc.trim()
-                                ))?;
+                                out.write(&format!("| `{}` | {} |\n", name, desc.trim()))?;
                             }
                             // Second row: list all crates.
                             if !feat_crate_names.is_empty() {
                                 let links: Vec<String> = feat_crate_names
                                     .iter()
-                                    .map(|c| {
-                                        format!(
-                                            "[`{}`](https://crates.io/crates/{})",
-                                            c, c
-                                        )
-                                    })
+                                    .map(|c| format!("[`{}`](https://crates.io/crates/{})", c, c))
                                     .collect();
-                                out.write(&format!(
-                                    "| | *Crates:* {} |\n",
-                                    links.join(", ")
-                                ))?;
+                                out.write(&format!("| | *Crates:* {} |\n", links.join(", ")))?;
                             }
                         }
                     }
