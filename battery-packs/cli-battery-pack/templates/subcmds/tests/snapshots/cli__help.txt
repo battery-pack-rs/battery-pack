@@ -1,6 +1,6 @@
 A CLI application with subcommands
 
-[1m[4mUsage:[0m [1m{{ project_name }}[EXE][0m [OPTIONS] <COMMAND>
+[1m[4mUsage:[0m [1m[BIN][0m [OPTIONS] <COMMAND>
 
 [1m[4mCommands:[0m
   [1mhello[0m    Say hello
