@@ -8,7 +8,7 @@ repository = "https://github.com/battery-pack-rs/battery-pack"
 keywords = ["battery-pack", "embedded", "no-std", "hal", "cortex-m"]
 
 [package.metadata.battery-pack]
-hidden = ["battery-pack", "snapbox"]
+hidden = ["battery-pack", "bphelper-manifest", "snapbox"]
 
 [package.metadata.battery.templates]
 blinky = { path = "templates/blinky", description = "Minimal blinky LED example for your chosen HAL + concurrency model" }

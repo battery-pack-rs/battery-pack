@@ -2,13 +2,6 @@
 
 Error handling done well. A [battery pack](https://crates.io/crates/battery-pack) that curates the essential error handling crates for Rust.
 
-## What's Included
-
-| Crate | What it does |
-|-------|-------------|
-| [anyhow](https://crates.io/crates/anyhow) | Ergonomic error handling for applications — `Result<T>`, `.context()`, error chaining |
-| [thiserror](https://crates.io/crates/thiserror) | Derive macros for defining custom error types in libraries |
-
 ## Quick Start
 
 ```sh
