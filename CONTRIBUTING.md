@@ -51,6 +51,6 @@ Before merging a release PR, review the generated changelog entries and edit the
 Trusted publishing cannot publish a crate that doesn't exist on crates.io yet. To add a new crate:
 
 1. Get a temporary crates.io token and run `cargo publish -p <crate-name>` manually.
-2. Set up [trusted publishing](https://doc.rust-lang.org/cargo/reference/registry-authentication.html#trusted-publishing) for the new crate on crates.io, pointing to the `release-plz.yml` workflow.
+2. Set up [trusted publishing](https://crates.io/docs/trusted-publishing) for the new crate on crates.io, pointing to the `release-plz.yml` workflow.
 3. Revoke the temporary token.
 4. If the new crate should appear in the `battery-pack` release notes, add it to `changelog_include` in `release-plz.toml`.

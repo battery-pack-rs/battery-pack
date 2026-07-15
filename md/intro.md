@@ -4,7 +4,7 @@
 
 # What is a Battery Pack?
 
-A battery pack is a curated set of crates arranged around a common theme. There's one for [building CLIs](./battery-packs/cli.md), one for [error handling](./battery-packs/errors.md), one for [setting up CI](./battery-packs/ci.md), one for [embedded development](./battery-packs/embedded.md), and more. You install `cargo bp` and then:
+A battery pack is a curated set of crates arranged around a common theme. There's one for [building CLIs](./battery-packs/cli.md), one for [error handling](./battery-packs/error.md), one for [setting up CI](./battery-packs/ci.md), one for [embedded development](./battery-packs/embedded.md), and more. You install `cargo bp` and then:
 
 ```bash
 cargo bp ls               # search crates.io for available battery packs
@@ -23,5 +23,5 @@ The key ideas:
 
 - **[Getting Started](./getting-started.md)** — install the CLI and use your first battery pack
 - **[Templates](./templates.md)** — scaffold projects and add CI workflows
-- **[Our Battery Packs](./battery-packs/README.md)** — what's available today
+- **[Our Battery Packs](./battery-packs/index.md)** — what's available today
 - **[Create Your Own](./creating.md)** — publish a battery pack for your domain

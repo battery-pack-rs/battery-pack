@@ -43,6 +43,16 @@ jobs:
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
       - name: Build with mdBook
         run: mdbook build
+      - name: Check rendered links
+        uses: lycheeverse/lychee-action@8646ba30535128ac92d33dfc9133794bfdd9b411 # v2.8.0
+        with:
+          args: >-
+            --config lychee.toml
+            --root-dir "${{ github.workspace }}/book"
+            "${{ github.workspace }}/book/**/*.html"
+          fail: true
+          lycheeVersion: v0.24.2
+          token: ${{ secrets.GITHUB_TOKEN }}
       - name: Upload artifact
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:

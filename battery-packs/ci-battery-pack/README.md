@@ -75,7 +75,7 @@ After generating your project, set `ci-pass` as the required status check in bra
 
 ### release-plz
 
-1. [Configure trusted publishing](https://doc.rust-lang.org/cargo/reference/registry-authentication.html#trusted-publishing) on crates.io
+1. [Configure trusted publishing](https://crates.io/docs/trusted-publishing) on crates.io
 2. In repo settings → Actions → General, enable "Allow GitHub Actions to create and approve pull requests"
 
 Without `binary_release`, `GITHUB_TOKEN` works fine and no further setup is needed.
@@ -111,7 +111,7 @@ Review `deny.toml` before enforcing it; license policy is project-specific.
 
 Licensed under either of:
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
+- [Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0)
+- [MIT license](https://opensource.org/license/mit)
 
 at your option.
