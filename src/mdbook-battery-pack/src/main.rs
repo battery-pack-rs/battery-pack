@@ -179,10 +179,10 @@ fn resolve_out_dirs(
         }
         let msg_pkg_id = msg.get("package_id").and_then(|p| p.as_str()).unwrap_or("");
         for pkg in &packages {
-            if msg_pkg_id.contains(pkg) {
-                if let Some(out_dir) = msg.get("out_dir").and_then(|d| d.as_str()) {
-                    out_dirs.insert(pkg.clone(), PathBuf::from(out_dir));
-                }
+            if msg_pkg_id.contains(pkg)
+                && let Some(out_dir) = msg.get("out_dir").and_then(|d| d.as_str())
+            {
+                out_dirs.insert(pkg.clone(), PathBuf::from(out_dir));
             }
         }
     }
