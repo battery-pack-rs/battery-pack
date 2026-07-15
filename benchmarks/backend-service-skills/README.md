@@ -30,7 +30,7 @@ Evaluate /tmp/backend-service-skills-<timestamp>.md against benchmarks/backend-s
 - Battery-pack plugin source registered in `~/.symposium/config.toml`:
   ```toml
   plugin-source = [
-      { name = "backend-service", path = "/path/to/battery-pack/opinionated-battery-packs/backend-service-battery-pack" },
+      { name = "backend-service", path = "/path/to/battery-pack/battery-packs/backend-service-battery-pack" },
   ]
   ```
 

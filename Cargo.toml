@@ -14,13 +14,12 @@ members = [
     "src/battery-pack/bphelper-manifest",
     "src/sectioned-picker",
 	# --- battery packs
+    "battery-packs/backend-service-battery-pack",
     "battery-packs/cli-battery-pack",
     "battery-packs/ci-battery-pack",
+    "battery-packs/embedded-battery-pack",
     "battery-packs/error-battery-pack",
     "battery-packs/logging-battery-pack",
-	# --- opinionated battery packs
-    "opinionated-battery-packs/backend-service-battery-pack",
-    "opinionated-battery-packs/embedded-battery-pack",
 ]
 resolver = "2"
 
