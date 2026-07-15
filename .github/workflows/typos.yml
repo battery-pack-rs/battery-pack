@@ -1,15 +1,17 @@
 name: Typos
-
-on:
+"on":
   push:
-    branches: ["main"]
+    branches:
+      - main
   pull_request:
-    branches: ["*"]
-
+    branches:
+      - "*"
+  merge_group: ~
+permissions:
+  contents: read
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
       - uses: crate-ci/typos@v1.43.4

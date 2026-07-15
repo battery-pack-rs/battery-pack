@@ -156,18 +156,42 @@ fn resolve_out_dirs(
     }
 
     // Run a single `cargo check` with all packages to populate build script outputs.
-    let mut out_dirs = HashMap::new();
+    let mut cmd = Command::new("cargo");
+    cmd.arg("check");
     for pkg in &packages {
-        match get_out_dir(pkg, workspace_root) {
-            Ok(dir) => {
-                out_dirs.insert(pkg.clone(), dir);
-            }
-            Err(e) => {
-                eprintln!("mdbook-battery-pack: warning: could not resolve out_dir for {pkg}: {e}");
+        cmd.args(["-p", pkg]);
+    }
+    cmd.arg("--message-format=json");
+
+    let output = cmd
+        .current_dir(workspace_root)
+        .output()
+        .context("running batched cargo check for packages")?;
+    let mut out_dirs = HashMap::new();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let msg: Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if msg.get("reason").and_then(|r| r.as_str()) != Some("build-script-executed") {
+            continue;
+        }
+        let msg_pkg_id = msg.get("package_id").and_then(|p| p.as_str()).unwrap_or("");
+        for pkg in &packages {
+            if msg_pkg_id.contains(pkg)
+                && let Some(out_dir) = msg.get("out_dir").and_then(|d| d.as_str())
+            {
+                out_dirs.insert(pkg.clone(), PathBuf::from(out_dir));
             }
         }
     }
-
+    // Warn about any packages we failed to resolve OUT_DIR for
+    for pkg in &packages {
+        if !out_dirs.contains_key(pkg) {
+            eprintln!("mdbook-battery-pack: warning: could not resolve out_dir for {pkg}");
+        }
+    }
     Ok(out_dirs)
 }
 
@@ -191,43 +215,6 @@ fn collect_package_names(value: &Value, names: &mut Vec<String>) {
         }
         _ => {}
     }
-}
-
-/// Run `cargo check -p <pkg> --message-format=json` and extract the OUT_DIR.
-fn get_out_dir(pkg: &str, workspace_root: &Path) -> Result<PathBuf> {
-    let output = Command::new("cargo")
-        .args(["check", "-p", pkg, "--message-format=json"])
-        .current_dir(workspace_root)
-        .output()
-        .with_context(|| format!("running cargo check for {pkg}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("cargo check failed for {pkg}:\n{stderr}");
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
-        let msg: Value = match serde_json::from_str(line) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-
-        if msg.get("reason").and_then(|r| r.as_str()) != Some("build-script-executed") {
-            continue;
-        }
-
-        let msg_pkg_id = msg.get("package_id").and_then(|p| p.as_str()).unwrap_or("");
-        if !msg_pkg_id.contains(pkg) {
-            continue;
-        }
-
-        if let Some(out_dir) = msg.get("out_dir").and_then(|d| d.as_str()) {
-            return Ok(PathBuf::from(out_dir));
-        }
-    }
-
-    bail!("no build-script-executed message found for {pkg}")
 }
 
 /// Expand directives in all book items.
