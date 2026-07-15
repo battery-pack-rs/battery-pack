@@ -1,0 +1,7 @@
+version = 2
+
+[[battery-pack]]
+name = "ci"
+features = ["default"]
+managed-deps = []
+applied-templates = ["spellcheck"]
