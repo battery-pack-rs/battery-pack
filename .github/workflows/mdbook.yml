@@ -51,7 +51,7 @@ jobs:
             --root-dir "${{ github.workspace }}/book"
             "${{ github.workspace }}/book/**/*.html"
           fail: true
-          lycheeVersion: v0.24.2
+          lycheeVersion: v0.23.0
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Upload artifact
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3

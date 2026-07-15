@@ -1,5 +1,5 @@
 # Validate rendered mdBook anchors and require directory links to contain an index page.
-include_fragments = "anchor-only"
+include_fragments = true
 index_files = ["index.html"]
 no_progress = true
 
