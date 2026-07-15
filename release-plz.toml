@@ -19,6 +19,7 @@ changelog_include = [
     "cargo-bp-script",
     "ci-battery-pack",
     "cli-battery-pack",
+    "embedded-battery-pack",
     "error-battery-pack",
     "logging-battery-pack",
     "sectioned-picker",
