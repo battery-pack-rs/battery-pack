@@ -1,6 +1,6 @@
 # Implementation Plan: Categories and Exclusive Picks
 
-TDD-driven implementation plan for the [Categories and Exclusive Picks RFD](./README.md).
+TDD-driven implementation plan for the [Categories and Exclusive Picks RFD](./index.md).
 
 ## Status
 

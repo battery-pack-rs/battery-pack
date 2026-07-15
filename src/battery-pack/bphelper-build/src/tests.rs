@@ -132,6 +132,30 @@ fn test_context_features() {
 }
 
 #[test]
+fn test_context_features_expand_local_aliases() {
+    // Parse the embedded pack whose HAL features include a local critical-section alias.
+    let manifest_path = fixtures_dir()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("opinionated-battery-packs/embedded-battery-pack/Cargo.toml");
+    let spec = parse_battery_pack_from_path(&manifest_path).unwrap();
+    let ctx = build_context(&spec, &BTreeMap::new(), "");
+
+    // Render only real crate names so generated crates.io links always have valid targets.
+    let stm32f0 = ctx
+        .features
+        .iter()
+        .find(|feature| feature.name == "stm32f0")
+        .unwrap();
+    assert_data_eq!(
+        stm32f0.crates.join(", "),
+        str!["cortex-m, cortex-m-rt, critical-section, embedded-hal, stm32f0xx-hal"]
+    );
+}
+
+#[test]
 // [verify docgen.vars.readme]
 fn test_context_readme() {
     let spec = parse_fixture("basic-battery-pack");

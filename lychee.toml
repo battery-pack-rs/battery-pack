@@ -1,0 +1,11 @@
+# Validate rendered mdBook anchors and require directory links to contain an index page.
+include_fragments = true
+index_files = ["index.html"]
+no_progress = true
+
+# crates.io requires an explicit HTML accept header for automated link checks.
+header = { accept = "text/html" }
+
+# Keep external checks bounded while allowing transient failures to recover.
+max_retries = 3
+timeout = 30

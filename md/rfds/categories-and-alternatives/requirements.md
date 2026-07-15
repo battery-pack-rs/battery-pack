@@ -1,6 +1,6 @@
 # Requirements: Categories and Exclusive Picks
 
-Testable requirements for the [Categories and Exclusive Picks RFD](./README.md).
+Testable requirements for the [Categories and Exclusive Picks RFD](./index.md).
 Each requirement has a unique ID (`r[...]`) and maps to one or more tests.
 
 ---

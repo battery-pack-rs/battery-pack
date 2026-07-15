@@ -121,7 +121,7 @@ Some battery packs group crates into features you can opt into:
 cargo bp add cli -F indicators
 ```
 
-Others use categories to present alternatives — "pick one HAL for your chip family" or "pick an allocator". The interactive picker shows these as radio buttons (pick one) or checkboxes (pick any). See [Our Battery Packs](./battery-packs/README.md) for examples.
+Others use categories to present alternatives — "pick one HAL for your chip family" or "pick an allocator". The interactive picker shows these as radio buttons (pick one) or checkboxes (pick any). See [Our Battery Packs](./battery-packs/index.md) for examples.
 
 ## Start a new project from a template
 

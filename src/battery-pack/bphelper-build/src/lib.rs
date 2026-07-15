@@ -5,9 +5,12 @@
 //! pure functions (`build_context`, `render_docs`) for testability,
 //! with `generate_docs` as the I/O entry point for build.rs.
 
-use bphelper_manifest::{BatteryPackSpec, PickMode, parse_battery_pack_from_path};
+use bphelper_manifest::{BatteryPackSpec, FeatureRef, PickMode, parse_battery_pack_from_path};
 use serde::Serialize;
-use std::{collections::BTreeMap, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+};
 
 // ============================================================================
 // Error type
@@ -126,6 +129,68 @@ pub struct PackageInfo {
 // Core rendering pipeline (pure functions)
 // ============================================================================
 
+/// Resolve a named Cargo feature to the visible crates it activates.
+fn feature_crate_names(spec: &BatteryPackSpec, feature_name: &str) -> Vec<String> {
+    // Restrict documentation links to crates that are visible to battery-pack users.
+    let visible_names: BTreeSet<&str> = spec.visible_crates().keys().copied().collect();
+    let mut visited_features = BTreeSet::new();
+    let mut crate_names = BTreeSet::new();
+
+    // Expand local feature aliases before returning stable, de-duplicated crate names.
+    collect_feature_crates(
+        spec,
+        feature_name,
+        &visible_names,
+        &mut visited_features,
+        &mut crate_names,
+    );
+    crate_names.into_iter().collect()
+}
+
+/// Recursively collect dependency names from one Cargo feature.
+fn collect_feature_crates<'a>(
+    spec: &'a BatteryPackSpec,
+    feature_name: &str,
+    visible_names: &BTreeSet<&'a str>,
+    visited_features: &mut BTreeSet<String>,
+    crate_names: &mut BTreeSet<String>,
+) {
+    // Stop repeated aliases defensively even though manifest validation rejects cycles.
+    if !visited_features.insert(feature_name.to_string()) {
+        return;
+    }
+
+    // Resolve bare local features recursively and dependency references directly.
+    if let Some(refs) = spec.features.get(feature_name) {
+        for feature_ref in refs {
+            match feature_ref {
+                FeatureRef::Feature(name) if spec.features.contains_key(name) => {
+                    collect_feature_crates(
+                        spec,
+                        name,
+                        visible_names,
+                        visited_features,
+                        crate_names,
+                    );
+                }
+                FeatureRef::Feature(name) | FeatureRef::Dep(name) => {
+                    if visible_names.contains(name.as_str()) {
+                        crate_names.insert(name.clone());
+                    }
+                }
+                FeatureRef::DepFeature { dep, .. } => {
+                    if visible_names.contains(dep.as_str()) {
+                        crate_names.insert(dep.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    // Let sibling branches expand the same alias independently while preventing cycles above.
+    visited_features.remove(feature_name);
+}
+
 /// Build the template context from a parsed spec, crate descriptions, and readme.
 ///
 /// This is a pure function with no I/O — all inputs are passed in.
@@ -151,10 +216,10 @@ pub fn build_context(
 
     let features = spec
         .features
-        .iter()
-        .map(|(name, refs)| FeatureEntry {
+        .keys()
+        .map(|name| FeatureEntry {
             name: name.clone(),
-            crates: refs.iter().map(|r| r.dep_name().to_string()).collect(),
+            crates: feature_crate_names(spec, name),
         })
         .collect();
 
@@ -168,11 +233,7 @@ pub fn build_context(
             // Collect features in this category.
             for (feat_name, meta) in &spec.feature_meta {
                 if meta.categories.contains(cat_name) {
-                    let mut crate_names: Vec<String> = spec
-                        .features
-                        .get(feat_name)
-                        .map(|refs| refs.iter().map(|r| r.dep_name().to_string()).collect())
-                        .unwrap_or_default();
+                    let mut crate_names = feature_crate_names(spec, feat_name);
                     // Put the crate matching the feature name first (it's the "primary" crate).
                     if let Some(pos) = crate_names.iter().position(|c| c == feat_name) {
                         crate_names.swap(0, pos);

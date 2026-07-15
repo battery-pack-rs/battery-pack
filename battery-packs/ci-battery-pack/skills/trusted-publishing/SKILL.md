@@ -42,7 +42,7 @@ Go to your crate's settings on crates.io and add a trusted publisher:
 
 For new crates that don't exist on crates.io yet, use "Add a new crate" under your account settings.
 
-Docs: https://doc.rust-lang.org/cargo/reference/registry-authentication.html#trusted-publishing
+Docs: https://crates.io/docs/trusted-publishing
 
 ### 2. Enable PR creation
 
