@@ -23,4 +23,4 @@ cargo bp show backend-service              # crates, features, and templates
 cargo bp show backend-service -t service   # preview the rendered template
 ```
 
-See the [backend service skills](https://github.com/battery-pack-rs/battery-pack/tree/main/opinionated-battery-packs/backend-service-battery-pack/skills) for guidance on the observability, resilience, and performance choices these templates make.
+See the [backend service skills](https://docs.rs/crate/backend-service-battery-pack/latest/source/skills/) for guidance on the observability, resilience, and performance choices these templates make.

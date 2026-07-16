@@ -76,32 +76,26 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-/// Discover battery packs by scanning `battery-packs/` and
-/// `opinionated-battery-packs/` directories.
+/// Discover battery packs by scanning the `battery-packs/` directory.
 fn discover_battery_packs(workspace_root: &Path) -> Vec<PackInfo> {
     let mut packs = Vec::new();
 
-    let dirs_to_scan = ["battery-packs", "opinionated-battery-packs"];
-    for dir in &dirs_to_scan {
-        let search_dir = workspace_root.join(dir);
-        if !search_dir.is_dir() {
+    // Read each direct child crate from the single first-party pack directory.
+    let search_dir = workspace_root.join("battery-packs");
+    let Ok(entries) = std::fs::read_dir(search_dir) else {
+        return packs;
+    };
+    for entry in entries.flatten() {
+        let cargo_toml = entry.path().join("Cargo.toml");
+        if !cargo_toml.exists() {
             continue;
         }
-        let entries = match std::fs::read_dir(&search_dir) {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        for entry in entries.flatten() {
-            let cargo_toml = entry.path().join("Cargo.toml");
-            if !cargo_toml.exists() {
-                continue;
-            }
-            if let Some(info) = parse_pack_info(&cargo_toml) {
-                packs.push(info);
-            }
+        if let Some(info) = parse_pack_info(&cargo_toml) {
+            packs.push(info);
         }
     }
 
+    // Keep generated documentation stable across filesystem implementations.
     packs.sort_by(|a, b| a.short_name.cmp(&b.short_name));
     packs
 }

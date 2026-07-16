@@ -139,7 +139,7 @@ fn test_context_features_expand_local_aliases() {
         .unwrap()
         .parent()
         .unwrap()
-        .join("opinionated-battery-packs/embedded-battery-pack/Cargo.toml");
+        .join("battery-packs/embedded-battery-pack/Cargo.toml");
     let spec = parse_battery_pack_from_path(&manifest_path).unwrap();
     let ctx = build_context(&spec, &BTreeMap::new(), "");
 
