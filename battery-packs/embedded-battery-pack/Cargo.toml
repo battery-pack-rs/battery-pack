@@ -1,6 +1,6 @@
 [package]
 name = "embedded-battery-pack"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Opinionated battery pack for embedded Rust — curates HALs, drivers, RTOSes, and no_std utilities from the awesome-embedded-rust ecosystem"
 license = "MIT OR Apache-2.0"

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2](https://github.com/battery-pack-rs/battery-pack/compare/backend-service-battery-pack-v0.1.1...backend-service-battery-pack-v0.1.2) - 2026-07-16
+
+### Fixed
+
+- use stable backend skills link
+- update paths after battery pack merge
+
+### Other
+
+- merge battery pack directories
+
 ## [0.1.1](https://github.com/battery-pack-rs/battery-pack/compare/backend-service-battery-pack-v0.1.0...backend-service-battery-pack-v0.1.1) - 2026-06-03
 
 ### Added

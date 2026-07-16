@@ -1,6 +1,6 @@
 [package]
 name = "backend-service-battery-pack"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "Opinionated battery pack for resilient async backend services in Rust"
 license = "MIT OR Apache-2.0"

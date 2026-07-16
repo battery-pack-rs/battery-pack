@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.5.5...battery-pack-v0.6.0) - 2026-07-16
+
+### Added
+
+- *(docgen)* category-aware crate-table with unified rendering
+- *(template)* derive select-placeholder options from a category (Phase 6)
+- *(show)* surface categories in cargo bp show text and JSON (Phase 7)
+- *(cli)* wire categories into picker and validate exclusive -F picks (Phase 4+5)
+- *(picker)* add radio mode, collapsing, and item descriptions (Phase 3)
+- wire up `p` preview action in the `cargo bp add` picker
+- extract sectioned-picker into standalone crate
+- record applied template in state when using `cargo bp new`
+- track applied templates in battery-pack.toml and surface in status
+- show templates in the interactive `cargo bp add` picker
+- *(state)* [**breaking**] bump format to v2, use all-features flag for ActiveFeatures::All
+- *(manifest)* parse and validate category metadata (Phase 1+2)
+- *(packs)* add category metadata to cli, ci, and backend-service packs (Phase 8)
+- *(ci)* add security scanning template
+- *(ci)* default generated dependency policy
+- *(ci)* document generated audit policy
+- *(ci)* add optional dependency policy template
+
+### Fixed
+
+- use stable backend skills link
+- update paths after battery pack merge
+- cargo fmt for bphelper-build
+- address post-implementation review findings (Phase 9)
+- address adversarial review findings in categories impl
+- *(cli)* propagate existing All state as all_features flag instead of sentinel
+- *(manifest)* include implicit-feature optional deps under ActiveFeatures::All
+- spelling :)
+- spelling and formatting
+- *(ci)* refresh dependency policy snapshots
+- *(ci)* remove path filter from dependency-policy pull_request trigger
+- *(ci)* warn on wildcard dependencies in policy template
+- *(ci)* run generated audit workflow on config changes
+- *(cli-battery-pack)* stabilize help snapshots
+- *(cli-battery-pack)* normalize help snapshots
+
+### Other
+
+- merge battery pack directories
+- Fix mdBook links and add link checking
+- switch feature lists to a parsed FeatureRef
+- Merge branch 'main' of https://github.com/battery-pack-rs/battery-pack into fix/issue-13-cargo-metadata
+- add the cargo.toml metadata
+- *(spec)* document category rules in format/cli/tui specs
+- *(picker)* improve the picker UI and make it inline
+- migrate bphelper-cli modules to new layout
+- fix rustfmt line-joining for CI toolchain
+- Merge branch 'main' of https://github.com/battery-pack-rs/battery-pack into fix/issue-13-cargo-metadata
+- ActiveFeatures enum + resolver hardening
+- *(manifest)* restrict resolve_all() to test-only visibility
+- Update src/battery-pack/bphelper-manifest/src/lib.rs
+- add a cargo-metadata oracle test
+- *(ci)* drop action ref comments from snapshots
+- *(ci)* clarify unresolved action redaction
+- *(ci)* simplify snapshot normalization
+- *(ci)* normalize workflow snapshot pins
+- allow NCSA license in dependency policy
+- *(ci)* clarify audit issue prompt
+- *(ci)* align skill template commands
+- *(ci)* simplify optional feature guidance
+- *(ci)* tighten security scanning text
+- *(ci)* keep audit issue option out of feature table
+- add repository license policy
+- *(packs)* update battery pack content for auto-generated docs
+
+### Security
+
+- fix rustsec vulnerabilities
+
 ## [0.5.5](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.5.4...battery-pack-v0.5.5) - 2026-06-03
 
 ### Added

@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/battery-pack-rs/battery-pack/compare/cargo-bp-v0.5.6...cargo-bp-v0.6.0) - 2026-07-16
+
+### Added
+
+- record applied template in state when using `cargo bp new`
+- track applied templates in battery-pack.toml and surface in status
+- *(template)* derive select-placeholder options from a category (Phase 6)
+- *(show)* surface categories in cargo bp show text and JSON (Phase 7)
+- *(cli)* wire categories into picker and validate exclusive -F picks (Phase 4+5)
+- *(picker)* add radio mode, collapsing, and item descriptions (Phase 3)
+- wire up `p` preview action in the `cargo bp add` picker
+- extract sectioned-picker into standalone crate
+- show templates in the interactive `cargo bp add` picker
+- *(state)* [**breaking**] bump format to v2, use all-features flag for ActiveFeatures::All
+
+### Fixed
+
+- address post-implementation review findings (Phase 9)
+- address adversarial review findings in categories impl
+- *(cli)* propagate existing All state as all_features flag instead of sentinel
+- *(manifest)* include implicit-feature optional deps under ActiveFeatures::All
+
+### Other
+
+- add the cargo.toml metadata
+- *(spec)* document category rules in format/cli/tui specs
+- *(picker)* improve the picker UI and make it inline
+- migrate bphelper-cli modules to new layout
+- fix rustfmt line-joining for CI toolchain
+- Merge branch 'main' of https://github.com/battery-pack-rs/battery-pack into fix/issue-13-cargo-metadata
+- ActiveFeatures enum + resolver hardening
+- switch feature lists to a parsed FeatureRef
+- Merge branch 'main' of https://github.com/battery-pack-rs/battery-pack into fix/issue-13-cargo-metadata
+
 ## [0.5.6](https://github.com/battery-pack-rs/battery-pack/compare/cargo-bp-v0.5.5...cargo-bp-v0.5.6) - 2026-06-03
 
 ### Added
