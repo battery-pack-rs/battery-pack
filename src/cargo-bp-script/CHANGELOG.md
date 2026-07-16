@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/battery-pack-rs/battery-pack/compare/cargo-bp-script-v0.2.0...cargo-bp-script-v0.2.1) - 2026-07-16
+
+### Added
+
+- *(show)* surface categories in cargo bp show text and JSON (Phase 7)
+- track applied templates in battery-pack.toml and surface in status
+
 ## [0.2.0](https://github.com/battery-pack-rs/battery-pack/compare/cargo-bp-script-v0.1.0...cargo-bp-script-v0.2.0) - 2026-06-03
 
 ### Added

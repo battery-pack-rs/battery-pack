@@ -395,7 +395,7 @@ checksum = "7b7e4c2464d97fe331d41de9d5db0def0a96f4d823b8b32a2efd503578988973"
 
 [[package]]
 name = "backend-service-battery-pack"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "axum",
@@ -462,7 +462,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "battery-pack"
-version = "0.5.5"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "battery-pack",
@@ -601,7 +601,7 @@ dependencies = [
 
 [[package]]
 name = "bphelper-build"
-version = "0.4.8"
+version = "0.5.0"
 dependencies = [
  "bphelper-manifest",
  "cargo_metadata",
@@ -615,7 +615,7 @@ dependencies = [
 
 [[package]]
 name = "bphelper-cli"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "bphelper-manifest",
@@ -653,7 +653,7 @@ dependencies = [
 
 [[package]]
 name = "bphelper-manifest"
-version = "0.5.6"
+version = "0.6.0"
 dependencies = [
  "cargo_metadata",
  "indoc",
@@ -741,7 +741,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-bp"
-version = "0.5.6"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -755,7 +755,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-bp-script"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -845,7 +845,7 @@ dependencies = [
 
 [[package]]
 name = "ci-battery-pack"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "arbitrary",
  "battery-pack",
@@ -947,7 +947,7 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "cli-battery-pack"
-version = "0.6.2"
+version = "0.6.3"
 dependencies = [
  "anstream",
  "anstyle",
@@ -1826,7 +1826,7 @@ dependencies = [
 
 [[package]]
 name = "embedded-battery-pack"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "atsamd-hal",
  "battery-pack",
@@ -2145,7 +2145,7 @@ dependencies = [
 
 [[package]]
 name = "error-battery-pack"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
  "anyhow",
  "battery-pack",
@@ -3561,7 +3561,7 @@ checksum = "616ec5685824bcc94416c6d4a7a446eea774a31efd7062c8480ba6fd06d7a6e5"
 
 [[package]]
 name = "logging-battery-pack"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "battery-pack",
  "tracing",

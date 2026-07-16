@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3](https://github.com/battery-pack-rs/battery-pack/compare/logging-battery-pack-v0.5.2...logging-battery-pack-v0.5.3) - 2026-07-16
+
+### Other
+
+- Fix mdBook links and add link checking
+- *(packs)* update battery pack content for auto-generated docs
+
 ## [0.5.2](https://github.com/battery-pack-rs/battery-pack/compare/logging-battery-pack-v0.5.1...logging-battery-pack-v0.5.2) - 2026-06-03
 
 ### Other

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3](https://github.com/battery-pack-rs/battery-pack/compare/cli-battery-pack-v0.6.2...cli-battery-pack-v0.6.3) - 2026-07-16
+
+### Added
+
+- *(packs)* add category metadata to cli, ci, and backend-service packs (Phase 8)
+
+### Fixed
+
+- *(cli-battery-pack)* stabilize help snapshots
+- *(cli-battery-pack)* normalize help snapshots
+
+### Other
+
+- Fix mdBook links and add link checking
+- *(packs)* update battery pack content for auto-generated docs
+
 ## [0.6.2](https://github.com/battery-pack-rs/battery-pack/compare/cli-battery-pack-v0.6.1...cli-battery-pack-v0.6.2) - 2026-06-03
 
 ### Fixed

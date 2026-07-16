@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.5](https://github.com/battery-pack-rs/battery-pack/compare/error-battery-pack-v0.6.4...error-battery-pack-v0.6.5) - 2026-07-16
+
+### Other
+
+- Fix mdBook links and add link checking
+- *(packs)* update battery pack content for auto-generated docs
+
 ## [0.6.4](https://github.com/battery-pack-rs/battery-pack/compare/error-battery-pack-v0.6.3...error-battery-pack-v0.6.4) - 2026-06-03
 
 ### Other

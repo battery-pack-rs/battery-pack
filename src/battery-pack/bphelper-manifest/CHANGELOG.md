@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-manifest-v0.5.6...bphelper-manifest-v0.6.0) - 2026-07-16
+
+### Added
+
+- *(cli)* wire categories into picker and validate exclusive -F picks (Phase 4+5)
+- *(manifest)* parse and validate category metadata (Phase 1+2)
+
+### Fixed
+
+- address post-implementation review findings (Phase 9)
+- address adversarial review findings in categories impl
+- *(manifest)* include implicit-feature optional deps under ActiveFeatures::All
+- spelling :)
+- spelling and formatting
+
+### Other
+
+- *(manifest)* restrict resolve_all() to test-only visibility
+- Update src/battery-pack/bphelper-manifest/src/lib.rs
+- ActiveFeatures enum + resolver hardening
+- add a cargo-metadata oracle test
+- switch feature lists to a parsed FeatureRef
+- Merge branch 'main' of https://github.com/battery-pack-rs/battery-pack into fix/issue-13-cargo-metadata
+
 ## [0.5.6](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-manifest-v0.5.5...bphelper-manifest-v0.5.6) - 2026-06-03
 
 ### Fixed

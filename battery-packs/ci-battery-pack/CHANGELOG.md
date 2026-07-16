@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6](https://github.com/battery-pack-rs/battery-pack/compare/ci-battery-pack-v0.1.5...ci-battery-pack-v0.1.6) - 2026-07-16
+
+### Added
+
+- *(packs)* add category metadata to cli, ci, and backend-service packs (Phase 8)
+- *(ci)* add security scanning template
+- *(ci)* default generated dependency policy
+- *(ci)* document generated audit policy
+- *(ci)* add optional dependency policy template
+
+### Fixed
+
+- *(ci)* refresh dependency policy snapshots
+- *(ci)* remove path filter from dependency-policy pull_request trigger
+- *(ci)* warn on wildcard dependencies in policy template
+- *(ci)* run generated audit workflow on config changes
+
+### Other
+
+- Fix mdBook links and add link checking
+- *(ci)* drop action ref comments from snapshots
+- *(ci)* clarify unresolved action redaction
+- *(ci)* simplify snapshot normalization
+- *(ci)* normalize workflow snapshot pins
+- allow NCSA license in dependency policy
+- *(ci)* clarify audit issue prompt
+- *(ci)* align skill template commands
+- *(ci)* simplify optional feature guidance
+- *(ci)* tighten security scanning text
+- *(ci)* keep audit issue option out of feature table
+- add repository license policy
+
+### Security
+
+- fix rustsec vulnerabilities
+
 ## [0.1.5](https://github.com/battery-pack-rs/battery-pack/compare/ci-battery-pack-v0.1.4...ci-battery-pack-v0.1.5) - 2026-06-03
 
 ### Added

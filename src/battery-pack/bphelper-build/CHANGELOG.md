@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-build-v0.4.8...bphelper-build-v0.5.0) - 2026-07-16
+
+### Added
+
+- *(docgen)* category-aware crate-table with unified rendering
+
+### Fixed
+
+- update paths after battery pack merge
+- cargo fmt for bphelper-build
+
+### Other
+
+- Fix mdBook links and add link checking
+- switch feature lists to a parsed FeatureRef
+- Merge branch 'main' of https://github.com/battery-pack-rs/battery-pack into fix/issue-13-cargo-metadata
+
 ## [0.4.8](https://github.com/battery-pack-rs/battery-pack/compare/bphelper-build-v0.4.7...bphelper-build-v0.4.8) - 2026-06-03
 
 ### Fixed
