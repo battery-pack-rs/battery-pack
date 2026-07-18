@@ -13,11 +13,7 @@ use crate::registry::{
 };
 use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
-use ratatui::{
-    Frame,
-    text::Text,
-    widgets::ListState,
-};
+use ratatui::{Frame, text::Text, widgets::ListState};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::rc::Rc;
