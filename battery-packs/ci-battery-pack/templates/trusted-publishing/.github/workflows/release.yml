@@ -1,4 +1,4 @@
-{%- if ci_platform == "github" -%}
+{%- if ci_platform != "none" -%}
 # release-plz: automated releases to crates.io (https://release-plz.dev/docs)
 # Setup:
 # 1. Configure trusted publishing on crates.io

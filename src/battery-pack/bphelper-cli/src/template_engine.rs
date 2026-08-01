@@ -32,6 +32,18 @@ struct BpTemplateConfig {
     hints: Vec<Hint>,
 }
 
+impl BpTemplateConfig {
+    /// Merge another `BpTemplateConfig` into this one, with the overlay taking precedence.
+    fn merge(&mut self, overlay: BpTemplateConfig) {
+        self.ignore.extend(overlay.ignore);
+        for (k, v) in overlay.placeholders {
+            self.placeholders.insert(k, v);
+        }
+        self.files.extend(overlay.files);
+        self.hints.extend(overlay.hints);
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct PlaceholderDef {
     #[serde(default)]
@@ -146,14 +158,20 @@ pub(crate) fn preview(mut opts: RenderOpts) -> Result<Vec<RenderedFile>> {
 ///
 /// Returns an empty vec if the template has no hints or no config file.
 pub(crate) fn load_template_hints(crate_root: &Path, template_path: &str) -> Vec<String> {
+    let mut hints = Vec::new();
+    let base_config_path = crate_root.join("templates/bp-template.toml");
+    if let Ok(content) = std::fs::read_to_string(&base_config_path)
+        && let Ok(config) = toml::from_str::<BpTemplateConfig>(&content)
+    {
+        hints.extend(config.hints.into_iter().map(|h| h.message));
+    }
     let config_path = crate_root.join(template_path).join("bp-template.toml");
-    let Ok(content) = std::fs::read_to_string(&config_path) else {
-        return Vec::new();
-    };
-    let Ok(config) = toml::from_str::<BpTemplateConfig>(&content) else {
-        return Vec::new();
-    };
-    config.hints.into_iter().map(|h| h.message).collect()
+    if let Ok(content) = std::fs::read_to_string(&config_path)
+        && let Ok(config) = toml::from_str::<BpTemplateConfig>(&content)
+    {
+        hints.extend(config.hints.into_iter().map(|h| h.message));
+    }
+    hints
 }
 
 /// Generate a project from a battery pack template.
@@ -228,6 +246,16 @@ fn render(
             rendered_path
         } else {
             rendered_path.replace("_Cargo.toml", "Cargo.toml")
+        };
+        // Map `.github/` -> `.forgejo/` when `ci_platform == "forgejo"`.
+        let rendered_path = if variables.get("ci_platform").map(|s| s.as_str()) == Some("forgejo") {
+            if rendered_path.starts_with(".github/") {
+                rendered_path.replacen(".github/", ".forgejo/", 1)
+            } else {
+                rendered_path
+            }
+        } else {
+            rendered_path
         };
         let content = std::fs::read_to_string(entry.path())
             .with_context(|| format!("failed to read {}", entry.path().display()))?;
@@ -381,6 +409,14 @@ fn prepare_render(
         &mut variables,
         opts.interactive_override,
     )?;
+
+    // Inject automatic `ci_dir` variable based on `ci_platform`.
+    let ci_dir = match variables.get("ci_platform").map(|s| s.as_str()) {
+        Some("forgejo") => ".forgejo",
+        _ => ".github",
+    };
+    variables.insert("ci_dir".to_string(), ci_dir.to_string());
+
     Ok(variables)
 }
 
@@ -460,14 +496,29 @@ fn load_config(opts: &RenderOpts) -> Result<(PathBuf, BpTemplateConfig)> {
     if !template_dir.is_dir() {
         bail!("template directory not found: {}", template_dir.display());
     }
-    let config_path = template_dir.join("bp-template.toml");
-    if !config_path.exists() {
-        return Ok((template_dir, BpTemplateConfig::default()));
+
+    let mut config = BpTemplateConfig::default();
+
+    // Load optional base template config from `templates/bp-template.toml`
+    let base_config_path = opts.crate_root.join("templates/bp-template.toml");
+    if base_config_path.exists() {
+        let content = std::fs::read_to_string(&base_config_path)
+            .with_context(|| format!("failed to read {}", base_config_path.display()))?;
+        let base_config: BpTemplateConfig = toml::from_str(&content)
+            .with_context(|| format!("failed to parse {}", base_config_path.display()))?;
+        config.merge(base_config);
     }
-    let content = std::fs::read_to_string(&config_path)
-        .with_context(|| format!("failed to read {}", config_path.display()))?;
-    let config = toml::from_str(&content)
-        .with_context(|| format!("failed to parse {}", config_path.display()))?;
+
+    // Load sub-template config from `<template_dir>/bp-template.toml`
+    let config_path = template_dir.join("bp-template.toml");
+    if config_path.exists() {
+        let content = std::fs::read_to_string(&config_path)
+            .with_context(|| format!("failed to read {}", config_path.display()))?;
+        let template_config: BpTemplateConfig = toml::from_str(&content)
+            .with_context(|| format!("failed to parse {}", config_path.display()))?;
+        config.merge(template_config);
+    }
+
     Ok((template_dir, config))
 }
 

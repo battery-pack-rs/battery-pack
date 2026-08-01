@@ -1,4 +1,4 @@
-{%- if ci_platform == "github" -%}
+{%- if ci_platform != "none" -%}
 # Builds cross-platform binaries and uploads to GitHub Releases.
 # Binaries are discoverable by cargo-binstall (https://github.com/cargo-bins/cargo-binstall).
 # Triggered automatically when release-plz publishes a release.
