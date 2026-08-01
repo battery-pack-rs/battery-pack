@@ -1054,3 +1054,58 @@ fn options_category_unknown_errors() {
         "error should name the category: {err}"
     );
 }
+
+#[test]
+fn base_template_config_inheritance() {
+    let temp = tempfile::tempdir().unwrap();
+    let crate_root = temp.path();
+    let templates_dir = crate_root.join("templates");
+    let sub_template_dir = templates_dir.join("sub");
+    std::fs::create_dir_all(&sub_template_dir).unwrap();
+
+    // Base config
+    std::fs::write(
+        templates_dir.join("bp-template.toml"),
+        r#"
+[placeholders.ci_platform]
+type = "select"
+prompt = "CI platform"
+options = ["github", "forgejo", "none"]
+default = "github"
+"#,
+    )
+    .unwrap();
+
+    // Sub-template config overriding default and adding a placeholder
+    std::fs::write(
+        sub_template_dir.join("bp-template.toml"),
+        r#"
+[placeholders.ci_platform]
+default = "forgejo"
+
+[placeholders.custom]
+type = "string"
+default = "val"
+"#,
+    )
+    .unwrap();
+
+    let opts = RenderOpts {
+        crate_root: crate_root.to_path_buf(),
+        template_path: "templates/sub".to_string(),
+        project_name: "test".to_string(),
+        defines: BTreeMap::new(),
+        active_features: BTreeSet::new(),
+        interactive_override: Some(false),
+    };
+
+    let (_, config) = load_config(&opts).unwrap();
+    assert_eq!(
+        config.placeholders["ci_platform"].default.as_deref(),
+        Some("forgejo")
+    );
+    assert_eq!(
+        config.placeholders["custom"].default.as_deref(),
+        Some("val")
+    );
+}
