@@ -313,38 +313,148 @@ fn render(
 
     // Normalize rendered Rust through rustfmt so generated output is formatting-stable regardless
     // of template whitespace. No-ops if rustfmt is missing or rejects the input.
-    for file in files.iter_mut().filter(|f| f.path.ends_with(".rs")) {
-        file.content = rustfmt_rust(std::mem::take(&mut file.content));
-    }
+    rustfmt_rust_files(&mut files);
 
     Ok(files)
 }
 
-/// Formats Rust source with rustfmt (edition 2024) over stdin/stdout, with no temporary files so
-/// it works for previews too. Returns the input unchanged if rustfmt is unavailable or fails, so
-/// generation never hard-depends on a rustfmt install.
-fn rustfmt_rust(source: String) -> String {
+/// Formats rendered Rust files with rustfmt (edition 2024). Returns all files unchanged if rustfmt
+/// is unavailable or fails, so generation never hard-depends on a rustfmt install.
+fn rustfmt_rust_files(files: &mut [RenderedFile]) {
+    rustfmt_rust_files_with(files, Path::new("rustfmt"));
+}
+
+fn rustfmt_rust_files_with(files: &mut [RenderedFile], rustfmt: &Path) {
+    use std::collections::HashSet;
+    use std::path::Component;
+    use std::process::{Command, Stdio};
+
+    // Select Rust sources before creating a temporary workspace or spawning rustfmt.
+    let rust_files: Vec<usize> = files
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, file)| file.path.ends_with(".rs").then_some(idx))
+        .collect();
+    if rust_files.is_empty() {
+        return;
+    }
+
+    // Preserve independent contents for duplicate rendered paths, which cannot share one temp file.
+    let mut rendered_paths = HashSet::with_capacity(rust_files.len());
+    if rust_files
+        .iter()
+        .any(|&idx| !rendered_paths.insert(files[idx].path.as_str()))
+    {
+        let mut formatted_files = Vec::with_capacity(rust_files.len());
+        for &idx in &rust_files {
+            let Some(formatted) = rustfmt_rust_source(&files[idx].content, rustfmt) else {
+                return;
+            };
+            formatted_files.push(formatted);
+        }
+        for (&idx, formatted) in rust_files.iter().zip(formatted_files) {
+            files[idx].content = formatted;
+        }
+        return;
+    }
+
+    // Materialize the rendered Rust in a tempdir so one rustfmt process can format every file.
+    let Ok(tempdir) = tempfile::tempdir() else {
+        return;
+    };
+    let mut paths = Vec::with_capacity(rust_files.len());
+    for &idx in &rust_files {
+        let rel_path = Path::new(&files[idx].path);
+        if !rel_path
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
+        {
+            return;
+        }
+
+        let path = tempdir.path().join(rel_path);
+        if let Some(parent) = path.parent()
+            && std::fs::create_dir_all(parent).is_err()
+        {
+            return;
+        }
+        if std::fs::write(&path, &files[idx].content).is_err() {
+            return;
+        }
+        paths.push(path);
+    }
+
+    // Preserve the configuration that stdin-based formatting discovers from the caller's cwd.
+    let mut command = Command::new(rustfmt);
+    command.args(["--edition", "2024", "--quiet"]);
+    if let Some(config_path) = rustfmt_config_path() {
+        command.arg("--config-path").arg(config_path);
+    }
+
+    // Match stdin behavior by formatting explicit paths without resolving their child modules.
+    command.args(["--config", "skip_children=true"]);
+
+    // Read the formatted temp files back only after rustfmt succeeds for the whole batch.
+    let status = command
+        .args(&paths)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    if !status.is_ok_and(|status| status.success()) {
+        return;
+    }
+
+    // Collect every result before modifying the originals so read failures are all-or-nothing.
+    let mut formatted_files = Vec::with_capacity(paths.len());
+    for path in &paths {
+        let Ok(formatted) = std::fs::read_to_string(path) else {
+            return;
+        };
+        formatted_files.push(formatted);
+    }
+
+    // Apply the complete successful batch to the corresponding rendered files.
+    for (&idx, formatted) in rust_files.iter().zip(formatted_files) {
+        files[idx].content = formatted;
+    }
+}
+
+fn rustfmt_config_path() -> Option<PathBuf> {
+    let current_dir = std::env::current_dir().ok()?;
+    rustfmt_config_path_from(&current_dir)
+}
+
+fn rustfmt_config_path_from(start: &Path) -> Option<PathBuf> {
+    // Match rustfmt's stdin lookup: nearest ancestor first, with the hidden filename preferred.
+    for directory in start.ancestors() {
+        for filename in [".rustfmt.toml", "rustfmt.toml"] {
+            let candidate = directory.join(filename);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+fn rustfmt_rust_source(source: &str, rustfmt: &Path) -> Option<String> {
     use std::io::{Read, Write};
     use std::process::{Command, Stdio};
 
-    let mut child = match Command::new("rustfmt")
+    // Format one source over pipes when duplicate rendered paths cannot share a temporary tree.
+    let mut child = Command::new(rustfmt)
         .args(["--edition", "2024", "--emit", "stdout", "--quiet"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-    {
-        Ok(child) => child,
-        Err(_) => return source,
-    };
+        .ok()?;
 
-    // Feed stdin from another thread so a full stdout pipe can't deadlock the write.
+    // Feed stdin concurrently so a full stdout pipe cannot deadlock the write.
     let mut stdin = child.stdin.take().expect("stdin is piped");
-    let input = source.clone();
-    let writer = std::thread::spawn(move || {
-        let _ = stdin.write_all(input.as_bytes());
-    });
-
+    let input = source.to_owned();
+    let writer = std::thread::spawn(move || stdin.write_all(input.as_bytes()));
     let mut formatted = String::new();
     let read_ok = child
         .stdout
@@ -352,11 +462,12 @@ fn rustfmt_rust(source: String) -> String {
         .expect("stdout is piped")
         .read_to_string(&mut formatted)
         .is_ok();
-    let _ = writer.join();
+    let write_ok = writer.join().is_ok_and(|result| result.is_ok());
 
+    // Return output only when every pipe operation and rustfmt itself completed successfully.
     match child.wait() {
-        Ok(status) if status.success() && read_ok => formatted,
-        _ => source,
+        Ok(status) if status.success() && read_ok && write_ok => Some(formatted),
+        _ => None,
     }
 }
 fn prepare_render(
