@@ -1,3 +1,7 @@
+<p align="center">
+  <a href="https://battery-pack-rs.github.io/battery-pack"><img src="https://raw.githubusercontent.com/battery-pack-rs/battery-pack/main/md/logo/battery-pack-logo.png" alt="Battery Pack logo" width="200"></a>
+</p>
+
 # battery-pack
 
 Curated crate bundles with docs, templates, and agentic skills.
