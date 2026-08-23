@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.6.1...battery-pack-v0.6.2) - 2026-08-23
+
+### Other
+
+- add logo linking to the book at the top of the README
+
 ## [0.6.1](https://github.com/battery-pack-rs/battery-pack/compare/battery-pack-v0.6.0...battery-pack-v0.6.1) - 2026-07-25
 
 ### Added
