@@ -28,6 +28,217 @@ fn test_resolve(
     resolve_placeholders(defs, &resolved, defines, variables, interactive_override)
 }
 
+#[cfg(unix)]
+fn fake_rustfmt(script_body: &str) -> (tempfile::TempDir, PathBuf, PathBuf) {
+    use std::os::unix::fs::PermissionsExt;
+
+    // Create an isolated executable and counter so tests never mutate process-wide PATH state.
+    let tempdir = tempfile::tempdir().unwrap();
+    let executable = tempdir.path().join("rustfmt");
+    let counter = tempdir.path().join("invocations");
+    let counter_path = counter.to_string_lossy();
+    assert!(!counter_path.contains('\''));
+    std::fs::write(
+        &executable,
+        format!("#!/bin/sh\ncounter='{counter_path}'\n{script_body}"),
+    )
+    .unwrap();
+
+    // Mark the script executable before passing its absolute path to the formatter helper.
+    let mut permissions = std::fs::metadata(&executable).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&executable, permissions).unwrap();
+
+    (tempdir, executable, counter)
+}
+
+#[cfg(unix)]
+fn rendered_file(path: &str, content: &str) -> RenderedFile {
+    RenderedFile {
+        path: path.to_string(),
+        content: content.to_string(),
+    }
+}
+
+// -- rustfmt batching --
+
+#[test]
+fn rustfmt_config_uses_nearest_ancestor_and_hidden_name() {
+    let tempdir = tempfile::tempdir().unwrap();
+    let nested = tempdir.path().join("project/src");
+    let sibling = tempdir.path().join("other/src");
+    std::fs::create_dir_all(&nested).unwrap();
+    std::fs::create_dir_all(&sibling).unwrap();
+    std::fs::write(tempdir.path().join("rustfmt.toml"), "max_width = 100\n").unwrap();
+    std::fs::write(
+        tempdir.path().join("project/rustfmt.toml"),
+        "max_width = 80\n",
+    )
+    .unwrap();
+    std::fs::write(
+        tempdir.path().join("project/.rustfmt.toml"),
+        "max_width = 60\n",
+    )
+    .unwrap();
+
+    // The closest directory wins, and .rustfmt.toml wins when both names exist there.
+    assert_eq!(
+        rustfmt_config_path_from(&nested),
+        Some(tempdir.path().join("project/.rustfmt.toml"))
+    );
+    assert_eq!(
+        rustfmt_config_path_from(&sibling),
+        Some(tempdir.path().join("rustfmt.toml"))
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn rustfmt_formats_multiple_files_with_one_process() {
+    let (_tempdir, rustfmt, counter) = fake_rustfmt(
+        r#"
+printf '1\n' >> "$counter"
+case " $* " in
+    *" --config skip_children=true "*) ;;
+    *) exit 1 ;;
+esac
+for path in "$@"; do
+    case "$path" in
+        *.rs)
+            output="${path}.formatted"
+            { printf 'formatted:'; cat "$path"; } > "$output"
+            mv "$output" "$path"
+            ;;
+    esac
+done
+"#,
+    );
+    let mut files = vec![
+        rendered_file("src/lib.rs", "first"),
+        rendered_file("README.md", "documentation"),
+        rendered_file("src/main.rs", "second"),
+    ];
+
+    // Multiple unique Rust paths share one formatter process while non-Rust content is untouched.
+    rustfmt_rust_files_with(&mut files, &rustfmt);
+
+    assert_eq!(std::fs::read_to_string(counter).unwrap(), "1\n");
+    assert_eq!(files[0].content, "formatted:first");
+    assert_eq!(files[1].content, "documentation");
+    assert_eq!(files[2].content, "formatted:second");
+}
+
+#[cfg(unix)]
+#[test]
+fn rustfmt_formats_duplicate_paths_independently() {
+    let (_tempdir, rustfmt, counter) = fake_rustfmt(
+        r#"
+printf '1\n' >> "$counter"
+printf 'formatted:'
+cat
+"#,
+    );
+    let mut files = vec![
+        rendered_file("src/lib.rs", "first"),
+        rendered_file("src/lib.rs", "second"),
+    ];
+
+    // Duplicate destinations use independent stdin streams so neither entry overwrites the other.
+    rustfmt_rust_files_with(&mut files, &rustfmt);
+
+    assert_eq!(std::fs::read_to_string(counter).unwrap(), "1\n1\n");
+    assert_eq!(files[0].content, "formatted:first");
+    assert_eq!(files[1].content, "formatted:second");
+}
+
+#[cfg(unix)]
+#[test]
+fn rustfmt_skips_batches_without_rust_files() {
+    let (_tempdir, rustfmt, counter) = fake_rustfmt("printf '1\\n' >> \"$counter\"\nexit 0\n");
+    let mut files = vec![rendered_file("README.md", "documentation")];
+
+    // A non-Rust batch requires no temporary formatting process.
+    rustfmt_rust_files_with(&mut files, &rustfmt);
+
+    assert!(!counter.exists());
+    assert_eq!(files[0].content, "documentation");
+}
+
+#[cfg(unix)]
+#[test]
+fn rustfmt_failure_leaves_all_files_unchanged() {
+    let (_tempdir, rustfmt, counter) = fake_rustfmt(
+        r#"
+printf '1\n' >> "$counter"
+for path in "$@"; do
+    case "$path" in
+        *.rs) printf 'changed' > "$path" ;;
+    esac
+done
+exit 1
+"#,
+    );
+    let mut files = vec![
+        rendered_file("src/lib.rs", "first"),
+        rendered_file("src/main.rs", "second"),
+    ];
+
+    // A failed formatter may alter its temp files but cannot alter the rendered batch.
+    rustfmt_rust_files_with(&mut files, &rustfmt);
+
+    assert_eq!(std::fs::read_to_string(counter).unwrap(), "1\n");
+    assert_eq!(files[0].content, "first");
+    assert_eq!(files[1].content, "second");
+}
+
+#[cfg(unix)]
+#[test]
+fn rustfmt_read_failure_leaves_all_files_unchanged() {
+    let (_tempdir, rustfmt, counter) = fake_rustfmt(
+        r#"
+printf '1\n' >> "$counter"
+last_rust_file=
+for path in "$@"; do
+    case "$path" in
+        *.rs)
+            printf 'changed' > "$path"
+            last_rust_file="$path"
+            ;;
+    esac
+done
+rm "$last_rust_file"
+"#,
+    );
+    let mut files = vec![
+        rendered_file("src/lib.rs", "first"),
+        rendered_file("src/main.rs", "second"),
+    ];
+
+    // Read-back is transactional even when rustfmt exits successfully but output disappears.
+    rustfmt_rust_files_with(&mut files, &rustfmt);
+
+    assert_eq!(std::fs::read_to_string(counter).unwrap(), "1\n");
+    assert_eq!(files[0].content, "first");
+    assert_eq!(files[1].content, "second");
+}
+
+#[cfg(unix)]
+#[test]
+fn rustfmt_rejects_unsafe_paths_without_modifying_files() {
+    let (_tempdir, rustfmt, counter) = fake_rustfmt("printf '1\\n' >> \"$counter\"\nexit 0\n");
+    let mut files = vec![
+        rendered_file("src/lib.rs", "safe"),
+        rendered_file("../outside.rs", "unsafe"),
+    ];
+
+    // Reject the complete batch before spawning rustfmt if any destination can escape the tempdir.
+    rustfmt_rust_files_with(&mut files, &rustfmt);
+
+    assert!(!counter.exists());
+    assert_eq!(files[0].content, "safe");
+    assert_eq!(files[1].content, "unsafe");
+}
+
 // -- Config parsing --
 // [verify format.templates.engine]
 
