@@ -9,7 +9,7 @@
       - uses: {{ pin_github_action("actions/checkout", "v6") }}
         with:
           persist-credentials: false
-      - uses: ./.github/actions/rust-build
+      - uses: ./{{ ci_dir }}/actions/rust-build
         with:
           toolchain: stable
           flags: --all-features

@@ -97,7 +97,7 @@ mod tests {
     }
 
     #[test]
-    fn none_platform_strips_github_files() {
+    fn none_platform_strips_github_and_forgejo_files() {
         let files = PreviewBuilder::new(env!("CARGO_MANIFEST_DIR"))
             .template("templates/full")
             .define("ci_platform", "none")
@@ -106,8 +106,29 @@ mod tests {
             .preview()
             .unwrap();
         assert!(
+            !files
+                .iter()
+                .any(|f| f.path.contains(".github/") || f.path.contains(".forgejo/")),
+            "ci_platform=none should strip all workflow files"
+        );
+    }
+
+    #[test]
+    fn forgejo_platform_creates_forgejo_files() {
+        let files = PreviewBuilder::new(env!("CARGO_MANIFEST_DIR"))
+            .template("templates/full")
+            .define("ci_platform", "forgejo")
+            .define("repo_owner", "test-owner")
+            .define("all", "true")
+            .preview()
+            .unwrap();
+        assert!(
+            files.iter().any(|f| f.path.contains(".forgejo/workflows/")),
+            "ci_platform=forgejo should create .forgejo/ workflow files"
+        );
+        assert!(
             !files.iter().any(|f| f.path.contains(".github/")),
-            "ci_platform=none should strip all .github/ files"
+            "ci_platform=forgejo should not create .github/ files"
         );
     }
 

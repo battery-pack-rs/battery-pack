@@ -1,6 +1,6 @@
 # ci-battery-pack
 
-A [battery pack](https://crates.io/crates/battery-pack) for GitHub Actions CI in Rust projects. Generates pinned workflows with the project's MSRV.
+A [battery pack](https://crates.io/crates/battery-pack) for GitHub Actions and Forgejo Actions CI in Rust projects. Generates pinned workflows with the project's MSRV.
 
 ## Adding CI to an existing project
 

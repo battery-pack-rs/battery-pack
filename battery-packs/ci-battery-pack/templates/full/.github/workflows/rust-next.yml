@@ -1,4 +1,4 @@
-{%- if ci_platform == "github" -%}
+{%- if ci_platform != "none" -%}
 # Non-blocking canary: checks latest dependency versions and beta/nightly Rust.
 # Failures here are informational, not blocking.
 # https://github.com/epage/_rust/blob/main/.github/workflows/rust-next.yml

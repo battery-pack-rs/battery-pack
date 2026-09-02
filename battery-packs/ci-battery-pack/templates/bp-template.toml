@@ -1,0 +1,5 @@
+[placeholders.ci_platform]
+type = "select"
+prompt = "CI platform"
+options = ["github", "forgejo", "none"]
+default = "github"

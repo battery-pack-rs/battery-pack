@@ -62,9 +62,11 @@ prompt = "Include benchmarks?"
 [placeholders.ci_platform]
 type = "select"
 prompt = "CI platform"
-options = ["github", "none"]
+options = ["github", "forgejo", "none"]
 default = "github"
 ```
+
+Placeholders defined in a root `templates/bp-template.toml` are automatically inherited by all templates in the battery pack, allowing shared options (like `ci_platform`) to be declared once. Sub-templates can override base placeholders or declare their own.
 
 Bool values work naturally in templates: `{% if benchmarks %}`. On the command line, bare `-d benchmarks` implies `=true`.
 

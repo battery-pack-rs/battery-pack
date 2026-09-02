@@ -1,4 +1,4 @@
-{%- if ci_platform == "github" -%}
+{%- if ci_platform != "none" -%}
 name: Rust Test
 description: Install toolchain, cache, build, and test a Rust project.
 
