@@ -317,7 +317,7 @@ smoltcp = { version = "0.13", default-features = false, features = ["medium-ethe
 
 # Storage
 embedded-sdmmc = { version = "0.9", optional = true }
-spi-memory = { version = "0.2", optional = true }
+spi-flash = { version = "0.4", optional = true }
 
 # Dev tools
 embedded-test = { version = "0.7", optional = true }
@@ -395,7 +395,7 @@ smoltcp-stack = ["smoltcp"]
 
 # Storage
 embedded-sdmmc = ["dep:embedded-sdmmc"]
-spi-flash = ["spi-memory"]
+spi-flash = ["spi-flash"]
 
 # Dev tools
 embedded-test = ["dep:embedded-test"]
