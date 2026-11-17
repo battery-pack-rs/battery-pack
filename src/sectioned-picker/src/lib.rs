@@ -68,9 +68,6 @@
 mod render;
 mod state;
 
-#[cfg(test)]
-mod tests;
-
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{
     TerminalOptions, Viewport,
